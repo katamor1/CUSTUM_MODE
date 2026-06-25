@@ -1,0 +1,89 @@
+{
+  "name": "bob-bazaar-review",
+  "displayName": "Bob Bazaar Review",
+  "description": "Companion extension that exposes Bazaar revision review tools to IBM Bob through MCP.",
+  "version": "0.1.0",
+  "publisher": "katamor1",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "vscode": "^1.106.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionDependencies": [
+    "IBM.bob-code"
+  ],
+  "activationEvents": [
+    "onCommand:bobBazaar.configureMcp",
+    "onCommand:bobBazaar.reviewRevision",
+    "onCommand:bobBazaar.reviewRange"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bobBazaar.configureMcp",
+        "title": "Configure Bazaar MCP for Bob",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.reviewRevision",
+        "title": "Review Bazaar Revision with Bob",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.reviewRange",
+        "title": "Review Bazaar Revision Range with Bob",
+        "category": "Bob Bazaar"
+      }
+    ],
+    "configuration": {
+      "title": "Bob Bazaar Review",
+      "properties": {
+        "bobBazaar.bzrPath": {
+          "type": "string",
+          "default": "bzr",
+          "description": "Path to the Bazaar executable. Use an absolute path when bzr is not on PATH."
+        },
+        "bobBazaar.mcpServerName": {
+          "type": "string",
+          "default": "bazaar",
+          "description": "MCP server name written to .bob/mcp.json."
+        },
+        "bobBazaar.maxDiffBytes": {
+          "type": "number",
+          "default": 1048576,
+          "minimum": 32768,
+          "description": "Maximum Bazaar diff size to include in the generated review packet."
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "bobBazaar.configureMcp"
+        },
+        {
+          "command": "bobBazaar.reviewRevision"
+        },
+        {
+          "command": "bobBazaar.reviewRange"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.106.0",
+    "typescript": "^5.4.5",
+    "@vscode/vsce": "^3.2.1"
+  }
+}
