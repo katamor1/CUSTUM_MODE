@@ -1,0 +1,139 @@
+{
+  "version": "1.0.0",
+  "project": "legacy-control",
+  "rules": [
+    {
+      "id": "RT-001",
+      "category": "realtime",
+      "title": "RTスレッド内でI/Oを行っていない",
+      "description": "RT_INPUT, RT_CONTROL, RT_OUTPUTではファイルI/O、標準出力、ログ出力、待ち処理を行わない。",
+      "severity_on_fail": "error",
+      "applies_when": [
+        "changed_file_matches:src/rt_*.c",
+        "diff_contains:RT_CONTROL",
+        "diff_contains:RT_INPUT",
+        "diff_contains:RT_OUTPUT"
+      ],
+      "evidence_required": true,
+      "review_hint": "I/O関数、ログ関数、sleep/wait、mutex待ち、動的確保を重点確認する。"
+    },
+    {
+      "id": "RT-002",
+      "category": "realtime",
+      "title": "RTスレッド内で動的メモリ確保を行っていない",
+      "description": "周期処理・割込み起点の処理では malloc/free/new/delete 相当の動的確保を行わない。",
+      "severity_on_fail": "error",
+      "applies_when": [
+        "changed_file_matches:src/rt_*.c",
+        "diff_contains:malloc",
+        "diff_contains:free",
+        "diff_contains:new",
+        "diff_contains:delete"
+      ],
+      "evidence_required": true,
+      "review_hint": "周期時間の揺らぎ、断片化、失敗時処理漏れを確認する。"
+    },
+    {
+      "id": "IF-001",
+      "category": "external-interface",
+      "title": "外部I/F構造体のサイズ・並び順を壊していない",
+      "description": "PLC/モーション/センサIFに関わる構造体は互換性を維持する。",
+      "severity_on_fail": "error",
+      "applies_when": [
+        "changed_file_matches:src/if/**",
+        "diff_contains:struct"
+      ],
+      "evidence_required": true,
+      "review_hint": "構造体メンバの追加、削除、型変更、順序変更、padding影響を確認する。"
+    },
+    {
+      "id": "IF-002",
+      "category": "external-interface",
+      "title": "共有メモリIFの読み書き方向を壊していない",
+      "description": "PLC/モーション/センサ/RT/TS間の共有メモリは、既存の所有者・更新周期・読み書き方向に従う。",
+      "severity_on_fail": "error",
+      "applies_when": [
+        "diff_contains:shared",
+        "diff_contains:shm",
+        "diff_contains:PLC",
+        "diff_contains:motion",
+        "diff_contains:sensor"
+      ],
+      "evidence_required": true,
+      "review_hint": "書込主体の変更、更新順序の変更、初期化タイミング、二重書込を確認する。"
+    },
+    {
+      "id": "GV-001",
+      "category": "global-state",
+      "title": "グローバル変数更新の順序・排他が維持されている",
+      "description": "共有状態を更新する場合、既存の排他・更新順序・初期化順序を壊さない。",
+      "severity_on_fail": "warning",
+      "applies_when": [
+        "diff_contains:extern",
+        "diff_contains:global",
+        "diff_contains:static"
+      ],
+      "evidence_required": true,
+      "review_hint": "割込み、RT/TSスレッド、共有メモリ、状態遷移に関わる更新順序を確認する。"
+    },
+    {
+      "id": "ERR-001",
+      "category": "error-handling",
+      "title": "エラー処理・タイムアウト・リトライが不足していない",
+      "description": "外部I/O、通信、センサ、モーション、ファイル操作では失敗時の扱いを明示する。",
+      "severity_on_fail": "warning",
+      "applies_when": [
+        "diff_contains:return",
+        "diff_contains:error",
+        "diff_contains:timeout"
+      ],
+      "evidence_required": true,
+      "review_hint": "戻り値無視、異常時ログ不足、復旧不能状態、無限待ちを確認する。"
+    },
+    {
+      "id": "BOUND-001",
+      "category": "defensive-coding",
+      "title": "NULL・範囲外・境界値の扱いが不足していない",
+      "description": "ポインタ、配列、index、サイズ、文字列、外部入力値について境界条件を確認する。",
+      "severity_on_fail": "warning",
+      "applies_when": [
+        "diff_contains:[",
+        "diff_contains:*",
+        "diff_contains:memcpy",
+        "diff_contains:strcpy",
+        "diff_contains:sprintf"
+      ],
+      "evidence_required": true,
+      "review_hint": "配列範囲、NULL、終端、バッファサイズ、符号付き/符号なし変換を確認する。"
+    },
+    {
+      "id": "DOC-001",
+      "category": "design-doc",
+      "title": "基本設計・詳細設計・台帳との不整合がない",
+      "description": "仕様変更を伴う差分は、該当する設計書・IF台帳・エラー台帳・メッセージ台帳の更新要否を確認する。",
+      "severity_on_fail": "warning",
+      "applies_when": [
+        "diff_contains:仕様",
+        "diff_contains:error",
+        "diff_contains:message",
+        "diff_contains:IF"
+      ],
+      "evidence_required": false,
+      "review_hint": "入力資料に設計書や台帳が無い場合は unknown とし、pass にしない。"
+    },
+    {
+      "id": "UT-001",
+      "category": "test",
+      "title": "単体テストまたは機能テスト観点が追加・更新されている",
+      "description": "仕様変更や分岐追加がある場合、対応するテスト観点を更新する。",
+      "severity_on_fail": "warning",
+      "applies_when": [
+        "diff_contains:if",
+        "diff_contains:switch",
+        "diff_contains:return"
+      ],
+      "evidence_required": false,
+      "review_hint": "境界値、異常系、既存互換、デグレード観点のテスト不足を確認する。"
+    }
+  ]
+}

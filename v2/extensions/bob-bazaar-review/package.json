@@ -1,8 +1,8 @@
 {
   "name": "bob-bazaar-review",
   "displayName": "Bob Bazaar Review",
-  "description": "Companion extension that exposes Bazaar revision review tools to IBM Bob through MCP.",
-  "version": "0.1.0",
+  "description": "Companion extension that exposes Bazaar revision review tools and project rule review helpers to IBM Bob through MCP.",
+  "version": "0.2.0",
   "publisher": "katamor1",
   "license": "UNLICENSED",
   "private": true,
@@ -17,8 +17,12 @@
   ],
   "activationEvents": [
     "onCommand:bobBazaar.configureMcp",
+    "onCommand:bobBazaar.initProjectRules",
     "onCommand:bobBazaar.reviewRevision",
-    "onCommand:bobBazaar.reviewRange"
+    "onCommand:bobBazaar.reviewRange",
+    "onCommand:bobBazaar.reviewRevisionWithProjectRules",
+    "onCommand:bobBazaar.reviewRangeWithProjectRules",
+    "onCommand:bobBazaar.validateReviewResultJson"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -29,6 +33,11 @@
         "category": "Bob Bazaar"
       },
       {
+        "command": "bobBazaar.initProjectRules",
+        "title": "Initialize Project Review Rules",
+        "category": "Bob Bazaar"
+      },
+      {
         "command": "bobBazaar.reviewRevision",
         "title": "Review Bazaar Revision with Bob",
         "category": "Bob Bazaar"
@@ -36,6 +45,21 @@
       {
         "command": "bobBazaar.reviewRange",
         "title": "Review Bazaar Revision Range with Bob",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.reviewRevisionWithProjectRules",
+        "title": "Review Bazaar Revision with Project Rules",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.reviewRangeWithProjectRules",
+        "title": "Review Bazaar Revision Range with Project Rules",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.validateReviewResultJson",
+        "title": "Validate Project Review Result JSON",
         "category": "Bob Bazaar"
       }
     ],
@@ -57,6 +81,16 @@
           "default": 1048576,
           "minimum": 32768,
           "description": "Maximum Bazaar diff size to include in the generated review packet."
+        },
+        "bobBazaar.projectRules.checklistPath": {
+          "type": "string",
+          "default": ".bob/review/checklist.json",
+          "description": "Workspace-relative or absolute path to the project-specific review checklist JSON."
+        },
+        "bobBazaar.projectRules.schemaPath": {
+          "type": "string",
+          "default": ".bob/review/review-result.schema.json",
+          "description": "Workspace-relative or absolute path to the review result JSON schema."
         }
       }
     },
@@ -66,10 +100,22 @@
           "command": "bobBazaar.configureMcp"
         },
         {
+          "command": "bobBazaar.initProjectRules"
+        },
+        {
           "command": "bobBazaar.reviewRevision"
         },
         {
           "command": "bobBazaar.reviewRange"
+        },
+        {
+          "command": "bobBazaar.reviewRevisionWithProjectRules"
+        },
+        {
+          "command": "bobBazaar.reviewRangeWithProjectRules"
+        },
+        {
+          "command": "bobBazaar.validateReviewResultJson"
         }
       ]
     }

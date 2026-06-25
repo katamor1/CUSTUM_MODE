@@ -9,6 +9,7 @@ export interface ReviewPacketOptions {
   log?: BazaarCommandResult
   diff: BazaarCommandResult
   maxDiffBytes: number
+  extraSections?: string[]
 }
 
 export function buildReviewPacket(options: ReviewPacketOptions): string {
@@ -50,6 +51,7 @@ export function buildReviewPacket(options: ReviewPacketOptions): string {
     "- evidence",
     "- suggested fix または追加確認項目",
     "",
+    ...(options.extraSections ?? []).flatMap((section) => [section, ""]),
     logText ? "## Bazaar log" : "",
     logText ? "" : "",
     logText ? "```text" : "",

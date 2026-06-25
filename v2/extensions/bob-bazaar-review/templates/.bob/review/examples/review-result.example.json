@@ -1,0 +1,74 @@
+{
+  "review_id": "BRR-20260626-001",
+  "vcs": {
+    "type": "bazaar",
+    "repository": "legacy-control",
+    "revision_mode": "single",
+    "revision": "1234"
+  },
+  "checklist_results": [
+    {
+      "rule_id": "RT-001",
+      "title": "RTスレッド内でI/Oを行っていない",
+      "status": "fail",
+      "severity": "error",
+      "confidence": "high",
+      "evidence": [
+        {
+          "file": "src/rt_control.c",
+          "start_line": 245,
+          "end_line": 251,
+          "summary": "RT_CONTROL相当の周期処理内にログ出力関数呼び出しが追加されている。"
+        }
+      ],
+      "reason": "RT周期処理内でI/O相当の処理を行うと周期遅延やデッドラインミスの原因になる。",
+      "suggested_action": "ログ要求をキューに積み、TS_SERVICE側で出力する構造に変更する。"
+    },
+    {
+      "rule_id": "IF-001",
+      "title": "外部I/F構造体のサイズ・並び順を壊していない",
+      "status": "unknown",
+      "severity": "error",
+      "confidence": "medium",
+      "evidence": [],
+      "reason": "diff内に構造体利用箇所はあるが、対応するIF台帳が入力に含まれていない。",
+      "suggested_action": "IF台帳または構造体定義の互換性確認資料を追加して再レビューする。"
+    },
+    {
+      "rule_id": "UT-001",
+      "title": "単体テストまたは機能テスト観点が追加・更新されている",
+      "status": "pass",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "file": "test/rt_control_test.c",
+          "start_line": 88,
+          "end_line": 132,
+          "summary": "異常系と境界値のテストケースが追加されている。"
+        }
+      ],
+      "reason": "今回追加された分岐に対するテストが確認できる。"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-001",
+      "rule_id": "RT-001",
+      "severity": "error",
+      "file": "src/rt_control.c",
+      "start_line": 245,
+      "end_line": 251,
+      "title": "RT周期処理内にログ出力が追加されている",
+      "description": "RT_CONTROL相当の処理でI/O相当のログ出力が追加されており、周期遅延の原因になる可能性がある。",
+      "suggested_fix": "ログ出力をTS_SERVICE側へ移動し、RT側はイベント通知または共有キューへの記録に留める。"
+    }
+  ],
+  "summary": {
+    "pass": 1,
+    "fail": 1,
+    "unknown": 1,
+    "not_applicable": 0,
+    "blocked": 0
+  }
+}

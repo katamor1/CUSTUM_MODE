@@ -2,12 +2,21 @@ import * as vscode from "vscode"
 import { BazaarClient } from "./bazaar"
 import { configureWorkspaceMcpServer } from "./mcpConfig"
 import { buildReviewPacket } from "./reviewPacket"
+import { initializeProjectRules, loadProjectChecklist, loadReviewResultSchema } from "./projectRules/io"
+import { buildProjectRulesSection } from "./projectRules/packet"
+import { validateReviewResultJson } from "./projectRules/validator"
+import { renderReviewResultMarkdown } from "./projectRules/markdown"
+import { ReviewResult } from "./projectRules/types"
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("bobBazaar.configureMcp", () => configureMcp(context)),
-    vscode.commands.registerCommand("bobBazaar.reviewRevision", () => reviewRevision(context)),
-    vscode.commands.registerCommand("bobBazaar.reviewRange", () => reviewRange(context))
+    vscode.commands.registerCommand("bobBazaar.initProjectRules", () => initProjectRules()),
+    vscode.commands.registerCommand("bobBazaar.reviewRevision", () => reviewRevision(context, false)),
+    vscode.commands.registerCommand("bobBazaar.reviewRange", () => reviewRange(context, false)),
+    vscode.commands.registerCommand("bobBazaar.reviewRevisionWithProjectRules", () => reviewRevision(context, true)),
+    vscode.commands.registerCommand("bobBazaar.reviewRangeWithProjectRules", () => reviewRange(context, true)),
+    vscode.commands.registerCommand("bobBazaar.validateReviewResultJson", () => validateActiveReviewResultJson())
   )
 }
 
@@ -35,12 +44,23 @@ async function configureMcp(context: vscode.ExtensionContext): Promise<void> {
   )
 }
 
-async function reviewRevision(context: vscode.ExtensionContext): Promise<void> {
+async function initProjectRules(): Promise<void> {
+  const folder = await pickWorkspaceFolder()
+  if (!folder) return
+
+  const paths = await initializeProjectRules(folder.uri.fsPath)
+  await vscode.window.showInformationMessage(`Initialized project review rules in ${paths.reviewDir}`)
+
+  const checklistDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(paths.checklistPath))
+  await vscode.window.showTextDocument(checklistDoc, { preview: false })
+}
+
+async function reviewRevision(context: vscode.ExtensionContext, withProjectRules: boolean): Promise<void> {
   const folder = await pickWorkspaceFolder()
   if (!folder) return
 
   const revision = await vscode.window.showInputBox({
-    title: "Review Bazaar Revision with Bob",
+    title: withProjectRules ? "Review Bazaar Revision with Project Rules" : "Review Bazaar Revision with Bob",
     prompt: "Bazaar revision to review, for example 1234 or revid:...",
     validateInput: (value) => value.trim() ? undefined : "Revision is required"
   })
@@ -49,9 +69,10 @@ async function reviewRevision(context: vscode.ExtensionContext): Promise<void> {
   await withProgress("Preparing Bazaar revision review packet", async () => {
     const client = makeBazaarClient()
     const root = await client.root(folder.uri.fsPath)
-    const [log, diff] = await Promise.all([
+    const [log, diff, projectRulesSection] = await Promise.all([
       client.log(root, revision),
-      client.diffRevision(root, revision)
+      client.diffRevision(root, revision),
+      withProjectRules ? buildProjectRulesSectionForWorkspace(root) : Promise.resolve(undefined)
     ])
 
     const packet = buildReviewPacket({
@@ -60,26 +81,27 @@ async function reviewRevision(context: vscode.ExtensionContext): Promise<void> {
       revision,
       log,
       diff,
-      maxDiffBytes: getMaxDiffBytes()
+      maxDiffBytes: getMaxDiffBytes(),
+      extraSections: projectRulesSection ? [projectRulesSection] : undefined
     })
 
-    await showAndOfferBobContext(context, packet, `bazaar-review-${revision}.md`)
+    await showAndOfferBobContext(context, packet, withProjectRules ? `bazaar-project-review-${revision}.md` : `bazaar-review-${revision}.md`)
   })
 }
 
-async function reviewRange(context: vscode.ExtensionContext): Promise<void> {
+async function reviewRange(context: vscode.ExtensionContext, withProjectRules: boolean): Promise<void> {
   const folder = await pickWorkspaceFolder()
   if (!folder) return
 
   const baseRevision = await vscode.window.showInputBox({
-    title: "Review Bazaar Revision Range with Bob",
+    title: withProjectRules ? "Review Bazaar Revision Range with Project Rules" : "Review Bazaar Revision Range with Bob",
     prompt: "Base Bazaar revision, for example 1200",
     validateInput: (value) => value.trim() ? undefined : "Base revision is required"
   })
   if (!baseRevision) return
 
   const targetRevision = await vscode.window.showInputBox({
-    title: "Review Bazaar Revision Range with Bob",
+    title: withProjectRules ? "Review Bazaar Revision Range with Project Rules" : "Review Bazaar Revision Range with Bob",
     prompt: "Target Bazaar revision, for example 1234",
     validateInput: (value) => value.trim() ? undefined : "Target revision is required"
   })
@@ -88,7 +110,10 @@ async function reviewRange(context: vscode.ExtensionContext): Promise<void> {
   await withProgress("Preparing Bazaar revision range review packet", async () => {
     const client = makeBazaarClient()
     const root = await client.root(folder.uri.fsPath)
-    const diff = await client.diffRange(root, baseRevision, targetRevision)
+    const [diff, projectRulesSection] = await Promise.all([
+      client.diffRange(root, baseRevision, targetRevision),
+      withProjectRules ? buildProjectRulesSectionForWorkspace(root) : Promise.resolve(undefined)
+    ])
 
     const packet = buildReviewPacket({
       repositoryRoot: root,
@@ -96,11 +121,51 @@ async function reviewRange(context: vscode.ExtensionContext): Promise<void> {
       baseRevision,
       targetRevision,
       diff,
-      maxDiffBytes: getMaxDiffBytes()
+      maxDiffBytes: getMaxDiffBytes(),
+      extraSections: projectRulesSection ? [projectRulesSection] : undefined
     })
 
-    await showAndOfferBobContext(context, packet, `bazaar-review-${baseRevision}-${targetRevision}.md`)
+    await showAndOfferBobContext(context, packet, withProjectRules ? `bazaar-project-review-${baseRevision}-${targetRevision}.md` : `bazaar-review-${baseRevision}-${targetRevision}.md`)
   })
+}
+
+async function buildProjectRulesSectionForWorkspace(workspaceRoot: string): Promise<string> {
+  const config = vscode.workspace.getConfiguration("bobBazaar")
+  const checklistPath = config.get<string>("projectRules.checklistPath", ".bob/review/checklist.json")
+  const schemaPath = config.get<string>("projectRules.schemaPath", ".bob/review/review-result.schema.json")
+  const [checklist, schema] = await Promise.all([
+    loadProjectChecklist(workspaceRoot, checklistPath),
+    loadReviewResultSchema(workspaceRoot, schemaPath)
+  ])
+  return buildProjectRulesSection({ checklist, schema })
+}
+
+async function validateActiveReviewResultJson(): Promise<void> {
+  const editor = vscode.window.activeTextEditor
+  if (!editor) {
+    await vscode.window.showWarningMessage("Open a review result JSON document first.")
+    return
+  }
+
+  const raw = editor.document.getText(editor.selection.isEmpty ? undefined : editor.selection)
+  const validation = validateReviewResultJson(raw)
+  if (!validation.valid) {
+    const report = [
+      "# Review Result JSON Validation Failed",
+      "",
+      ...validation.issues.map((issue) => `- ${issue.path}: ${issue.message}`)
+    ].join("\n")
+    const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: report })
+    await vscode.window.showTextDocument(doc, { preview: false })
+    return
+  }
+
+  const action = await vscode.window.showInformationMessage("Review result JSON is valid.", "Render Markdown Summary")
+  if (action === "Render Markdown Summary") {
+    const result = JSON.parse(raw) as ReviewResult
+    const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: renderReviewResultMarkdown(result) })
+    await vscode.window.showTextDocument(doc, { preview: false })
+  }
 }
 
 function makeBazaarClient(): BazaarClient {

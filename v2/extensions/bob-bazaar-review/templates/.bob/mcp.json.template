@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "bazaar": {
+      "command": "<node-executable>",
+      "args": [
+        "<absolute-path-to-bob-bazaar-review>/out/mcp/server.js"
+      ],
+      "env": {
+        "BZR_PATH": "bzr"
+      },
+      "disabled": false
+    }
+  }
+}

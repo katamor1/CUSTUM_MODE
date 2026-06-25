@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 import { BazaarClient, BazaarError } from "../bazaar"
+import { initializeProjectRules, loadProjectChecklist, loadReviewResultSchema } from "../projectRules/io"
+import { validateReviewResultJson } from "../projectRules/validator"
+import { renderReviewResultMarkdown } from "../projectRules/markdown"
+import { ReviewResult } from "../projectRules/types"
 
 interface JsonRpcMessage {
   jsonrpc?: "2.0"
@@ -61,6 +65,31 @@ const tools: ToolDef[] = [
     name: "bazaar_status",
     description: "Return Bazaar status for a repository.",
     inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root") }, ["cwd"])
+  },
+  {
+    name: "project_rules_init",
+    description: "Create default .bob/review/checklist.json and review-result.schema.json if they are missing.",
+    inputSchema: objectSchema({ cwd: stringProp("Workspace root") }, ["cwd"])
+  },
+  {
+    name: "project_rules_get_checklist",
+    description: "Return the project-specific review checklist JSON. Falls back to the built-in default checklist when missing.",
+    inputSchema: objectSchema({ cwd: stringProp("Workspace root"), path: optionalStringProp("Optional checklist path, workspace-relative or absolute") }, ["cwd"])
+  },
+  {
+    name: "project_rules_get_schema",
+    description: "Return the review result JSON schema. Falls back to the built-in default schema when missing.",
+    inputSchema: objectSchema({ cwd: stringProp("Workspace root"), path: optionalStringProp("Optional schema path, workspace-relative or absolute") }, ["cwd"])
+  },
+  {
+    name: "project_rules_validate_review_result",
+    description: "Validate normalized review result JSON and return validation issues.",
+    inputSchema: objectSchema({ json: stringProp("Review result JSON text") }, ["json"])
+  },
+  {
+    name: "project_rules_render_markdown",
+    description: "Render normalized review result JSON as a Markdown checklist summary.",
+    inputSchema: objectSchema({ json: stringProp("Review result JSON text") }, ["json"])
   }
 ]
 
@@ -71,7 +100,7 @@ const reader = new McpStdioReader(async (message) => {
       respond(message.id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "bob-bazaar-review", version: "0.1.0" }
+        serverInfo: { name: "bob-bazaar-review", version: "0.2.0" }
       })
       return
     }
@@ -123,6 +152,22 @@ async function callTool(name: string, args: any): Promise<any> {
       return commandText(await client.cat(requiredString(args, "cwd"), requiredString(args, "revision"), requiredString(args, "path")))
     case "bazaar_status":
       return commandText(await client.status(requiredString(args, "cwd")))
+    case "project_rules_init":
+      return text(JSON.stringify(await initializeProjectRules(requiredString(args, "cwd")), null, 2))
+    case "project_rules_get_checklist":
+      return jsonText(await loadProjectChecklist(requiredString(args, "cwd"), optionalString(args, "path")))
+    case "project_rules_get_schema":
+      return jsonText(await loadReviewResultSchema(requiredString(args, "cwd"), optionalString(args, "path")))
+    case "project_rules_validate_review_result":
+      return jsonText(validateReviewResultJson(requiredString(args, "json")))
+    case "project_rules_render_markdown": {
+      const parsed = JSON.parse(requiredString(args, "json")) as ReviewResult
+      const validation = validateReviewResultJson(parsed)
+      if (!validation.valid) {
+        return jsonText(validation)
+      }
+      return text(renderReviewResultMarkdown(parsed))
+    }
     default:
       throw new BazaarError(`Unknown Bazaar MCP tool: ${name}`)
   }
@@ -140,6 +185,10 @@ function commandText(result: { stdout: string; stderr: string; command: string; 
 
 function text(value: string): any {
   return { content: [{ type: "text", text: value }] }
+}
+
+function jsonText(value: unknown): any {
+  return text(JSON.stringify(value, null, 2))
 }
 
 function respond(id: JsonRpcMessage["id"], result: any): void {
