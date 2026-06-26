@@ -93,7 +93,7 @@ const tools: ToolDef[] = [
   }
 ]
 
-const reader = new McpStdioReader(async (message) => {
+async function handleMessage(message: JsonRpcMessage): Promise<void> {
   if (!message.method) return
   try {
     if (message.method === "initialize") {
@@ -127,12 +127,7 @@ const reader = new McpStdioReader(async (message) => {
       content: [{ type: "text", text: formatError(error) }]
     })
   }
-})
-
-process.stdin.on("data", (chunk) => reader.push(chunk))
-process.stdin.on("error", (error) => {
-  process.stderr.write(`stdin error: ${String(error)}\n`)
-})
+}
 
 async function callTool(name: string, args: any): Promise<any> {
   switch (name) {
@@ -287,3 +282,10 @@ function parseContentLength(header: string): number | undefined {
   }
   return undefined
 }
+
+const reader = new McpStdioReader(handleMessage)
+
+process.stdin.on("data", (chunk) => reader.push(chunk))
+process.stdin.on("error", (error) => {
+  process.stderr.write(`stdin error: ${String(error)}\n`)
+})

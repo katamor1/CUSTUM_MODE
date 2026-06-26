@@ -1,0 +1,29 @@
+# Source and build configuration not needed at runtime
+src/**
+*.ts
+*.tsbuildinfo
+tsconfig.json
+
+# Dependency caches and package-manager files
+node_modules/**
+npm-debug.log*
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# Local editor/runtime files
+.vscode/**
+*.vsix
+.DS_Store
+Thumbs.db
+
+# Tests and temporary output
+test/**
+tests/**
+coverage/**
+.tmp/**
+tmp/**
+
+# Repository metadata
+.git/**
+.gitignore

@@ -6,6 +6,7 @@
 
 | Command | Description |
 | --- | --- |
+| `Bob Bazaar: Open Bazaar Review GUI` | Opens a GUI for revision metadata lookup and Bob review packet creation. |
 | `Bob Bazaar: Configure Bazaar MCP for Bob` | Writes a `bazaar` MCP server entry to `.bob/mcp.json`. |
 | `Bob Bazaar: Initialize Project Review Rules` | Creates `.bob/review/checklist.json` and `.bob/review/review-result.schema.json` when missing. |
 | `Bob Bazaar: Review Bazaar Revision with Bob` | Runs `bzr log -r REV` and `bzr diff -c REV`, then opens a Bob review packet. |
@@ -13,6 +14,36 @@
 | `Bob Bazaar: Review Bazaar Revision with Project Rules` | Adds project checklist and JSON output contract to the Bob review packet. |
 | `Bob Bazaar: Review Bazaar Revision Range with Project Rules` | Adds project checklist and JSON output contract to a range review packet. |
 | `Bob Bazaar: Validate Project Review Result JSON` | Validates normalized review JSON from the active editor or selection and can render Markdown. |
+
+## Review GUI
+
+Run:
+
+```text
+Bob Bazaar: Open Bazaar Review GUI
+```
+
+The GUI supports this flow:
+
+1. Select workspace.
+2. If `.bob` is missing required files, the GUI shows `未初期化` and lists missing files.
+3. Press `.bobを初期化` to copy missing Skill / Workflow / Mode / review templates and generate `.bob/mcp.json` with the actual MCP server path.
+4. Enter a Bazaar revision.
+5. Press `取得` to show commit message, author, committer, timestamp, changed file count, and changed files.
+6. Press `レビューしてBobにADD` to build a review packet, open it as Markdown, and call `bob-code.addToContext`.
+
+Required `.bob` files checked by the GUI:
+
+```text
+.bob/mcp.json
+.bob/custom_modes.yaml
+.bob/review/checklist.json
+.bob/review/review-result.schema.json
+.bob/review/review-prompt-template.md
+.bob/review/examples/review-result.example.json
+.bob/skills/project-review-checklist/SKILL.md
+.bob/workflows/bazaar-project-rule-review.md
+```
 
 ## MCP tools
 
@@ -97,7 +128,7 @@ npm run package
 Install the generated VSIX into Bob IDE / VSCode:
 
 ```bash
-code --install-extension bob-bazaar-review-0.2.0.vsix
+code --install-extension bob-bazaar-review-0.3.0.vsix
 ```
 
 ## Configure Bob MCP

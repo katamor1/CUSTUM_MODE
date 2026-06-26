@@ -6,7 +6,7 @@ const CONFIDENCES = ["high", "medium", "low"]
 
 export function validateReviewResultJson(input: string | unknown): ValidationResult {
   const issues: ValidationIssue[] = []
-  let value: any = input
+  let value: unknown = input
 
   if (typeof input === "string") {
     try {
@@ -43,13 +43,14 @@ export function validateReviewResultJson(input: string | unknown): ValidationRes
     issues.push({ path: "$.summary", message: "summary must be an object" })
   } else {
     for (const status of STATUSES) {
-      if (!Number.isInteger(value.summary[status]) || value.summary[status] < 0) {
+      const summaryValue = value.summary[status]
+      if (typeof summaryValue !== "number" || !Number.isInteger(summaryValue) || summaryValue < 0) {
         issues.push({ path: `$.summary.${status}`, message: "summary count must be a non-negative integer" })
       }
     }
   }
 
-  validateSemanticRules(value as ReviewResult, issues)
+  validateSemanticRules(value as unknown as ReviewResult, issues)
 
   return { valid: issues.length === 0, issues }
 }

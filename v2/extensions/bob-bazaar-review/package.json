@@ -2,10 +2,15 @@
   "name": "bob-bazaar-review",
   "displayName": "Bob Bazaar Review",
   "description": "Companion extension that exposes Bazaar revision review tools and project rule review helpers to IBM Bob through MCP.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "katamor1",
   "license": "UNLICENSED",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/katamor1/bob_builtin_analyze.git",
+    "directory": "extensions/bob-bazaar-review"
+  },
   "engines": {
     "vscode": "^1.106.1"
   },
@@ -16,6 +21,7 @@
     "IBM.bob-code"
   ],
   "activationEvents": [
+    "onCommand:bobBazaar.openReviewGui",
     "onCommand:bobBazaar.configureMcp",
     "onCommand:bobBazaar.initProjectRules",
     "onCommand:bobBazaar.reviewRevision",
@@ -27,6 +33,11 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "bobBazaar.openReviewGui",
+        "title": "Open Bazaar Review GUI",
+        "category": "Bob Bazaar"
+      },
       {
         "command": "bobBazaar.configureMcp",
         "title": "Configure Bazaar MCP for Bob",
@@ -82,6 +93,12 @@
           "minimum": 32768,
           "description": "Maximum Bazaar diff size to include in the generated review packet."
         },
+        "bobBazaar.maxAddedFileContentBytes": {
+          "type": "number",
+          "default": 262144,
+          "minimum": 0,
+          "description": "Maximum total size of newly added file contents to include in the generated review packet. Set 0 to omit added file content sections."
+        },
         "bobBazaar.projectRules.checklistPath": {
           "type": "string",
           "default": ".bob/review/checklist.json",
@@ -96,27 +113,17 @@
     },
     "menus": {
       "commandPalette": [
-        {
-          "command": "bobBazaar.configureMcp"
-        },
-        {
-          "command": "bobBazaar.initProjectRules"
-        },
-        {
-          "command": "bobBazaar.reviewRevision"
-        },
-        {
-          "command": "bobBazaar.reviewRange"
-        },
-        {
-          "command": "bobBazaar.reviewRevisionWithProjectRules"
-        },
-        {
-          "command": "bobBazaar.reviewRangeWithProjectRules"
-        },
-        {
-          "command": "bobBazaar.validateReviewResultJson"
-        }
+        { "command": "bobBazaar.openReviewGui" },
+        { "command": "bobBazaar.configureMcp" },
+        { "command": "bobBazaar.initProjectRules" },
+        { "command": "bobBazaar.reviewRevision" },
+        { "command": "bobBazaar.reviewRange" },
+        { "command": "bobBazaar.reviewRevisionWithProjectRules" },
+        { "command": "bobBazaar.reviewRangeWithProjectRules" },
+        { "command": "bobBazaar.validateReviewResultJson" }
+      ],
+      "scm/title": [
+        { "command": "bobBazaar.openReviewGui", "group": "navigation" }
       ]
     }
   },

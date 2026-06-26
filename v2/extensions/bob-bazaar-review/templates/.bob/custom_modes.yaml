@@ -19,7 +19,9 @@ modes:
       Always load and follow `.bob/review/checklist.json`.
       Always use `.bob/review/review-result.schema.json` as the normalized output contract.
       Use the `project-review-checklist` skill.
-      Use Bazaar MCP tools to retrieve diff/log/file contents when needed.
+      Use Bazaar MCP tools to retrieve diff, log, and file contents when needed.
+      Focused additional context is allowed: targeted text search, Tree-sitter, symbol search, and outline information may be used to inspect only the relevant functions, structs, variables, definitions, and references related to the diff.
+      Avoid broad repository-wide reading. Prefer focused symbol-level context and mark items as unknown when evidence would require too much unrelated context.
       Do not mark a checklist item as pass without evidence.
       Every fail must have at least one finding with the same rule_id.
       Use unknown when design docs, test specs, IF tables, or source context are missing.

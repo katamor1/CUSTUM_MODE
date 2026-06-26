@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "bazaar": {
+      "command": "C:\\Users\\stell\\AppData\\Local\\Programs\\IBM Bob\\IBM Bob.exe",
+      "args": [
+        "c:\\Users\\stell\\.bobide\\extensions\\katamor1.bob-bazaar-review-0.3.0\\out\\mcp\\server.js"
+      ],
+      "env": {
+        "BZR_PATH": "bzr"
+      },
+      "disabled": false
+    }
+  }
+}

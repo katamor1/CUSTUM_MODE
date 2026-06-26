@@ -16,6 +16,10 @@ export interface BazaarOptions {
   maxBuffer?: number
 }
 
+interface RunOptions {
+  allowedExitCodes?: Array<number | string>
+}
+
 export class BazaarError extends Error {
   constructor(message: string, readonly details?: unknown) {
     super(message)
@@ -48,17 +52,17 @@ export class BazaarClient {
   }
 
   async diffRevision(cwd: string, revision: string): Promise<BazaarCommandResult> {
-    return this.run(cwd, ["diff", "-c", validateRevision(revision)])
+    return this.run(cwd, ["diff", "-c", validateRevision(revision)], { allowedExitCodes: [0, 1] })
   }
 
   async diffRange(cwd: string, baseRevision: string, targetRevision: string): Promise<BazaarCommandResult> {
     const range = `${validateRevision(baseRevision)}..${validateRevision(targetRevision)}`
-    return this.run(cwd, ["diff", "-r", range])
+    return this.run(cwd, ["diff", "-r", range], { allowedExitCodes: [0, 1] })
   }
 
   async diffWorkingTree(cwd: string, baseRevision?: string): Promise<BazaarCommandResult> {
     const args = baseRevision ? ["diff", "-r", validateRevision(baseRevision)] : ["diff"]
-    return this.run(cwd, args)
+    return this.run(cwd, args, { allowedExitCodes: [0, 1] })
   }
 
   async cat(cwd: string, revision: string, relativePath: string): Promise<BazaarCommandResult> {
@@ -69,10 +73,12 @@ export class BazaarClient {
     return this.run(cwd, ["status"])
   }
 
-  async run(cwd: string, args: string[]): Promise<BazaarCommandResult> {
+  async run(cwd: string, args: string[], options: RunOptions = {}): Promise<BazaarCommandResult> {
     if (!cwd || cwd.includes("\0")) {
       throw new BazaarError("Invalid Bazaar working directory")
     }
+
+    const allowedExitCodes = options.allowedExitCodes ?? [0]
 
     try {
       const result = await execFileAsync(this.bzrPath, args, {
@@ -96,13 +102,25 @@ export class BazaarClient {
     } catch (error: any) {
       const stdout = typeof error?.stdout === "string" ? error.stdout : ""
       const stderr = typeof error?.stderr === "string" ? error.stderr : ""
+      const code = error?.code
+
+      if (allowedExitCodes.includes(code)) {
+        return {
+          stdout,
+          stderr,
+          command: this.bzrPath,
+          args,
+          cwd
+        }
+      }
+
       const message = stderr.trim() || stdout.trim() || String(error?.message ?? error)
       throw new BazaarError(`bzr ${args.join(" ")} failed: ${message}`, {
         cwd,
         args,
         stdout,
         stderr,
-        code: error?.code
+        code
       })
     }
   }

@@ -7,9 +7,12 @@ import { buildProjectRulesSection } from "./projectRules/packet"
 import { validateReviewResultJson } from "./projectRules/validator"
 import { renderReviewResultMarkdown } from "./projectRules/markdown"
 import { ReviewResult } from "./projectRules/types"
+import { openBazaarReviewGui } from "./reviewGui"
+import { buildAddedFilesContentSection, loadBazaarRevisionPacketInput } from "./revisionInfo"
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
+    vscode.commands.registerCommand("bobBazaar.openReviewGui", () => openBazaarReviewGui(context)),
     vscode.commands.registerCommand("bobBazaar.configureMcp", () => configureMcp(context)),
     vscode.commands.registerCommand("bobBazaar.initProjectRules", () => initProjectRules()),
     vscode.commands.registerCommand("bobBazaar.reviewRevision", () => reviewRevision(context, false)),
@@ -68,21 +71,21 @@ async function reviewRevision(context: vscode.ExtensionContext, withProjectRules
 
   await withProgress("Preparing Bazaar revision review packet", async () => {
     const client = makeBazaarClient()
-    const root = await client.root(folder.uri.fsPath)
-    const [log, diff, projectRulesSection] = await Promise.all([
-      client.log(root, revision),
-      client.diffRevision(root, revision),
-      withProjectRules ? buildProjectRulesSectionForWorkspace(root) : Promise.resolve(undefined)
+    const input = await loadBazaarRevisionPacketInput(client, folder.uri.fsPath, revision)
+    const [addedFilesSection, projectRulesSection] = await Promise.all([
+      buildAddedFilesContentSection(client, input.root, revision, input.info, getMaxAddedFileContentBytes()),
+      withProjectRules ? buildProjectRulesSectionForWorkspace(input.root) : Promise.resolve(undefined)
     ])
 
+    const extraSections = [addedFilesSection, projectRulesSection].filter((section): section is string => Boolean(section))
     const packet = buildReviewPacket({
-      repositoryRoot: root,
+      repositoryRoot: input.root,
       mode: "singleRevision",
       revision,
-      log,
-      diff,
+      log: input.log,
+      diff: input.diff,
       maxDiffBytes: getMaxDiffBytes(),
-      extraSections: projectRulesSection ? [projectRulesSection] : undefined
+      extraSections: extraSections.length > 0 ? extraSections : undefined
     })
 
     await showAndOfferBobContext(context, packet, withProjectRules ? `bazaar-project-review-${revision}.md` : `bazaar-review-${revision}.md`)
@@ -179,6 +182,11 @@ function makeBazaarClient(): BazaarClient {
 function getMaxDiffBytes(): number {
   const config = vscode.workspace.getConfiguration("bobBazaar")
   return config.get<number>("maxDiffBytes", 1024 * 1024)
+}
+
+function getMaxAddedFileContentBytes(): number {
+  const config = vscode.workspace.getConfiguration("bobBazaar")
+  return config.get<number>("maxAddedFileContentBytes", 256 * 1024)
 }
 
 async function pickWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
