@@ -4,6 +4,7 @@ import { initializeProjectRules, loadProjectChecklist, loadReviewResultSchema } 
 import { validateReviewResultJson } from "../projectRules/validator"
 import { renderReviewResultMarkdown } from "../projectRules/markdown"
 import { ReviewResult } from "../projectRules/types"
+import { getLatestReviewResult, getReviewResult } from "../projectRules/reviewResultsStore"
 
 interface JsonRpcMessage {
   jsonrpc?: "2.0"
@@ -19,6 +20,8 @@ interface ToolDef {
   description: string
   inputSchema: Record<string, unknown>
 }
+
+const SERVER_VERSION = "0.3.0"
 
 const client = new BazaarClient({
   bzrPath: process.env.BZR_PATH || "bzr",
@@ -90,6 +93,16 @@ const tools: ToolDef[] = [
     name: "project_rules_render_markdown",
     description: "Render normalized review result JSON as a Markdown checklist summary.",
     inputSchema: objectSchema({ json: stringProp("Review result JSON text") }, ["json"])
+  },
+  {
+    name: "project_rules_get_latest_review_result",
+    description: "Return the newest saved review-result JSON from .bob/review/results.",
+    inputSchema: objectSchema({ cwd: stringProp("Workspace root") }, ["cwd"])
+  },
+  {
+    name: "project_rules_get_review_result",
+    description: "Return a saved review-result JSON from .bob/review/results by review id.",
+    inputSchema: objectSchema({ cwd: stringProp("Workspace root"), reviewId: stringProp("Review id or result file basename") }, ["cwd", "reviewId"])
   }
 ]
 
@@ -100,7 +113,7 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
       respond(message.id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "bob-bazaar-review", version: "0.2.0" }
+        serverInfo: { name: "bob-bazaar-review", version: SERVER_VERSION }
       })
       return
     }
@@ -163,8 +176,20 @@ async function callTool(name: string, args: any): Promise<any> {
       }
       return text(renderReviewResultMarkdown(parsed))
     }
+    case "project_rules_get_latest_review_result":
+      return jsonText(await readStoredReviewResult(() => getLatestReviewResult(requiredString(args, "cwd"))))
+    case "project_rules_get_review_result":
+      return jsonText(await readStoredReviewResult(() => getReviewResult(requiredString(args, "cwd"), requiredString(args, "reviewId"))))
     default:
       throw new BazaarError(`Unknown Bazaar MCP tool: ${name}`)
+  }
+}
+
+async function readStoredReviewResult(read: () => Promise<unknown>): Promise<unknown> {
+  try {
+    return await read()
+  } catch (error) {
+    throw new BazaarError(error instanceof Error ? error.message : String(error))
   }
 }
 

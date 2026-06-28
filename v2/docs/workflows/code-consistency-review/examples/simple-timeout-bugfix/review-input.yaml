@@ -1,0 +1,67 @@
+schema_version: 1
+
+review:
+  id: REVIEW-SAMPLE-001
+  title: "timeout 異常系処理の修正"
+  change_type: bugfix
+  purpose: "timeout 発生時に正常終了へ合流せず、ERR_TIMEOUT を返して上位へ異常通知するように修正する。"
+  base: main
+  head: feature/sample-timeout-bugfix
+  ticket_ids:
+    - ISSUE-SAMPLE-123
+  author_note: "timeout 分岐の戻り値とテスト観点を重点的に確認してほしい。"
+  out_of_scope:
+    - "性能測定"
+    - "UI 表示文言"
+
+artifacts:
+  requirements:
+    - path: docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/requirements-timeout.md
+      version: "1.0"
+      sections:
+        - REQ-123
+  basic_design:
+    - path: docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/basic-design-timeout.md
+      version: "1.0"
+      sections:
+        - BD-45
+  detailed_design:
+    - path: docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/detailed-design-timeout.md
+      version: "1.0"
+      sections:
+        - DD-88
+  test_spec:
+    - path: docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/test-spec-timeout.md
+      version: "1.0"
+      cases:
+        - TC-789
+  ledgers:
+    - path: docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/error-ledger.md
+      version: "1.0"
+      rows:
+        - ERR_TIMEOUT
+
+review_focus:
+  - requirement-code-consistency
+  - design-code-consistency
+  - test-gap
+  - document-update-gap
+  - rt-ts-rule
+
+analysis_options:
+  include_callers: true
+  include_callees: true
+  include_global_access: true
+  include_struct_impact: true
+  include_ledgers: true
+  max_call_depth: 2
+  max_code_context_lines: 80
+  language:
+    - c
+
+bob_options:
+  prompt_template: consistency-review-v1
+  output_format: yaml
+  require_evidence: true
+  allow_questions: true
+  forbid_final_approval: true

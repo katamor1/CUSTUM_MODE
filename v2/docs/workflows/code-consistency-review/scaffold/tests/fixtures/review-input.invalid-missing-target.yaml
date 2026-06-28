@@ -1,0 +1,18 @@
+schema_version: 1
+
+review:
+  id: REVIEW-FIXTURE-INVALID-001
+  title: "missing target ref fixture"
+  change_type: bugfix
+  purpose: "Validate target ref detection."
+  base: main
+
+artifacts:
+  requirements:
+    - path: docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/requirements-timeout.md
+      version: "1.0"
+      sections:
+        - REQ-123
+
+review_focus:
+  - requirement-code-consistency

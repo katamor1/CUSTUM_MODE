@@ -3,12 +3,11 @@
   "displayName": "Bob Bazaar Review",
   "description": "Companion extension that exposes Bazaar revision review tools and project rule review helpers to IBM Bob through MCP.",
   "version": "0.3.0",
-  "publisher": "katamor1",
+  "publisher": "local",
   "license": "UNLICENSED",
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/katamor1/bob_builtin_analyze.git",
     "directory": "extensions/bob-bazaar-review"
   },
   "engines": {
@@ -18,10 +17,16 @@
     "Other"
   ],
   "extensionDependencies": [
-    "IBM.bob-code"
+    "IBM.bob-code",
+    "local.workflow-register"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:bobBazaar.openReviewGui",
+    "onCommand:bobBazaar.collectReviewContext",
+    "onCommand:bobBazaar.loadReviewRules",
+    "onCommand:bobBazaar.captureReviewResult",
+    "onCommand:bobBazaar.saveReviewResultFromClipboard",
     "onCommand:bobBazaar.configureMcp",
     "onCommand:bobBazaar.initProjectRules",
     "onCommand:bobBazaar.reviewRevision",
@@ -36,6 +41,26 @@
       {
         "command": "bobBazaar.openReviewGui",
         "title": "Open Bazaar Review GUI",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.collectReviewContext",
+        "title": "Collect Bazaar Review Context",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.loadReviewRules",
+        "title": "Load Project Review Rules",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.captureReviewResult",
+        "title": "Capture Review Result",
+        "category": "Bob Bazaar"
+      },
+      {
+        "command": "bobBazaar.saveReviewResultFromClipboard",
+        "title": "Save Review Result from Clipboard",
         "category": "Bob Bazaar"
       },
       {
@@ -114,6 +139,10 @@
     "menus": {
       "commandPalette": [
         { "command": "bobBazaar.openReviewGui" },
+        { "command": "bobBazaar.collectReviewContext" },
+        { "command": "bobBazaar.loadReviewRules" },
+        { "command": "bobBazaar.captureReviewResult" },
+        { "command": "bobBazaar.saveReviewResultFromClipboard" },
         { "command": "bobBazaar.configureMcp" },
         { "command": "bobBazaar.initProjectRules" },
         { "command": "bobBazaar.reviewRevision" },
@@ -129,6 +158,7 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
+    "test": "npm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
     "package": "vsce package --no-dependencies"

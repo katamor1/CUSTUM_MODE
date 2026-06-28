@@ -1,0 +1,77 @@
+schema_version: 1
+review_summary:
+  review_id: REVIEW-SAMPLE-001
+  package_id: PACKAGE-SAMPLE-001
+  target_range: "main..feature/sample-timeout-bugfix"
+  result_type: pre_review
+  final_approval: not_performed
+  scope_statement: "入力された simple-timeout-bugfix の review-package の範囲で確認したプレレビュー結果"
+  generated_at: "2026-06-29T12:00:00+09:00"
+  prompt_template_id: consistency-review-v1
+
+findings:
+  - id: PRE-001
+    category: requirement-code-consistency
+    severity: high
+    confidence: high
+    summary: "REQ-123 の timeout 異常系に対して、変更後コードが ERR_TIMEOUT ではなく ERR_OK を返している可能性がある"
+    evidence:
+      - evidence_id: REQ-0001
+        type: requirement
+        ref: "REQ-123"
+      - evidence_id: DD-0001
+        type: detailed_design
+        ref: "DD-88"
+      - evidence_id: SRC-0001
+        type: code
+        ref: "foo_timeout_after_buggy.c:9-12"
+    reason: "要求と詳細設計では timeout 発生時に ERR_TIMEOUT を返すとされているが、変更後コードでは timeoutDetected 分岐内で ERR_OK を返している。"
+    impact: "timeout が正常終了として扱われ、上位処理が異常を検出できない可能性がある。"
+    recommended_action: "timeoutDetected 分岐の戻り値を ERR_TIMEOUT に戻すか、要求・設計側の変更がある場合は文書を更新する。"
+    human_check: "今回の変更で timeout を正常扱いにする仕様変更が合意済みか確認する。"
+
+  - id: PRE-002
+    category: test-gap
+    severity: medium
+    confidence: medium
+    summary: "TC-789 が変更後コードで失敗する可能性があるため、テスト期待値と実装の整合確認が必要"
+    evidence:
+      - evidence_id: TC-0001
+        type: test_spec
+        ref: "TC-789"
+      - evidence_id: SRC-0001
+        type: code
+        ref: "foo_timeout_after_buggy.c:9-12"
+    reason: "TC-789 は timeout 時の戻り値を ERR_TIMEOUT としているが、変更後コードは ERR_OK を返している。"
+    impact: "既存テストが失敗するか、テスト仕様の期待値更新が必要になる可能性がある。"
+    recommended_action: "実装修正またはテスト仕様の期待値変更が必要か確認する。"
+    human_check: "TC-789 を今回の修正で実行対象に含めるか確認する。"
+
+questions:
+  - id: Q-001
+    category: specification-clarification
+    summary: "timeout を正常扱いにする仕様変更が存在するか確認が必要"
+    reason: "コード差分は timeout 時に ERR_OK を返す方向だが、要求書・詳細設計書・テスト仕様書はいずれも ERR_TIMEOUT を期待している。"
+    evidence:
+      - evidence_id: REQ-0001
+        type: requirement
+        ref: "REQ-123"
+      - evidence_id: DD-0001
+        type: detailed_design
+        ref: "DD-88"
+    suggested_owner: design_owner
+    suggested_action: "仕様変更の有無を要求・設計担当に確認する。"
+
+coverage_notes:
+  - id: COV-001
+    type: checked
+    summary: "REQ-123、DD-88、TC-789、ERR_TIMEOUT、Foo_HandleTimeout を確認対象に含めた。"
+  - id: COV-002
+    type: not_checked
+    summary: "性能影響と実機タイミング影響は入力に測定結果がないため確認していない。"
+
+rejected_or_uncertain:
+  - id: UNC-001
+    summary: "RT 側ファイル I/O 混入の可能性"
+    reason: "入力されたサンプルコード範囲ではファイル I/O 呼び出しは確認できない。"
+    next_action: "実コードで RT 禁止 API チェックを実行する。"

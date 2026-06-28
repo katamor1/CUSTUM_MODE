@@ -1,0 +1,186 @@
+{
+  "name": "workflow-register",
+  "displayName": "Bob Workflow Register",
+  "description": "Registers IBM Bob workflows declared under .bob/workflows/*/WORKFLOW.md.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "directory": "extensions/workflow-register"
+  },
+  "engines": {
+    "vscode": "^1.106.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:workflowRegister.reload",
+    "onCommand:workflowRegister.inspect",
+    "onCommand:workflowRegister.completeCurrentStep",
+    "onCommand:workflowRegister.completeStep",
+    "onCommand:workflowRegister.inspectActiveSteps",
+    "onCommand:workflowRegister.runWorkflow",
+    "onCommand:workflowRegister.inspectRuns",
+    "onCommand:workflowRegister.resumeRun",
+    "onCommand:workflowRegister.retryCurrentStep",
+    "onCommand:workflowRegister.inspectRunDiagnostics",
+    "onCommand:workflowRegister.designWorkflowWithAi",
+    "onCommand:workflowRegister.improveWorkflowWithAi",
+    "onCommand:workflowRegister.explainWorkflowDiagnostics",
+    "onCommand:workflowRegister.validateCurrentWorkflow",
+    "onCommand:workflowRegister.validateWorkspaceWorkflows",
+    "onCommand:workflowRegister.createWorkflowFromTemplate"
+  ],
+  "main": "./out/extensionWithAuthoring.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "workflowRegister.reload",
+        "title": "Reload Bob Workflow Files",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.inspect",
+        "title": "Inspect Bob Workflow Registration",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.completeCurrentStep",
+        "title": "Complete Current Bob Workflow Step",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.completeStep",
+        "title": "Complete Current Step",
+        "category": "Workflow Step"
+      },
+      {
+        "command": "workflowRegister.inspectActiveSteps",
+        "title": "Inspect Active Bob Workflow Steps",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.runWorkflow",
+        "title": "Run Workflow",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.inspectRuns",
+        "title": "Inspect Workflow Runs",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.resumeRun",
+        "title": "Resume Workflow Run",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.retryCurrentStep",
+        "title": "Retry Current Workflow Step",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.inspectRunDiagnostics",
+        "title": "Inspect Workflow Run Diagnostics",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.designWorkflowWithAi",
+        "title": "Design Workflow with AI",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.improveWorkflowWithAi",
+        "title": "Improve Workflow with AI",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.explainWorkflowDiagnostics",
+        "title": "Explain Workflow Diagnostics",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.validateCurrentWorkflow",
+        "title": "Validate Current Workflow",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.validateWorkspaceWorkflows",
+        "title": "Validate Workspace Workflows",
+        "category": "Bob Workflow Register"
+      },
+      {
+        "command": "workflowRegister.createWorkflowFromTemplate",
+        "title": "Create Workflow from Template",
+        "category": "Bob Workflow Register"
+      }
+    ],
+    "configuration": {
+      "title": "Bob Workflow Register",
+      "properties": {
+        "workflowRegister.sourceId": {
+          "type": "string",
+          "default": "workflow-register",
+          "description": "Source id used when registering workflows with IBM Bob."
+        },
+        "workflowRegister.sourceName": {
+          "type": "string",
+          "default": "Workflow Register",
+          "description": "Source name shown to IBM Bob when registering workflows."
+        },
+        "workflowRegister.agentCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Optional VS Code command used by the standalone workflow engine to execute agent steps. The command receives the AgentExecutionInput object and must return text or an object with text, result, output, or content."
+        },
+        "workflowRegister.aiProviderCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Optional VS Code command used as a WorkflowAiProvider. The command receives { kind, payload } and returns a workflow design draft, repair proposal, or diagnostic explanation."
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        { "command": "workflowRegister.reload" },
+        { "command": "workflowRegister.inspect" },
+        { "command": "workflowRegister.completeCurrentStep" },
+        { "command": "workflowRegister.completeStep" },
+        { "command": "workflowRegister.inspectActiveSteps" },
+        { "command": "workflowRegister.runWorkflow" },
+        { "command": "workflowRegister.inspectRuns" },
+        { "command": "workflowRegister.resumeRun" },
+        { "command": "workflowRegister.retryCurrentStep" },
+        { "command": "workflowRegister.inspectRunDiagnostics" },
+        { "command": "workflowRegister.designWorkflowWithAi" },
+        { "command": "workflowRegister.improveWorkflowWithAi" },
+        { "command": "workflowRegister.explainWorkflowDiagnostics" },
+        { "command": "workflowRegister.validateCurrentWorkflow" },
+        { "command": "workflowRegister.validateWorkspaceWorkflows" },
+        { "command": "workflowRegister.createWorkflowFromTemplate" }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "test": "npm run compile && node --test test/*.test.js",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "js-yaml": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.106.0",
+    "typescript": "^5.4.5",
+    "@vscode/vsce": "^3.2.1"
+  }
+}

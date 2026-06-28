@@ -1,0 +1,31 @@
+{
+  "name": "sample-workflow-ai-provider",
+  "displayName": "Sample Workflow AI Provider",
+  "description": "Sample command-backed AI provider for workflow-register.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "private": true,
+  "engines": {
+    "vscode": "^1.106.1"
+  },
+  "activationEvents": [
+    "onCommand:sampleWorkflowAiProvider.provide"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sampleWorkflowAiProvider.provide",
+        "title": "Sample Workflow AI Provider: Provide"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.106.0",
+    "typescript": "^5.4.5"
+  }
+}

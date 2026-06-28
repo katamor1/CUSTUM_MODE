@@ -9,6 +9,8 @@ export interface ProjectRulesPaths {
   schemaPath: string
 }
 
+const ALLOW_EXTERNAL_REVIEW_RULES_ENV = "BOB_BAZAAR_ALLOW_EXTERNAL_REVIEW_RULES"
+
 export function getProjectRulesPaths(workspaceRoot: string): ProjectRulesPaths {
   const reviewDir = path.join(workspaceRoot, ".bob", "review")
   return {
@@ -41,6 +43,21 @@ export async function loadProjectChecklist(workspaceRoot: string, explicitPath?:
   }
 }
 
+export async function loadProjectChecklistRequired(workspaceRoot: string, explicitPath?: string): Promise<ProjectChecklist> {
+  const checklistPath = explicitPath ? resolveWorkspacePath(workspaceRoot, explicitPath) : getProjectRulesPaths(workspaceRoot).checklistPath
+  try {
+    const raw = await fs.readFile(checklistPath, "utf8")
+    const parsed = JSON.parse(raw)
+    assertChecklist(parsed, checklistPath)
+    return parsed
+  } catch (error: any) {
+    if (error?.code === "ENOENT") {
+      throw new Error(`Project checklist file not found: ${checklistPath}`)
+    }
+    throw new Error(`Failed to load project checklist ${checklistPath}: ${error?.message ?? String(error)}`)
+  }
+}
+
 export async function loadReviewResultSchema(workspaceRoot: string, explicitPath?: string): Promise<unknown> {
   const schemaPath = explicitPath ? resolveWorkspacePath(workspaceRoot, explicitPath) : getProjectRulesPaths(workspaceRoot).schemaPath
   try {
@@ -54,11 +71,33 @@ export async function loadReviewResultSchema(workspaceRoot: string, explicitPath
   }
 }
 
-export function resolveWorkspacePath(workspaceRoot: string, maybeRelativePath: string): string {
-  if (path.isAbsolute(maybeRelativePath)) {
-    return maybeRelativePath
+export async function loadReviewResultSchemaRequired(workspaceRoot: string, explicitPath?: string): Promise<unknown> {
+  const schemaPath = explicitPath ? resolveWorkspacePath(workspaceRoot, explicitPath) : getProjectRulesPaths(workspaceRoot).schemaPath
+  try {
+    const raw = await fs.readFile(schemaPath, "utf8")
+    return JSON.parse(raw)
+  } catch (error: any) {
+    if (error?.code === "ENOENT") {
+      throw new Error(`Review result schema file not found: ${schemaPath}`)
+    }
+    throw new Error(`Failed to load review result schema ${schemaPath}: ${error?.message ?? String(error)}`)
   }
-  return path.join(workspaceRoot, maybeRelativePath)
+}
+
+export function resolveWorkspacePath(workspaceRoot: string, maybeRelativePath: string): string {
+  const root = path.resolve(workspaceRoot)
+  const target = path.isAbsolute(maybeRelativePath)
+    ? path.resolve(maybeRelativePath)
+    : path.resolve(root, maybeRelativePath)
+  const relative = path.relative(root, target)
+  if (isWorkspaceEscapingPath(relative) && process.env[ALLOW_EXTERNAL_REVIEW_RULES_ENV] !== "1") {
+    throw new Error(`Project review rule path escapes the workspace: ${maybeRelativePath}. Set ${ALLOW_EXTERNAL_REVIEW_RULES_ENV}=1 to allow an explicit external path.`)
+  }
+  return target
+}
+
+function isWorkspaceEscapingPath(relativePath: string): boolean {
+  return relativePath.startsWith("..") || path.isAbsolute(relativePath)
 }
 
 async function writeJsonIfMissing(filePath: string, value: unknown): Promise<void> {

@@ -1,0 +1,31 @@
+{
+  "name": "bob-code-consistency-review-scaffold",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scaffold for bob code consistency pre-review MVP tooling.",
+  "type": "module",
+  "bin": {
+    "bob-review": "dist/src/cli/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "unit": "npm run build && node --test dist/tests/review-input-validator.test.js dist/tests/bob-output-validator.test.js dist/tests/git-diff-collector.test.js dist/tests/review-package-builder.test.js",
+    "preprocess": "node dist/src/cli/main.js preprocess",
+    "validate-output": "node dist/src/cli/main.js validate-output",
+    "triage": "node dist/src/cli/main.js triage",
+    "smoke": "npm run smoke:help && npm run smoke:preprocess && npm run smoke:validate-output && npm run smoke:triage",
+    "smoke:help": "npm run build && node dist/src/cli/main.js",
+    "smoke:preprocess": "npm run build && node dist/src/cli/main.js preprocess --input tests/fixtures/review-input.valid.yaml --out .tmp/review-package --diff-fixture tests/fixtures/diff-summary.valid.json",
+    "smoke:validate-output": "npm run build && node dist/src/cli/main.js validate-output --package .tmp/review-package --bob-output tests/fixtures/bob-output.valid.yaml",
+    "smoke:triage": "npm run build && node dist/src/cli/main.js triage --package .tmp/review-package --bob-output tests/fixtures/bob-output.valid.yaml --out .tmp/human-triage"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -18,7 +18,7 @@ const REQUIRED_FILES = [
   ".bob/review/review-prompt-template.md",
   ".bob/review/examples/review-result.example.json",
   ".bob/skills/project-review-checklist/SKILL.md",
-  ".bob/workflows/bazaar-project-rule-review.md"
+  ".bob/workflows/bazaar-project-rule-review/WORKFLOW.md"
 ]
 
 export async function getBobWorkspaceStatus(workspaceFolder: vscode.WorkspaceFolder, serverName = "bazaar"): Promise<BobWorkspaceStatus> {

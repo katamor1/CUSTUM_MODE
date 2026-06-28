@@ -1,0 +1,35 @@
+schema_version: 1
+review_summary:
+  review_id: REVIEW-FIXTURE-001
+  package_id: PACKAGE-FIXTURE-001
+  target_range: "main..docs/code-consistency-review-flow"
+  result_type: pre_review
+  final_approval: not_performed
+  scope_statement: "fixture review-package scope"
+  generated_at: "2026-06-29T13:00:00+09:00"
+  prompt_template_id: consistency-review-v1
+
+findings:
+  - id: PRE-001
+    category: requirement-code-consistency
+    severity: high
+    confidence: high
+    summary: "timeout 時の戻り値が要求と異なる可能性がある"
+    evidence:
+      - evidence_id: REQ-0001
+        type: requirement
+        ref: REQ-123
+      - evidence_id: SRC-0001
+        type: code
+        ref: foo_timeout_after_buggy.c:9-12
+    reason: "要求は ERR_TIMEOUT を期待しているが、コードは ERR_OK を返している。"
+    impact: "timeout が正常扱いになる可能性がある。"
+    recommended_action: "実装または仕様変更有無を確認する。"
+    human_check: "timeout を正常扱いする合意があるか確認する。"
+
+questions: []
+coverage_notes:
+  - id: COV-001
+    type: checked
+    summary: "REQ-123 と SRC-0001 を確認対象に含めた。"
+rejected_or_uncertain: []

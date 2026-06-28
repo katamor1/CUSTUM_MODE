@@ -162,6 +162,5 @@ Expected: test and verifier exit code 0; placeholder scan returns no matches.
 
 ## Execution Notes
 
-- Commit steps are omitted because `C:\Users\stell\source\repos\CUSTUM_MODE` is not a Git repository.
 - Worktree isolation is unavailable for the same reason.
 - Do not add a file under `.bob/rules-code/` during baseline creation; Bob would load it into the prompt and invalidate exact equivalence.

@@ -1,0 +1,15 @@
+{
+  "base": "fixture-base",
+  "head": "fixture-head",
+  "files": [
+    {
+      "path": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/code/foo_timeout_after_buggy.c",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "language": "c"
+    }
+  ],
+  "unifiedDiff": "diff --git a/foo_timeout_before.c b/foo_timeout_after_buggy.c\n@@ -7,7 +7,7 @@ int Foo_HandleTimeout(int timeoutDetected)\n     if (timeoutDetected) {\n         g_timeoutCount++;\n-        return ERR_TIMEOUT;\n+        return ERR_OK;\n     }\n",
+  "warnings": []
+}

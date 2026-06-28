@@ -151,12 +151,19 @@ export function parseChangedFileEntries(diffText: string): BazaarChangedFile[] {
       if (!files.has(match[2])) files.set(match[2], "unknown")
       continue
     }
-    match = /^\+\+\+\s+(?:b\/)?(.+?)\s*$/.exec(line)
-    if (match && match[1] !== "/dev/null") {
-      if (!files.has(match[1])) files.set(match[1], "unknown")
+    match = /^\+\+\+\s+(.+?)\s*$/.exec(line)
+    if (match) {
+      const filePath = normalizeDiffFilePath(match[1])
+      if (filePath && !files.has(filePath)) files.set(filePath, "unknown")
     }
   }
   return [...files.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([path, status]) => ({ path, status }))
+}
+
+function normalizeDiffFilePath(rawPath: string): string | undefined {
+  const withoutTimestamp = rawPath.split("\t")[0].trim()
+  if (!withoutTimestamp || withoutTimestamp === "/dev/null") return undefined
+  return withoutTimestamp.replace(/^b\//, "")
 }
 
 function normalizeStatus(status: string): BazaarChangedFileStatus {

@@ -1,0 +1,24 @@
+schema_version: 1
+review_summary:
+  review_id: REVIEW-FIXTURE-001
+  package_id: PACKAGE-FIXTURE-001
+  target_range: "main..docs/code-consistency-review-flow"
+  result_type: pre_review
+  final_approval: not_performed
+  scope_statement: "fixture missing evidence scope"
+
+findings:
+  - id: PRE-001
+    category: requirement-code-consistency
+    severity: high
+    confidence: high
+    summary: "timeout 時の戻り値が要求と異なる可能性がある"
+    evidence: []
+    reason: "fixture"
+    impact: "fixture"
+    recommended_action: "fixture"
+    human_check: "fixture"
+
+questions: []
+coverage_notes: []
+rejected_or_uncertain: []

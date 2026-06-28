@@ -1,12 +1,12 @@
 # IBM Bob 2.0.0 メッセージ生成方式 調査メモ
 
 調査日: 2026-06-25  
-対象リポジトリ: `katamor1/bob_builtin_analyze`  
-参照資料リポジトリ: `katamor1/project`
+対象リポジトリ: `/bob_builtin_analyze`  
+参照資料リポジトリ: `/project`
 
 ## 1. 結論
 
-`katamor1/bob_builtin_analyze` は、調査時点では空リポジトリであり、VSCode 拡張機能としての `package.json`、`src/extension.ts`、コマンド登録、WebView、チャット参加者、または IBM Bob 用メッセージ生成処理の実装は確認できなかった。
+`/bob_builtin_analyze` は、調査時点では空リポジトリであり、VSCode 拡張機能としての `package.json`、`src/extension.ts`、コマンド登録、WebView、チャット参加者、または IBM Bob 用メッセージ生成処理の実装は確認できなかった。
 
 そのため、本メモでは IBM Bob 2.0.0 の既存ドキュメントと mode pack 実装を読み、VSCode 拡張 `bob_builtin_analyze` で実現すべきメッセージ生成方式を整理する。
 
@@ -20,7 +20,7 @@
 
 ## 2. 調査範囲
 
-### 2.1 `katamor1/bob_builtin_analyze`
+### 2.1 `/bob_builtin_analyze`
 
 GitHub 上の対象リポジトリは存在するが、調査時点では空である。README も存在しなかった。
 
@@ -36,7 +36,7 @@ GitHub 上の対象リポジトリは存在するが、調査時点では空で�
 
 このため、既存実装の逆解析ではなく、IBM Bob 2.0.0 資料から VSCode 拡張で実装すべき構造を導出した。
 
-### 2.2 `katamor1/project` 側の参照資料
+### 2.2 `/project` 側の参照資料
 
 主に次を参照した。
 
@@ -438,10 +438,10 @@ identity、tenant、scope、workspace、source-free bundle が不足する場合
 
 ## 10. 未確認事項
 
-- `katamor1/bob_builtin_analyze` には調査時点で VSCode 拡張実装が存在しないため、実装済みコードの挙動は未確認。
+- `/bob_builtin_analyze` には調査時点で VSCode 拡張実装が存在しないため、実装済みコードの挙動は未確認。
 - IBM Bob mode pack の最新 validator はこの調査内では実行していない。
 - 実際の VSCode Language Model API / Chat Participant API を使うか、通常 command + WebView / Output Channel 構成にするかは未決定。
-- `katamor1/project` の `.copilot/` 資料は Copilot Studio bridge 向けの設計も含むため、VSCode 拡張では `copilot_surface` を `vscode` または `vscode-extension` に読み替える必要がある。
+- `/project` の `.copilot/` 資料は Copilot Studio bridge 向けの設計も含むため、VSCode 拡張では `copilot_surface` を `vscode` または `vscode-extension` に読み替える必要がある。
 
 ## 11. 次の作業
 

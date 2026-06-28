@@ -1,7 +1,7 @@
 # Bob 向け専用 VSCode 拡張機能 基盤分析
 
 調査日: 2026-06-26  
-対象リポジトリ: `katamor1/bob_builtin_analyze`  
+対象リポジトリ: `/bob_builtin_analyze`  
 主な確認コミット:
 
 - `ca23a93bf98c55daa068d9f7b8c76ddda4e2cf60` - Initial commit

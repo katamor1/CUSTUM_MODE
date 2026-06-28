@@ -1,0 +1,242 @@
+export type WorkflowSchemaVersion = "legacy" | "workflow-register/v1"
+export type WorkflowStepType = "command" | "agent" | "manual" | "result"
+export type RunStatus = "running" | "held" | "completed" | "failed"
+export type StepRunStatus = "pending" | "running" | "held" | "completed" | "failed"
+export type WorkflowStepCompletionMode = "auto" | "manual"
+export type WorkflowStepMessageMode = "full" | "current" | "silent" | "step"
+export type WorkflowFailurePolicy = "stop" | "continue" | "warn"
+
+export interface WorkflowInputDefinition {
+  type: "string" | "number" | "boolean" | "select"
+  title?: string
+  required?: boolean
+  requiredWhen?: string
+  prompt?: boolean
+  default?: unknown
+  options?: string[]
+}
+
+export interface WorkflowRequiresDefinition {
+  workspace?: boolean
+  bob?: {
+    minVersion?: string
+  }
+  files?: string[]
+}
+
+export interface WorkflowPreflightDefinition {
+  id: string
+  title?: string
+  required?: boolean
+  checks?: string[]
+  files?: string[]
+  failurePolicy?: WorkflowFailurePolicy
+}
+
+export interface WorkflowToolDefinition {
+  purpose?: string
+  required?: boolean
+  outputKey?: string
+  inputSource?: string
+  failurePolicy?: WorkflowFailurePolicy
+}
+
+export interface WorkflowApprovalRuleDefinition {
+  id?: string
+  when?: string
+  message?: string
+}
+
+export interface WorkflowGuardrailsDefinition {
+  allowedCommands?: string[]
+  deniedCommands?: string[]
+  requireApproval?: WorkflowApprovalRuleDefinition[]
+}
+
+export interface WorkflowArtifactDefinition {
+  id: string
+  producedBy?: string
+  path: string
+  schema?: string
+}
+
+export interface WorkflowCompletionDefinition {
+  summary?: string
+  includeArtifacts?: boolean
+  validateResult?: boolean
+  visualization?: {
+    type?: string
+    enabled?: boolean
+  }
+}
+
+export interface WorkflowActionDefinition {
+  provider: string
+  args?: unknown
+}
+
+export type ResultSourceDefinition =
+  | { source: "state"; stateKey: string; sinks: ResultSinkDefinition[] }
+  | { source: "literal"; text: string; sinks: ResultSinkDefinition[] }
+  | { source: "agent"; sinks: ResultSinkDefinition[] }
+
+export type ResultSinkDefinition =
+  | { type: "command"; command: string; args?: unknown[] }
+  | { type: "file"; path: string; encoding?: BufferEncoding }
+
+export interface BaseEngineStep {
+  id: string
+  title: string
+  type: WorkflowStepType
+  required?: boolean
+  prompt?: string
+  sendResult?: boolean
+  completeOnSuccess?: boolean
+  includeState?: string[]
+  maxResultBytes?: number
+  stateRequired?: boolean
+}
+
+export interface CommandEngineStep extends BaseEngineStep {
+  type: "command"
+  action: WorkflowActionDefinition
+  resultKey?: string
+}
+
+export interface AgentEngineStep extends BaseEngineStep {
+  type: "agent"
+  resultKey?: string
+  result?: ResultSourceDefinition
+}
+
+export interface ManualEngineStep extends BaseEngineStep {
+  type: "manual"
+}
+
+export interface ResultEngineStep extends BaseEngineStep {
+  type: "result"
+  result: ResultSourceDefinition
+}
+
+export type EngineStep = CommandEngineStep | AgentEngineStep | ManualEngineStep | ResultEngineStep
+
+export interface WorkflowTodoDefinition {
+  id: string
+  title: string
+  raw?: string
+}
+
+export interface CoreWorkflowDefinition {
+  id: string
+  name: string
+  label: string
+  menuLabel?: string
+  description: string
+  schemaVersion: WorkflowSchemaVersion
+  definitionHash?: string
+  filePath?: string
+  prompt: string
+  promptWithoutTodo: string
+  command?: string
+  commandArgs: unknown[]
+  mode: string
+  category?: string
+  permissions: string[]
+  autoApprovalEnabled: boolean
+  workspaceRequired: boolean
+  hidden: boolean
+  todoEnabled: boolean
+  todoRequired: boolean
+  todoAsSteps: boolean
+  stepCompletion: WorkflowStepCompletionMode
+  stepMessage: WorkflowStepMessageMode
+  todos: WorkflowTodoDefinition[]
+  inputs: Record<string, WorkflowInputDefinition>
+  requires: WorkflowRequiresDefinition
+  preflight: WorkflowPreflightDefinition[]
+  tools: Record<string, WorkflowToolDefinition>
+  guardrails: WorkflowGuardrailsDefinition
+  artifacts: WorkflowArtifactDefinition[]
+  completion: WorkflowCompletionDefinition
+  engineSteps: EngineStep[]
+}
+
+export interface AgentExecutionInput {
+  workflowId: string
+  runId: string
+  stepId: string
+  prompt: string
+  inputs: Record<string, unknown>
+  state: Record<string, string>
+}
+
+export interface AgentProvider {
+  run: (input: AgentExecutionInput) => Promise<string> | string
+}
+
+export interface ParseWorkflowRequest {
+  sourceId: string
+  filePath: string
+  text: string
+}
+
+export type ParseWorkflowResult =
+  | { ok: true; workflow: CoreWorkflowDefinition; diagnostics: string[] }
+  | { ok: false; diagnostics: string[] }
+
+export interface ActionExecutionInput {
+  args: unknown
+  inputs: Record<string, unknown>
+  state?: Record<string, string>
+  workflowId?: string
+  runId?: string
+  stepId?: string
+}
+
+export interface ActionExecutionResult {
+  ok: boolean
+  value?: unknown
+  error?: string
+}
+
+export interface ResultSinkWriteInput {
+  workflowId: string
+  runId: string
+  stepId: string
+  text: string
+}
+
+export interface ResultSinkWriteResult {
+  ok: boolean
+  value?: unknown
+  path?: string
+  error?: string
+}
+
+export interface RunStepState {
+  id: string
+  title: string
+  type: WorkflowStepType
+  status: StepRunStatus
+  startedAt?: string
+  completedAt?: string
+  error?: string
+}
+
+export interface WorkflowRunState {
+  runId: string
+  workflowId: string
+  workflowName: string
+  workflowSchemaVersion?: WorkflowSchemaVersion
+  workflowDefinitionHash?: string
+  workflowFile?: string
+  engineVersion?: string
+  status: RunStatus
+  currentStep?: string
+  inputs: Record<string, unknown>
+  state: Record<string, string>
+  steps: RunStepState[]
+  createdAt: string
+  updatedAt: string
+  error?: string
+}
