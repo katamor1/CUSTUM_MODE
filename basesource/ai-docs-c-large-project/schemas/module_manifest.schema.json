@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Module Manifest",
+  "type": "object",
+  "required": ["module_id", "dsp", "outputs", "source_files", "confidence"],
+  "properties": {
+    "module_id": {"type": "string"},
+    "dsw": {"type": "string"},
+    "dsp": {"type": "string"},
+    "project_name": {"type": "string"},
+    "outputs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "defines": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "include_paths": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "source_files": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "evidence": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D"]
+    }
+  }
+}

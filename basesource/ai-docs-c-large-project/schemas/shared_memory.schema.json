@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Shared Memory Contract",
+  "type": "object",
+  "required": ["header", "structs", "confidence"],
+  "properties": {
+    "header": {"type": "string"},
+    "structs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "members"],
+        "properties": {
+          "name": {"type": "string"},
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {"type": "string"},
+                "type": {"type": "string"},
+                "array_dimensions": {"type": "string"},
+                "readers": {"type": "array", "items": {"type": "string"}},
+                "writers": {"type": "array", "items": {"type": "string"}},
+                "initializer": {"type": "array", "items": {"type": "string"}},
+                "backup": {"type": "array", "items": {"type": "string"}},
+                "restore": {"type": "array", "items": {"type": "string"}},
+                "confidence": {"type": "string", "enum": ["A", "B", "C", "D"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "evidence": {"type": "array", "items": {"type": "string"}},
+    "unknowns": {"type": "array", "items": {"type": "string"}},
+    "confidence": {"type": "string", "enum": ["A", "B", "C", "D"]}
+  }
+}

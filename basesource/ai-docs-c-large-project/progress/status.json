@@ -1,0 +1,21 @@
+{
+  "project": "ai-docs-c-large-project",
+  "owner": "katamor1",
+  "current_phase": "Phase 0",
+  "created_from_plan": true,
+  "milestones": [
+    {
+      "id": "MVP-1",
+      "name": "AI Docs MVP",
+      "items": [
+        "48 dsp module manifest",
+        "DLL output map",
+        "include/define map",
+        "shared header candidates",
+        "3 priority module cards",
+        "AI review template"
+      ],
+      "status": "not_started"
+    }
+  ]
+}

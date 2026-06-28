@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Documentation Review",
+  "type": "object",
+  "required": ["target", "decision", "reviewer", "date"],
+  "properties": {
+    "target": {"type": "string"},
+    "decision": {"type": "string", "enum": ["PASS", "REVISE", "BLOCK"]},
+    "reviewer": {"type": "string"},
+    "date": {"type": "string"},
+    "findings": {"type": "array", "items": {"type": "string"}},
+    "accepted_scope": {"type": "string"},
+    "rejected_scope": {"type": "string"},
+    "follow_up_issues": {"type": "array", "items": {"type": "string"}}
+  }
+}

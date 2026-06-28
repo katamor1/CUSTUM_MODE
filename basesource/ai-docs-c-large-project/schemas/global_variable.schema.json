@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Global Variable Catalog Entry",
+  "type": "object",
+  "required": ["symbol", "defined_in", "confidence"],
+  "properties": {
+    "symbol": {"type": "string"},
+    "struct_path": {"type": "string"},
+    "type": {"type": "string"},
+    "defined_in": {"type": "string"},
+    "declarations": {"type": "array", "items": {"type": "string"}},
+    "readers": {"type": "array", "items": {"type": "string"}},
+    "writers": {"type": "array", "items": {"type": "string"}},
+    "initializers": {"type": "array", "items": {"type": "string"}},
+    "backup_functions": {"type": "array", "items": {"type": "string"}},
+    "restore_functions": {"type": "array", "items": {"type": "string"}},
+    "risk_flags": {"type": "array", "items": {"type": "string"}},
+    "evidence": {"type": "array", "items": {"type": "string"}},
+    "confidence": {"type": "string", "enum": ["A", "B", "C", "D"]}
+  }
+}
