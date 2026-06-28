@@ -1,0 +1,17 @@
+schema_version: 1
+review_id: REVIEW-FIXTURE-001
+triaged_by: ""
+triaged_at: ""
+items:
+  - source_id: PRE-001
+    source_type: finding
+    decision: ""
+    final_severity: high
+    owner: ""
+    reason: ""
+    review_comment: timeout 時の戻り値が要求と異なる可能性がある
+    question: ""
+    follow_up:
+      required: false
+      action: ""
+      due: ""

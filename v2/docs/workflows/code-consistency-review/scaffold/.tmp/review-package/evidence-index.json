@@ -1,0 +1,19 @@
+{
+  "evidence": [
+    {
+      "evidence_id": "REQUIREMENTS-0001",
+      "type": "requirements",
+      "ref": "REQ-123"
+    },
+    {
+      "evidence_id": "DETAILED_DESIGN-0002",
+      "type": "detailed_design",
+      "ref": "DD-88"
+    },
+    {
+      "evidence_id": "TEST_SPEC-0003",
+      "type": "test_spec",
+      "ref": "TC-789"
+    }
+  ]
+}

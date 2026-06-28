@@ -1,0 +1,108 @@
+{
+  "name": "bob-code-consistency-review",
+  "displayName": "Bob Code Consistency Review",
+  "description": "Companion extension that prepares code consistency pre-review packages for IBM Bob workflows.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "directory": "extensions/bob-code-consistency-review"
+  },
+  "engines": {
+    "vscode": "^1.106.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionDependencies": [
+    "IBM.bob-code",
+    "local.workflow-register"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:bobCodeConsistency.preprocess",
+    "onCommand:bobCodeConsistency.captureBobOutput",
+    "onCommand:bobCodeConsistency.validateOutput",
+    "onCommand:bobCodeConsistency.triage"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bobCodeConsistency.preprocess",
+        "title": "Preprocess Code Consistency Review",
+        "category": "Bob Code Consistency"
+      },
+      {
+        "command": "bobCodeConsistency.captureBobOutput",
+        "title": "Capture Code Consistency Bob Output",
+        "category": "Bob Code Consistency"
+      },
+      {
+        "command": "bobCodeConsistency.validateOutput",
+        "title": "Validate Code Consistency Bob Output",
+        "category": "Bob Code Consistency"
+      },
+      {
+        "command": "bobCodeConsistency.triage",
+        "title": "Generate Code Consistency Human Triage",
+        "category": "Bob Code Consistency"
+      }
+    ],
+    "configuration": {
+      "title": "Bob Code Consistency Review",
+      "properties": {
+        "bobCodeConsistency.reviewInputPath": {
+          "type": "string",
+          "default": "review-input.yaml",
+          "description": "Workspace-relative path to review-input.yaml."
+        },
+        "bobCodeConsistency.reviewPackagePath": {
+          "type": "string",
+          "default": ".bob-review/review-package",
+          "description": "Workspace-relative path where the generated review package is written."
+        },
+        "bobCodeConsistency.bobOutputPath": {
+          "type": "string",
+          "default": ".bob-review/bob-output/bob-output.yaml",
+          "description": "Workspace-relative path where captured Bob YAML output is stored."
+        },
+        "bobCodeConsistency.triagePath": {
+          "type": "string",
+          "default": ".bob-review/human-triage",
+          "description": "Workspace-relative path where human triage files are written."
+        }
+      }
+    },
+    "menus": {
+      "commandPalette": [
+        { "command": "bobCodeConsistency.preprocess" },
+        { "command": "bobCodeConsistency.captureBobOutput" },
+        { "command": "bobCodeConsistency.validateOutput" },
+        { "command": "bobCodeConsistency.triage" }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "test": "npm run compile && node --test test/*.test.js",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "cheerio": "^1.0.0",
+    "mammoth": "^1.8.0",
+    "xlsx": "^0.18.5",
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.106.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.4.5"
+  }
+}

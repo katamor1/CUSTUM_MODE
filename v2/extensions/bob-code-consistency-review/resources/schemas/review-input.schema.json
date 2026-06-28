@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/bob-review/review-input.schema.json",
+  "title": "bob code consistency review input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "review",
+    "artifacts",
+    "review_focus"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "change_type",
+        "purpose",
+        "base",
+        "head"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "change_type": {
+          "type": "string",
+          "enum": [
+            "bugfix",
+            "feature",
+            "spec_change",
+            "refactor",
+            "performance",
+            "maintenance"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ticket_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "author_note": {
+          "type": "string"
+        },
+        "out_of_scope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "requirements": {
+          "$ref": "#/$defs/document_list"
+        },
+        "basic_design": {
+          "$ref": "#/$defs/document_list"
+        },
+        "detailed_design": {
+          "$ref": "#/$defs/document_list"
+        },
+        "test_spec": {
+          "$ref": "#/$defs/document_list"
+        },
+        "ledgers": {
+          "$ref": "#/$defs/document_list"
+        },
+        "tickets": {
+          "$ref": "#/$defs/document_list"
+        }
+      }
+    },
+    "review_focus": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": [
+          "requirement-code-consistency",
+          "design-code-consistency",
+          "test-gap",
+          "document-update-gap",
+          "unintended-change",
+          "interface-impact",
+          "rt-ts-rule",
+          "shared-memory-impact"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "analysis_options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include_callers": {
+          "type": "boolean",
+          "default": true
+        },
+        "include_callees": {
+          "type": "boolean",
+          "default": true
+        },
+        "include_global_access": {
+          "type": "boolean",
+          "default": true
+        },
+        "include_struct_impact": {
+          "type": "boolean",
+          "default": true
+        },
+        "include_ledgers": {
+          "type": "boolean",
+          "default": true
+        },
+        "max_call_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "default": 2
+        },
+        "max_code_context_lines": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 300,
+          "default": 80
+        },
+        "language": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["c", "cpp", "h", "hpp"]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "bob_options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prompt_template": {
+          "type": "string",
+          "default": "consistency-review-v1"
+        },
+        "output_format": {
+          "type": "string",
+          "const": "yaml"
+        },
+        "require_evidence": {
+          "type": "boolean",
+          "const": true
+        },
+        "allow_questions": {
+          "type": "boolean",
+          "default": true
+        },
+        "forbid_final_approval": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "document_list": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/document_ref"
+      }
+    },
+    "document_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "sheets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

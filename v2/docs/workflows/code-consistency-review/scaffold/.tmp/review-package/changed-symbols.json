@@ -1,0 +1,12 @@
+{
+  "symbols": [
+    {
+      "id": "FUNC-0001",
+      "name": "TODO_detect_changed_function",
+      "kind": "function",
+      "file": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/code/foo_timeout_after_buggy.c",
+      "confidence": "low"
+    }
+  ],
+  "warnings": []
+}

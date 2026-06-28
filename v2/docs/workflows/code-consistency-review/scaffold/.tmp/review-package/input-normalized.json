@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "review": {
+    "id": "REVIEW-FIXTURE-001",
+    "title": "fixture timeout bugfix",
+    "change_type": "bugfix",
+    "purpose": "Validate scaffold review-input loading.",
+    "base": "main",
+    "head": "docs/code-consistency-review-flow",
+    "ticket_ids": [
+      "ISSUE-FIXTURE-001"
+    ]
+  },
+  "artifacts": {
+    "requirements": [
+      {
+        "path": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/requirements-timeout.md",
+        "version": "1.0",
+        "sections": [
+          "REQ-123"
+        ]
+      }
+    ],
+    "detailed_design": [
+      {
+        "path": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/detailed-design-timeout.md",
+        "version": "1.0",
+        "sections": [
+          "DD-88"
+        ]
+      }
+    ],
+    "test_spec": [
+      {
+        "path": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/test-spec-timeout.md",
+        "version": "1.0",
+        "cases": [
+          "TC-789"
+        ]
+      }
+    ]
+  },
+  "review_focus": [
+    "requirement-code-consistency",
+    "design-code-consistency",
+    "test-gap"
+  ],
+  "bob_options": {
+    "prompt_template": "consistency-review-v1",
+    "output_format": "yaml",
+    "require_evidence": true,
+    "allow_questions": true,
+    "forbid_final_approval": true
+  }
+}

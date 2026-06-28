@@ -1,4 +1,4 @@
-import Ajv, { type ValidateFunction } from "ajv";
+import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import { readTextFile } from "./file-system.js";
 
 export type SchemaName = "review-input" | "bob-output";
@@ -12,7 +12,7 @@ export async function loadSchemaValidator(schemaName: SchemaName): Promise<Valid
   const schemaText = await readTextFile(schemaPathByName[schemaName]);
   const schema = JSON.parse(schemaText) as Record<string, unknown>;
 
-  const ajv = new Ajv({
+  const ajv = new Ajv2020({
     allErrors: true,
     strict: false,
   });

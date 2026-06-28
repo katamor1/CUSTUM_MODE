@@ -1,0 +1,23 @@
+{
+  "documents": [
+    {
+      "document_id": "DOC-REQUIREMENTS-0001",
+      "path": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/requirements-timeout.md",
+      "type": "requirements",
+      "version": "1.0"
+    },
+    {
+      "document_id": "DOC-DETAILED_DESIGN-0002",
+      "path": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/detailed-design-timeout.md",
+      "type": "detailed_design",
+      "version": "1.0"
+    },
+    {
+      "document_id": "DOC-TEST_SPEC-0003",
+      "path": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/docs/test-spec-timeout.md",
+      "type": "test_spec",
+      "version": "1.0"
+    }
+  ],
+  "warnings": []
+}

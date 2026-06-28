@@ -1,0 +1,14 @@
+{
+  "files": [
+    {
+      "path": "docs/workflows/code-consistency-review/examples/simple-timeout-bugfix/code/foo_timeout_after_buggy.c",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "language": "c"
+    }
+  ],
+  "warnings": [
+    "Loaded diff summary fixture."
+  ]
+}

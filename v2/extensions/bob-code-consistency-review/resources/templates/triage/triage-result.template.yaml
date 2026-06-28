@@ -1,0 +1,26 @@
+schema_version: 1
+review_id: "{{review.id}}"
+triaged_by: ""
+triaged_at: ""
+
+items:
+  # human-triage-helper が bob-output.yaml の findings / questions から展開する。
+  # decision は次のいずれか:
+  # - accept
+  # - ask_author
+  # - investigate
+  # - reject_false_positive
+  # - out_of_scope
+  # - defer
+  - source_id: "PRE-001"
+    source_type: finding
+    decision: ""
+    final_severity: ""
+    owner: ""
+    reason: ""
+    review_comment: ""
+    question: ""
+    follow_up:
+      required: false
+      action: ""
+      due: ""

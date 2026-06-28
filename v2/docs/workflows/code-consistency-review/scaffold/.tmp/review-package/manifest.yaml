@@ -1,0 +1,11 @@
+package_version: 1
+created_by: bob-review-scaffold
+repository:
+  base: fixture-base
+  head: fixture-head
+review:
+  id: REVIEW-FIXTURE-001
+  title: "fixture timeout bugfix"
+  change_type: bugfix
+prompts:
+  template_id: consistency-review-v1

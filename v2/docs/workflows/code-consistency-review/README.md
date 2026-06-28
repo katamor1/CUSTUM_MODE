@@ -34,7 +34,9 @@
 | `scaffold/src/core/` | 入力検証、差分収集、review-package 生成、bob 出力検証の雛形 |
 | `scaffold/src/analyzers/` | 文書抽出、C/C++ 解析、traceability 生成の雛形 |
 | `scaffold/src/triage/` | human triage 生成の雛形 |
+| `../../../extensions/bob-code-consistency-review/` | 実行可能な VS Code 拡張実装 |
 | `.github/workflows/code-consistency-review-scaffold.yml` | scaffold の typecheck / unit / smoke CI |
+| `.bob/workflows/code-consistency-review/WORKFLOW.md` | Bob から整合プレレビュー手順を開始する workflow 定義 |
 | `examples/simple-timeout-bugfix/README.md` | E2E 検証用の timeout 不整合サンプル |
 
 ## 実装順序
@@ -95,6 +97,25 @@ bob-review validate-output --package .bob-review/review-package --bob-output .bo
 bob-review triage --package .bob-review/review-package --bob-output .bob-review/bob-output/bob-output.yaml --out .bob-review/human-triage
 ```
 
+## 実行可能な拡張実装
+
+runtime 実装は `extensions/bob-code-consistency-review/` に配置する。
+
+- VS Code 拡張 ID は `local.bob-code-consistency-review`。
+- `workflow-register` の `registerActionProvider` へ `bobCodeConsistency.preprocess`、`bobCodeConsistency.captureBobOutput`、`bobCodeConsistency.validateOutput`、`bobCodeConsistency.triage` を登録する。
+- `.bob/workflows/code-consistency-review/WORKFLOW.md` は manual CLI 手順ではなく、上記 provider を使って `preprocess -> Bob agent -> capture -> validate -> triage -> handoff` を実行する。
+- `resources/schemas/` と `resources/templates/` は、この docs 配下の schema/template を runtime 用に同梱したもの。
+- `scaffold/` は仕様検証用の雛形として残し、実運用の Bob workflow からは新規拡張を呼び出す。
+
+## Bob 結合確認 sandbox
+
+`integration/launch-bob-code-consistency-sandbox.ps1` は、repo root を汚さず `%TEMP%/bob-workflow-integration-*` に確認用 workspace を作る。
+
+- `workflow-register`、`bob-bazaar-review`、`bob-code-consistency-review` の VSIX を isolated `--extensions-dir` に install する。
+- `bob2/bob-code` は raw copy ではなく `--extensionDevelopmentPath` で読み込む。
+- sample `review-input.yaml` と `.bob/workflows/code-consistency-review/WORKFLOW.md` は sandbox workspace にコピーする。
+- `-NoLaunch` を付けると VS Code は起動せず、sandbox 作成と拡張 install、起動コマンド表示だけを行う。
+
 ## 実装アセット
 
 `schemas/` と `templates/` は、仕様説明ではなく実装コードから読み込むアセットとして扱う。
@@ -136,6 +157,13 @@ bob-review triage --package .bob-review/review-package --bob-output .bob-review/
 - `npm run typecheck`
 - `npm run unit`
 - `npm run smoke`
+
+同じ workflow で `extensions/bob-code-consistency-review` の以下も実行する。
+
+- `npm install`
+- `npm run compile`
+- `npm test`
+- `npm run package`
 
 ## E2E サンプル
 

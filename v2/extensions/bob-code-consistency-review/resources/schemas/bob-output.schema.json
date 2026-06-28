@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/bob-review/bob-output.schema.json",
+  "title": "bob code consistency pre-review output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "review_summary",
+    "findings",
+    "questions",
+    "coverage_notes",
+    "rejected_or_uncertain"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "review_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_id",
+        "target_range",
+        "result_type",
+        "final_approval",
+        "scope_statement"
+      ],
+      "properties": {
+        "review_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "package_id": {
+          "type": "string"
+        },
+        "target_range": {
+          "type": "string",
+          "minLength": 1
+        },
+        "result_type": {
+          "type": "string",
+          "const": "pre_review"
+        },
+        "final_approval": {
+          "type": "string",
+          "const": "not_performed"
+        },
+        "scope_statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generated_at": {
+          "type": "string"
+        },
+        "prompt_template_id": {
+          "type": "string"
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/question"
+      }
+    },
+    "coverage_notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/coverage_note"
+      }
+    },
+    "rejected_or_uncertain": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/uncertain_item"
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "severity",
+        "confidence",
+        "summary",
+        "evidence",
+        "reason",
+        "impact",
+        "recommended_action",
+        "human_check"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^PRE-[0-9]{3,}$"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "requirement-code-consistency",
+            "design-code-consistency",
+            "test-gap",
+            "document-update-gap",
+            "unintended-change",
+            "interface-impact",
+            "rt-ts-rule",
+            "shared-memory-impact",
+            "risk"
+          ]
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/evidence_ref"
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "impact": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recommended_action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "human_check": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "summary",
+        "reason",
+        "suggested_action"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^Q-[0-9]{3,}$"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "specification-clarification",
+            "scope-clarification",
+            "document-version",
+            "missing-evidence",
+            "test-policy",
+            "owner-decision"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence_ref"
+          }
+        },
+        "suggested_owner": {
+          "type": "string"
+        },
+        "suggested_action": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "coverage_note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "summary"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^COV-[0-9]{3,}$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "checked",
+            "partially_checked",
+            "not_checked",
+            "out_of_scope"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "uncertain_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary", "reason", "next_action"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^UNC-[0-9]{3,}$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "next_action": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ref"],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "requirement",
+            "basic_design",
+            "detailed_design",
+            "test_spec",
+            "ledger",
+            "ticket",
+            "code",
+            "check_result"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "info"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    }
+  }
+}
