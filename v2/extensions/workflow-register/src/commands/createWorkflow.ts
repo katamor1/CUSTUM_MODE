@@ -1,6 +1,7 @@
 import * as vscode from "vscode"
 import { createWorkflowMarkdown, normalizeWorkflowName, workflowTemplates, WorkflowTemplateKind } from "../core/workflowScaffold"
 import { formatWorkflowDiagnostics, validateWorkflowText } from "../core/workflowValidator"
+import { pickWorkflowRoot } from "./workspaceRootPicker"
 
 export interface CreateWorkflowCommandOptions {
   sourceId: string
@@ -8,8 +9,8 @@ export interface CreateWorkflowCommandOptions {
 }
 
 export async function createWorkflowFromTemplate(options: CreateWorkflowCommandOptions): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0]
-  if (!folder) {
+  const workflowRoot = await pickWorkflowRoot("Select workflow workspace")
+  if (!workflowRoot) {
     await vscode.window.showErrorMessage("No workspace folder is open.")
     return
   }
@@ -29,7 +30,7 @@ export async function createWorkflowFromTemplate(options: CreateWorkflowCommandO
     await options.showMarkdownReport("Generated Workflow Validation", "Generated workflow is invalid.", formatWorkflowDiagnostics(validation))
     return
   }
-  const dir = vscode.Uri.joinPath(folder.uri, ".bob", "workflows", name)
+  const dir = vscode.Uri.joinPath(vscode.Uri.file(workflowRoot), ".bob", "workflows", name)
   const uri = vscode.Uri.joinPath(dir, "WORKFLOW.md")
   await vscode.workspace.fs.createDirectory(dir)
   await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(markdown))

@@ -1,0 +1,84 @@
+schema_version: 1
+
+review:
+  id: REVIEW-AI-MATRIX-001
+  title: "決済ステータス変更の整合性検証マトリクス"
+  change_type: feature
+  purpose: "決済ステータス関連の変更が要求、設計、台帳、テスト仕様の根拠と整合しているかを確認する。"
+  base: main
+  head: feature/ai-verification-matrix
+  ticket_ids:
+    - TICKET-AI-105
+  author_note: "実AI検証用に OK、NG、N/A、確認質問の想定ケースを意図的に含めたベンチマーク fixture。"
+  out_of_scope:
+    - "性能測定"
+    - "ダッシュボード表示文言"
+
+artifacts:
+  requirements:
+    - path: docs/requirements-ai-matrix.md
+      version: "2.0"
+      sections:
+        - REQ-OK-001
+        - REQ-NG-001
+        - REQ-FRAUD-030
+        - REQ-NA-001
+  basic_design:
+    - path: docs/basic-design-ai-matrix.md
+      version: "2.0"
+      sections:
+        - BD-OK-001
+        - BD-NG-001
+        - BD-FRAUD-030
+  detailed_design:
+    - path: docs/detailed-design-ai-matrix.md
+      version: "2.0"
+      sections:
+        - DD-OK-001
+        - DD-NG-001
+        - DD-FRAUD-030
+        - DD-RT-040
+  test_spec:
+    - path: docs/test-spec-ai-matrix.md
+      version: "2.0"
+      cases:
+        - TC-OK-010
+        - TC-TIMEOUT-020
+  ledgers:
+    - path: docs/error-ledger-ai-matrix.md
+      version: "2.0"
+      rows:
+        - ERR_TIMEOUT
+        - ERR_FRAUD_REVIEW
+  tickets:
+    - path: docs/tickets-ai-matrix.md
+      version: "2026-06-30"
+      rows:
+        - TICKET-AI-105
+
+review_focus:
+  - requirement-code-consistency
+  - design-code-consistency
+  - test-gap
+  - document-update-gap
+  - interface-impact
+  - rt-ts-rule
+
+analysis_options:
+  include_callers: true
+  include_callees: true
+  include_global_access: true
+  include_struct_impact: true
+  include_ledgers: true
+  max_call_depth: 2
+  max_code_context_lines: 80
+  language:
+    - c
+    - h
+
+bob_options:
+  prompt_template: consistency-review-v1
+  output_format: yaml
+  require_evidence: true
+  allow_questions: true
+  forbid_final_approval: true

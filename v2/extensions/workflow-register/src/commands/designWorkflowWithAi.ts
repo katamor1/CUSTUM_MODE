@@ -3,6 +3,7 @@ import { createMockWorkflowAiProvider } from "../core/mockWorkflowAiProvider"
 import { WorkflowAiProvider } from "../core/workflowAiProvider"
 import { buildWorkflowFromDesignDraft } from "../core/workflowDesignBuilder"
 import { WorkflowTemplateKind, workflowTemplates } from "../core/workflowScaffold"
+import { pickWorkflowRoot } from "./workspaceRootPicker"
 
 export interface DesignWorkflowWithAiOptions {
   sourceId: string
@@ -11,8 +12,8 @@ export interface DesignWorkflowWithAiOptions {
 }
 
 export async function designWorkflowWithAi(options: DesignWorkflowWithAiOptions): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0]
-  if (!folder) {
+  const workflowRoot = await pickWorkflowRoot("Select workflow workspace")
+  if (!workflowRoot) {
     await vscode.window.showErrorMessage("No workspace folder is open.")
     return
   }
@@ -25,7 +26,7 @@ export async function designWorkflowWithAi(options: DesignWorkflowWithAiOptions)
     await options.showMarkdownReport("Workflow Design with AI", `Provider '${provider.id}' returned an invalid workflow design; nothing was saved.`, result.reportLines)
     return
   }
-  const dir = vscode.Uri.joinPath(folder.uri, ".bob", "workflows", result.name)
+  const dir = vscode.Uri.joinPath(vscode.Uri.file(workflowRoot), ".bob", "workflows", result.name)
   const uri = vscode.Uri.joinPath(dir, "WORKFLOW.md")
   await vscode.workspace.fs.createDirectory(dir)
   await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(result.markdown))

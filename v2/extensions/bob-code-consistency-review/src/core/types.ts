@@ -12,6 +12,8 @@ export type ReviewInput = {
     purpose: string
     base: string
     head: string
+    vcs?: "git" | "bazaar" | "bzr"
+    vcs_root?: string
     ticket_ids?: string[]
     author_note?: string
     out_of_scope?: string[]
@@ -32,6 +34,8 @@ export type ReviewInput = {
 }
 
 export type DiffSummary = {
+  vcs?: "git" | "bazaar"
+  vcsRoot?: string
   base: string
   head: string
   files: Array<{

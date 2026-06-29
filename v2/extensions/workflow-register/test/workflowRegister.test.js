@@ -152,11 +152,15 @@ test("Bob adapter resolves workflow inputs and passes them to command providers"
 
   assert.match(source, /inputs: Record<string, WorkflowInputDefinition>/)
   assert.match(source, /inputs: core\.inputs/)
+  assert.match(source, /workflowRoot: core\.workflowRoot/)
   assert.match(source, /private readonly workflowInputs = new Map<string, Record<string, unknown>>\(\)/)
   assert.match(source, /collectBobWorkflowInputs\(workflow: WorkflowDefinition, provided: Record<string, unknown>\)/)
   assert.match(source, /extractTaskWorkflowInputs\(definition, task\)/)
   assert.match(source, /collectWorkflowInputsWithResolver\(\{[\s\S]*inputs: workflow\.inputs,[\s\S]*provided,[\s\S]*prompt: \(key, definition, required\) => this\.promptForInput\(key, definition, required\)[\s\S]*\}\)/)
-  assert.match(source, /actionRegistry\.execute\(step\.command, \{[\s\S]*inputs,[\s\S]*state,[\s\S]*workflowId: definition\.id,[\s\S]*stepId[\s\S]*\}\)/)
+  assert.match(source, /actionRegistry\.execute\(step\.command, \{[\s\S]*inputs,[\s\S]*state,[\s\S]*workflowId: definition\.id,[\s\S]*workflowRoot: definition\.workflowRoot,[\s\S]*stepId[\s\S]*\}\)/)
+  assert.match(source, /captureAgentStepResult\([\s\S]*actionRegistry,[\s\S]*stepRuntime\.stateRecord\(definition\),[\s\S]*inputs[\s\S]*\)/)
+  assert.match(source, /actions: active\.actionRegistry/)
+  assert.match(source, /state: active\.state/)
   assert.doesNotMatch(source, /inputs: \{\}/)
 })
 
@@ -182,6 +186,19 @@ test("Bob registration uses CoreWorkflowDefinition as the only parsed workflow s
   assert.match(source, /adaptCoreWorkflowForBob\(/)
   assert.doesNotMatch(source, /loadCoreWorkspaceWorkflows/)
   assert.doesNotMatch(source, /parseYamlFrontMatter\(split\.frontMatter\)/)
+})
+
+test("workflow-register does not silently use the first workspace folder in multi-root paths", () => {
+  const sources = [
+    fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8"),
+    fs.readFileSync(path.join(extensionRoot, "src", "commands", "createWorkflow.ts"), "utf8"),
+    fs.readFileSync(path.join(extensionRoot, "src", "commands", "designWorkflowWithAi.ts"), "utf8"),
+    fs.readFileSync(path.join(extensionRoot, "src", "commands", "improveWorkflowWithAi.ts"), "utf8"),
+    fs.readFileSync(path.join(extensionRoot, "src", "commands", "inspectRunDiagnostics.ts"), "utf8")
+  ].join("\n")
+
+  assert.doesNotMatch(sources, /workspaceFolders\?\.\[0\]|workspaceFolders\?\[0\]/)
+  assert.match(sources, /findWorkflowRootCandidates/)
 })
 
 test("runtime dependencies are not excluded from VSIX packaging", () => {

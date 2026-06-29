@@ -1,4 +1,5 @@
 import * as path from "path"
+import { createHash } from "crypto"
 import * as vscode from "vscode"
 import { buildWorkflowAgentPrompt, extractSubagentResult } from "./agentStep"
 import { ActionProvider, ActionRegistry, createDefaultActionRegistry } from "./core/actionRegistry"
@@ -10,6 +11,7 @@ import { AgentProvider, CoreWorkflowDefinition, EngineStep, ResultSinkDefinition
 import { parseWorkflowMarkdown } from "./core/parser"
 import { createDefaultResultSinkRegistry, ResultSinkRegistry } from "./core/resultSinkRegistry"
 import { FileRunStateStore, RunStateStore } from "./core/runStateStore"
+import { fallbackWorkspaceRootCandidates, findWorkflowRootCandidates, MarkerRootCandidate, relativePathFromRoot } from "./core/workspaceRoots"
 import { executeResultHandoff, extractLastAssistantText, resultSourceForStep, ResultSource } from "./resultHandoff"
 
 const BOB_EXTENSION_ID = "IBM.bob-code"
@@ -94,6 +96,7 @@ interface WorkflowStateEntry {
 
 interface WorkflowDefinition {
   id: string
+  logicalWorkflowId?: string
   name: string
   label: string
   menuLabel: string
@@ -117,6 +120,9 @@ interface WorkflowDefinition {
   todos: WorkflowTodoItem[]
   inputs: Record<string, WorkflowInputDefinition>
   guardrails: WorkflowGuardrailsDefinition
+  workflowRoot?: string
+  workflowFile?: string
+  workflowFolderName?: string
   file: vscode.Uri
 }
 
@@ -124,6 +130,12 @@ interface LoadResult {
   workflows: WorkflowDefinition[]
   coreWorkflows: CoreWorkflowDefinition[]
   diagnostics: string[]
+}
+
+interface RunSelection {
+  root: string
+  runId: string
+  run?: Awaited<ReturnType<RunStateStore["loadRun"]>>
 }
 
 interface RegistrationResult {
@@ -140,6 +152,9 @@ interface ActiveStep {
   task: BobWorkflowTask
   stepDefinition?: WorkflowStepDefinition
   guardrails: WorkflowGuardrailsDefinition
+  actionRegistry?: ActionRegistry
+  inputs?: Record<string, unknown>
+  state?: Record<string, string>
   messageStartIndex: number
   resolve: (value: boolean) => void
 }
@@ -197,7 +212,13 @@ class StepRuntime {
   private readonly workflowInputs = new Map<string, Record<string, unknown>>()
   private sequence = 0
 
-  hold(workflow: WorkflowDefinition, step: { id: string; title: string }, task: BobWorkflowTask, stepDefinition?: WorkflowStepDefinition): Promise<boolean> {
+  hold(
+    workflow: WorkflowDefinition,
+    step: { id: string; title: string },
+    task: BobWorkflowTask,
+    stepDefinition?: WorkflowStepDefinition,
+    context: { actionRegistry?: ActionRegistry; inputs?: Record<string, unknown>; state?: Record<string, string> } = {}
+  ): Promise<boolean> {
     const key = `${++this.sequence}:${workflow.id}:${step.id}`
     return new Promise<boolean>((resolve) => {
       this.activeSteps.set(key, {
@@ -209,6 +230,9 @@ class StepRuntime {
         task,
         stepDefinition,
         guardrails: workflow.guardrails,
+        actionRegistry: context.actionRegistry,
+        inputs: context.inputs,
+        state: context.state,
         messageStartIndex: getTaskMessageCount(task),
         resolve
       })
@@ -299,7 +323,14 @@ async function captureHeldStepResult(active: ActiveStep): Promise<{ ok: boolean;
   const resultText = resultSourceForStep(step) === "lastAssistant" && Array.isArray(messages)
     ? extractLastAssistantText(messages, active.messageStartIndex)
     : undefined
-  return executeResultHandoff(step, resultText, { executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args) })
+  return executeResultHandoff(step, resultText, {
+    actions: active.actionRegistry,
+    executeCommand: active.actionRegistry ? undefined : (command, ...args) => vscode.commands.executeCommand(command, ...args),
+    inputs: active.inputs,
+    state: active.state,
+    workflowId: active.workflowId,
+    stepId: active.stepId
+  })
 }
 
 function getTaskMessageCount(task: BobWorkflowTask): number {
@@ -371,7 +402,7 @@ class WorkflowRegisterService implements vscode.Disposable {
       ? this.coreWorkflows.get(workflowId)
       : await this.pickCoreWorkflow()
     if (!workflow) return "No workflow selected."
-    const root = this.workspaceRoot()
+    const root = workflow.workflowRoot ?? await this.pickWorkflowRoot("Select workflow workspace")
     if (!root) {
       const message = "No workspace folder is open."
       await vscode.window.showErrorMessage(message)
@@ -386,16 +417,19 @@ class WorkflowRegisterService implements vscode.Disposable {
   }
 
   async inspectRuns(): Promise<void> {
-    const root = this.workspaceRoot()
-    if (!root) {
+    const roots = await this.workflowRootCandidates()
+    if (roots.length === 0) {
       await vscode.window.showErrorMessage("No workspace folder is open.")
       return
     }
-    const runs = await this.createRunStore(root).listRuns()
-    const lines = runs.length === 0
+    const runsByRoot = (await Promise.all(roots.map(async (candidate) => ({
+      candidate,
+      runs: await this.createRunStore(candidate.root).listRuns()
+    })))).flatMap(({ candidate, runs }) => runs.map((run) => ({ candidate, run })))
+    const lines = runsByRoot.length === 0
       ? ["- No workflow runs were found."]
-      : runs.map((run) => `- ${run.runId}: ${run.status}; workflow=${run.workflowId}; currentStep=${run.currentStep ?? "none"}; updatedAt=${run.updatedAt}`)
-    await showMarkdownReport("Workflow Runs", `${runs.length} run(s).`, lines)
+      : runsByRoot.map(({ candidate, run }) => `- ${run.runId}: ${run.status}; workflow=${run.workflowId}; root=${candidate.root}; currentStep=${run.currentStep ?? "none"}; updatedAt=${run.updatedAt}`)
+    await showMarkdownReport("Workflow Runs", `${runsByRoot.length} run(s).`, lines)
   }
 
   async resumeRun(runId?: string): Promise<unknown> {
@@ -407,21 +441,21 @@ class WorkflowRegisterService implements vscode.Disposable {
   }
 
   private async resumeOrRetryRun(mode: "resume" | "retry", runId?: string): Promise<unknown> {
-    const root = this.workspaceRoot()
-    if (!root) {
+    if (this.coreWorkflows.size === 0) await this.reload({ showReport: false })
+    const selection = runId ? await this.findRunSelection(runId) : await this.pickRunSelection()
+    if (!selection) {
       const message = "No workspace folder is open."
-      await vscode.window.showErrorMessage(message)
+      if (!runId) return "No workflow run selected."
+      await vscode.window.showErrorMessage(`Workflow run not found: ${runId}`)
       return message
     }
-    if (this.coreWorkflows.size === 0) await this.reload({ showReport: false })
-    const runStore = this.createRunStore(root)
-    const targetRunId = runId ?? await this.pickRunId(runStore)
-    if (!targetRunId) return "No workflow run selected."
-    const run = await runStore.loadRun(targetRunId)
+    const runStore = this.createRunStore(selection.root)
+    const targetRunId = selection.runId
+    const run = selection.run ?? await runStore.loadRun(targetRunId)
     if (!run) throw new Error(`Workflow run not found: ${targetRunId}`)
     const workflow = this.coreWorkflows.get(run.workflowId)
     if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
-    const engine = this.createEngine(root)
+    const engine = this.createEngine(selection.root)
     const result = mode === "resume"
       ? await engine.resumeRun(targetRunId, { workflow, completeHeldStep: true })
       : await engine.retryCurrentStep(targetRunId, workflow)
@@ -459,8 +493,24 @@ class WorkflowRegisterService implements vscode.Disposable {
     return new FileRunStateStore({ workspaceRoot, engineVersion: this.engineVersion })
   }
 
-  private workspaceRoot(): string | undefined {
-    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+  private async workflowRootCandidates(): Promise<MarkerRootCandidate[]> {
+    const folders = vscode.workspace.workspaceFolders ?? []
+    if (folders.length === 0) return []
+    const markerRoots = await findWorkflowRootCandidates(folders)
+    return markerRoots.length > 0 ? markerRoots : fallbackWorkspaceRootCandidates(folders)
+  }
+
+  private async pickWorkflowRoot(title: string): Promise<string | undefined> {
+    const candidates = await this.workflowRootCandidates()
+    if (candidates.length === 0) return undefined
+    if (candidates.length === 1) return candidates[0].root
+    const picked = await vscode.window.showQuickPick(candidates.map((candidate) => ({
+      label: candidate.name,
+      description: candidate.root,
+      detail: `${candidate.marker}; ${candidate.depth}; workspace=${candidate.workspaceFolderName}`,
+      candidate
+    })), { title })
+    return picked?.candidate.root
   }
 
   private async pickCoreWorkflow(): Promise<CoreWorkflowDefinition | undefined> {
@@ -474,6 +524,32 @@ class WorkflowRegisterService implements vscode.Disposable {
       workflow
     })), { title: "Run Workflow" })
     return picked?.workflow
+  }
+
+  private async pickRunSelection(): Promise<RunSelection | undefined> {
+    const selections = await this.listRunSelections()
+    if (selections.length === 0) return undefined
+    const picked = await vscode.window.showQuickPick(selections.map((selection) => ({
+      label: selection.runId,
+      description: selection.run?.status,
+      detail: `${selection.run?.workflowId}; root=${selection.root}; currentStep=${selection.run?.currentStep ?? "none"}`,
+      selection
+    })), { title: "Workflow Run" })
+    return picked?.selection
+  }
+
+  private async findRunSelection(runId: string): Promise<RunSelection | undefined> {
+    return (await this.listRunSelections()).find((selection) => selection.runId === runId)
+  }
+
+  private async listRunSelections(): Promise<RunSelection[]> {
+    const roots = await this.workflowRootCandidates()
+    const nested = await Promise.all(roots.map(async (candidate) => {
+      const runStore = this.createRunStore(candidate.root)
+      const runs = await runStore.listRuns()
+      return runs.map((run) => ({ root: candidate.root, runId: run.runId, run }))
+    }))
+    return nested.flat().sort((a, b) => (b.run?.updatedAt ?? "").localeCompare(a.run?.updatedAt ?? ""))
   }
 
   private async pickRunId(runStore: RunStateStore): Promise<string | undefined> {
@@ -591,28 +667,39 @@ async function loadWorkspaceWorkflows(sourceId: string): Promise<LoadResult> {
   const diagnostics: string[] = []
   const workflows: WorkflowDefinition[] = []
   const coreWorkflows: CoreWorkflowDefinition[] = []
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, ".bob/workflows/*/WORKFLOW.md"))
-    diagnostics.push(`- workspace: ${folder.name}; workflow files: ${files.length}`)
+  const folders = vscode.workspace.workspaceFolders ?? []
+  const roots = await findWorkflowRootCandidates(folders)
+  const searchRoots = roots.length > 0 ? roots : fallbackWorkspaceRootCandidates(folders)
+  for (const root of searchRoots) {
+    const files = await vscode.workspace.findFiles(new vscode.RelativePattern(root.root, ".bob/workflows/*/WORKFLOW.md"))
+    diagnostics.push(`- workspace: ${root.workspaceFolderName}; workflowRoot=${root.root}; marker=${root.marker}; depth=${root.depth}; workflow files: ${files.length}`)
     for (const file of files) {
-      const result = await loadWorkflowFile(sourceId, file)
+      const result = await loadWorkflowFile(sourceId, file, root)
       diagnostics.push(...result.diagnostics)
       if (result.workflow) workflows.push(result.workflow)
       if (result.coreWorkflow) coreWorkflows.push(result.coreWorkflow)
     }
   }
+  qualifyDuplicateWorkflowIds(workflows, coreWorkflows)
   return { workflows, coreWorkflows, diagnostics }
 }
 
-async function loadWorkflowFile(sourceId: string, file: vscode.Uri): Promise<{ workflow?: WorkflowDefinition; coreWorkflow?: CoreWorkflowDefinition; diagnostics: string[] }> {
-  const relativePath = vscode.workspace.asRelativePath(file, false)
+async function loadWorkflowFile(sourceId: string, file: vscode.Uri, root: MarkerRootCandidate): Promise<{ workflow?: WorkflowDefinition; coreWorkflow?: CoreWorkflowDefinition; diagnostics: string[] }> {
+  const relativePath = relativePathFromRoot(root.root, file.fsPath)
   const diagnostics: string[] = []
   const folderName = path.basename(path.dirname(file.fsPath))
   const text = Buffer.from(await vscode.workspace.fs.readFile(file)).toString("utf8").replace(/^\uFEFF/, "")
   const parsed = parseWorkflowMarkdown({ sourceId, filePath: relativePath, text })
   diagnostics.push(...parsed.diagnostics)
   if (!parsed.ok) return { diagnostics }
-  const workflow = adaptCoreWorkflowForBob(parsed.workflow, file)
+  const coreWorkflow = {
+    ...parsed.workflow,
+    logicalWorkflowId: parsed.workflow.id,
+    workflowRoot: root.root,
+    workflowFile: file.fsPath,
+    workflowFolderName: root.name
+  }
+  const workflow = adaptCoreWorkflowForBob(coreWorkflow, file)
   if (folderName !== parsed.workflow.name) diagnostics.push(`- warn: ${relativePath}: folder name '${folderName}' differs from workflow name '${parsed.workflow.name}'.`)
   if (workflow.todoRequired && workflow.todos.length === 0) return { diagnostics: [`- fail: ${relativePath}: todoRequired is true but no todo items were found.`] }
   if (workflow.stepMessage === "step") for (const todo of workflow.todos) if (!workflow.stepsById[todo.id]?.prompt) diagnostics.push(`- warn: ${relativePath}: missing prompt for workflow step '${todo.id}'.`)
@@ -635,7 +722,7 @@ async function loadWorkflowFile(sourceId: string, file: vscode.Uri): Promise<{ w
   for (const step of Object.values(workflow.stepsById).filter((candidate) => candidate.captureResult)) {
     diagnostics.push(`- step capture: ${step.id}; resultSource=${resultSourceForStep(step)}; resultCommand=${step.resultCommand ?? "none"}`)
   }
-  return { workflow, coreWorkflow: parsed.workflow, diagnostics }
+  return { workflow, coreWorkflow, diagnostics }
 }
 
 function adaptCoreWorkflowForBob(core: CoreWorkflowDefinition, file: vscode.Uri): WorkflowDefinition {
@@ -646,6 +733,7 @@ function adaptCoreWorkflowForBob(core: CoreWorkflowDefinition, file: vscode.Uri)
   }))
   return {
     id: core.id,
+    logicalWorkflowId: core.logicalWorkflowId ?? core.id,
     name: core.name,
     label: core.label,
     menuLabel: core.menuLabel ?? core.label,
@@ -669,8 +757,33 @@ function adaptCoreWorkflowForBob(core: CoreWorkflowDefinition, file: vscode.Uri)
     todos,
     inputs: core.inputs,
     guardrails: core.guardrails,
+    workflowRoot: core.workflowRoot,
+    workflowFile: core.workflowFile,
+    workflowFolderName: core.workflowFolderName,
     file
   }
+}
+
+function qualifyDuplicateWorkflowIds(workflows: WorkflowDefinition[], coreWorkflows: CoreWorkflowDefinition[]): void {
+  const counts = new Map<string, number>()
+  for (const workflow of coreWorkflows) counts.set(workflow.id, (counts.get(workflow.id) ?? 0) + 1)
+  for (const workflow of coreWorkflows) {
+    const logicalId = workflow.logicalWorkflowId ?? workflow.id
+    workflow.logicalWorkflowId = logicalId
+    if ((counts.get(logicalId) ?? 0) > 1) workflow.id = qualifiedWorkflowId(logicalId, workflow.workflowRoot)
+  }
+  for (const workflow of workflows) {
+    const logicalId = workflow.logicalWorkflowId ?? workflow.id
+    workflow.logicalWorkflowId = logicalId
+    if ((counts.get(logicalId) ?? 0) > 1) workflow.id = qualifiedWorkflowId(logicalId, workflow.workflowRoot)
+  }
+}
+
+function qualifiedWorkflowId(logicalId: string, workflowRoot: string | undefined): string {
+  const root = workflowRoot ?? "unknown"
+  const slug = path.basename(root).replace(/[^A-Za-z0-9_-]+/g, "-") || "workspace"
+  const hash = createHash("sha1").update(root).digest("hex").slice(0, 8)
+  return `${logicalId}.${slug}-${hash}`
 }
 
 function workflowStepDefinitionFromEngineStep(step: EngineStep): WorkflowStepDefinition {
@@ -784,10 +897,14 @@ async function runTodoStep(definition: WorkflowDefinition, stepRuntime: StepRunt
     }
     if (stepDefinition.resultKey) stepRuntime.saveState(definition, stepDefinition.resultKey, formatCommandResult(agentResult.value, stepDefinition.maxResultBytes))
     await task.sendMessage?.(agentResult.value, "assistant")
-    const handoff = await captureAgentStepResult(definition, stepDefinition, agentResult.value, task, messageStartIndex)
+    const handoff = await captureAgentStepResult(definition, stepDefinition, agentResult.value, task, messageStartIndex, actionRegistry, stepRuntime.stateRecord(definition), inputs)
     if (!handoff.ok) {
       await vscode.window.showErrorMessage(`Bob workflow result handoff failed: ${todo.id}: ${handoff.error}`)
-      return stepRuntime.hold(definition, { id: todo.id, title: todo.text }, task, stepDefinition)
+      return stepRuntime.hold(definition, { id: todo.id, title: todo.text }, task, stepDefinition, {
+        actionRegistry,
+        inputs,
+        state: stepRuntime.stateRecord(definition)
+      })
     }
     task.setStepComplete?.()
     return true
@@ -856,7 +973,16 @@ async function runWorkflowStepAgent(definition: WorkflowDefinition, todo: Workfl
   }
 }
 
-async function captureAgentStepResult(definition: WorkflowDefinition, stepDefinition: WorkflowStepDefinition, agentResult: string, task: BobWorkflowTask, messageStartIndex: number): Promise<{ ok: boolean; error?: string }> {
+async function captureAgentStepResult(
+  definition: WorkflowDefinition,
+  stepDefinition: WorkflowStepDefinition,
+  agentResult: string,
+  task: BobWorkflowTask,
+  messageStartIndex: number,
+  actionRegistry: ActionRegistry,
+  state: Record<string, string>,
+  inputs: Record<string, unknown>
+): Promise<{ ok: boolean; error?: string }> {
   if (!stepDefinition.captureResult) return { ok: true }
   if (stepDefinition.resultCommand) {
     const guardrail = validateCommandGuardrails(definition, stepDefinition.resultCommand)
@@ -866,7 +992,13 @@ async function captureAgentStepResult(definition: WorkflowDefinition, stepDefini
   const resultText = source === "agent"
     ? agentResult
     : extractLastAssistantText(task.getMessages?.() ?? [], messageStartIndex)
-  return executeResultHandoff(stepDefinition, resultText, { executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args) })
+  return executeResultHandoff(stepDefinition, resultText, {
+    actions: actionRegistry,
+    inputs,
+    state,
+    workflowId: definition.id,
+    stepId: stepDefinition.id
+  })
 }
 
 async function runWorkflowStepCommand(definition: WorkflowDefinition, step: WorkflowStepDefinition | undefined, actionRegistry: ActionRegistry, stepId: string, state: Record<string, string>, inputs: Record<string, unknown>): Promise<WorkflowStepCommandResult | undefined> {
@@ -878,6 +1010,10 @@ async function runWorkflowStepCommand(definition: WorkflowDefinition, step: Work
     inputs,
     state,
     workflowId: definition.id,
+    logicalWorkflowId: definition.logicalWorkflowId,
+    workflowRoot: definition.workflowRoot,
+    workflowFile: definition.workflowFile,
+    workflowFolderName: definition.workflowFolderName,
     stepId
   })
   if (result.ok) return { command: step.command, ok: true, value: result.value }
@@ -893,6 +1029,10 @@ async function runTopLevelWorkflowCommand(definition: WorkflowDefinition, action
     inputs,
     state: stepRuntime.stateRecord(definition),
     workflowId: definition.id,
+    logicalWorkflowId: definition.logicalWorkflowId,
+    workflowRoot: definition.workflowRoot,
+    workflowFile: definition.workflowFile,
+    workflowFolderName: definition.workflowFolderName,
     stepId
   })
   if (result.ok) return { command: definition.command, ok: true, value: result.value }

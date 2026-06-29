@@ -1,19 +1,21 @@
 import * as vscode from "vscode"
 import {
   CandidateText,
+  CaptureReviewResultOptions,
   CaptureReviewResultResult,
   captureReviewResultFromCandidates,
   extractJsonFromText
 } from "./resultCaptureCore"
+import { resolveBobWorkspaceFolder } from "../workspaceResolver"
 
 export { CaptureReviewResultResult, extractJsonFromText }
 
-export async function captureReviewResult(inputText?: string): Promise<CaptureReviewResultResult> {
+export async function captureReviewResult(inputText?: string, options: CaptureReviewResultOptions = {}): Promise<CaptureReviewResultResult> {
   const explicitInput = typeof inputText === "string" && inputText.trim().length > 0
   const candidates = explicitInput
     ? [{ source: "command argument", text: inputText }]
     : await buildDefaultCandidates()
-  const result = await captureCandidatesWithWorkspace(candidates)
+  const result = await captureCandidatesWithWorkspace(candidates, options)
   if (!explicitInput) await presentCaptureResult(result)
   return result
 }
@@ -24,10 +26,10 @@ export async function saveReviewResultFromClipboard(): Promise<CaptureReviewResu
   return result
 }
 
-async function captureCandidatesWithWorkspace(candidates: CandidateText[]): Promise<CaptureReviewResultResult> {
-  const folder = await pickWorkspaceFolder()
-  if (!folder) throw new Error("Open a workspace folder before saving review result artifacts.")
-  return captureReviewResultFromCandidates(folder.uri.fsPath, candidates)
+async function captureCandidatesWithWorkspace(candidates: CandidateText[], options: CaptureReviewResultOptions = {}): Promise<CaptureReviewResultResult> {
+  const workspaceRoot = options.workspaceRoot ?? (await pickWorkspaceFolder())?.uri.fsPath
+  if (!workspaceRoot) throw new Error("レビュー結果 artifact を保存する前に Bob ワークスペースフォルダーを開いてください。")
+  return captureReviewResultFromCandidates(workspaceRoot, candidates, options)
 }
 
 async function buildDefaultCandidates(): Promise<CandidateText[]> {
@@ -46,14 +48,14 @@ async function buildDefaultCandidates(): Promise<CandidateText[]> {
 async function presentCaptureResult(result: CaptureReviewResultResult): Promise<void> {
   if (result.status !== "ok") {
     if (result.issues?.some((issue) => issue.message === "No review-result JSON was found.")) {
-      await vscode.window.showWarningMessage("No review-result JSON was found in the active editor or clipboard.")
+      await vscode.window.showWarningMessage("アクティブエディターまたはクリップボードに review-result JSON が見つかりませんでした。")
       return
     }
     await showValidationIssues(result.issues ?? [{ path: "$", message: "Review result validation failed." }])
     return
   }
 
-  await vscode.window.showInformationMessage(`Review result captured: ${result.reviewId}`)
+  await vscode.window.showInformationMessage(`レビュー結果を保存しました: ${result.reviewId}`)
   if (result.markdownPath) await openMarkdownSummary(vscode.Uri.file(result.markdownPath))
 }
 
@@ -73,15 +75,5 @@ async function showValidationIssues(issues: Array<{ path: string; message: strin
 }
 
 async function pickWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
-  const folders = vscode.workspace.workspaceFolders ?? []
-  if (folders.length === 0) {
-    await vscode.window.showWarningMessage("Open a workspace folder first.")
-    return undefined
-  }
-  if (folders.length === 1) return folders[0]
-  const picked = await vscode.window.showQuickPick(
-    folders.map((folder) => ({ label: folder.name, description: folder.uri.fsPath, folder })),
-    { title: "Select workspace for review result artifacts" }
-  )
-  return picked?.folder
+  return resolveBobWorkspaceFolder({ allowPick: true, title: "レビュー結果 artifact の保存先 Bob ワークスペースを選択" })
 }

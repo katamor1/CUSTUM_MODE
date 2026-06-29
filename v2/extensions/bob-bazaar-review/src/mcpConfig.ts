@@ -30,7 +30,8 @@ export async function configureWorkspaceMcpServer(options: McpServerConfigOption
     command: process.execPath,
     args: [serverPath],
     env: {
-      BZR_PATH: options.bzrPath
+      BZR_PATH: options.bzrPath,
+      BZR_TEXT_ENCODING: "auto"
     },
     disabled: false
   }

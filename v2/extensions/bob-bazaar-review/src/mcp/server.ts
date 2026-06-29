@@ -25,48 +25,49 @@ const SERVER_VERSION = "0.3.0"
 
 const client = new BazaarClient({
   bzrPath: process.env.BZR_PATH || "bzr",
-  maxBuffer: Number(process.env.BZR_MAX_BUFFER || 10 * 1024 * 1024)
+  maxBuffer: Number(process.env.BZR_MAX_BUFFER || 10 * 1024 * 1024),
+  textEncoding: process.env.BZR_TEXT_ENCODING || "auto"
 })
 
 const tools: ToolDef[] = [
   {
     name: "bazaar_root",
-    description: "Return the Bazaar repository root for a working directory.",
+    description: "Return the Bazaar repository root for a working directory. The server always executes bzr with --no-aliases.",
     inputSchema: objectSchema({ cwd: stringProp("Working directory inside the Bazaar repository") }, ["cwd"])
   },
   {
     name: "bazaar_revno",
-    description: "Return the current Bazaar revno for a repository.",
+    description: "Return the current Bazaar revno for a repository. The server always executes bzr with --no-aliases.",
     inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root or child directory") }, ["cwd"])
   },
   {
     name: "bazaar_log",
-    description: "Return Bazaar log output. When revision is supplied, returns that revision log.",
+    description: "Return Bazaar log output. Equivalent to bzr --no-aliases log. When revision is supplied, returns that revision log.",
     inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), revision: optionalStringProp("Optional Bazaar revision") }, ["cwd"])
   },
   {
     name: "bazaar_diff_revision",
-    description: "Return unified diff for a single Bazaar revision, equivalent to bzr diff -c REV.",
+    description: "Return unified diff for a single Bazaar revision, equivalent to bzr --no-aliases diff -c REV.",
     inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), revision: stringProp("Bazaar revision to review") }, ["cwd", "revision"])
   },
   {
     name: "bazaar_diff_range",
-    description: "Return unified diff between two Bazaar revisions, equivalent to bzr diff -r BASE..TARGET.",
+    description: "Return unified diff between two Bazaar revisions, equivalent to bzr --no-aliases diff -r BASE..TARGET.",
     inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), baseRevision: stringProp("Base Bazaar revision"), targetRevision: stringProp("Target Bazaar revision") }, ["cwd", "baseRevision", "targetRevision"])
   },
   {
     name: "bazaar_diff_working_tree",
-    description: "Return unified diff for the current working tree, optionally since a base revision.",
+    description: "Return unified diff for the current working tree, optionally since a base revision. Equivalent to bzr --no-aliases diff.",
     inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), baseRevision: optionalStringProp("Optional base Bazaar revision") }, ["cwd"])
   },
   {
     name: "bazaar_cat_revision",
-    description: "Return a file's content at a Bazaar revision, equivalent to bzr cat -r REV PATH.",
+    description: "Return a file's content at a Bazaar revision, equivalent to bzr --no-aliases cat -r REV PATH.",
     inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), revision: stringProp("Bazaar revision"), path: stringProp("Repository-relative file path") }, ["cwd", "revision", "path"])
   },
   {
     name: "bazaar_status",
-    description: "Return Bazaar status for a repository.",
+    description: "Return Bazaar status for a repository, equivalent to bzr --no-aliases status.",
     inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root") }, ["cwd"])
   },
   {

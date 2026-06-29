@@ -4,8 +4,8 @@ import { pathExists, readTextFile, resolveWorkspacePath } from "./fileSystem"
 import { formatSchemaErrors, loadSchemaValidator } from "./schemaLoader"
 import type { ReviewInput } from "./types"
 
-export async function validateReviewInput(inputPath: string, workspaceRoot = process.cwd()): Promise<ReviewInput> {
-  const raw = await readTextFile(inputPath)
+export async function validateReviewInput(inputPath: string, workspaceRoot = process.cwd(), textEncoding = "auto"): Promise<ReviewInput> {
+  const raw = await readTextFile(inputPath, textEncoding)
   const parsed = YAML.parse(raw) as unknown
 
   const validate = await loadSchemaValidator("review-input")

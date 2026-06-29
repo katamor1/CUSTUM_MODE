@@ -16,6 +16,32 @@ Bobは通常の不具合レビューに加えて、`.bob/review/checklist.json` 
 6. Markdown `[x]` チェックリストは表示用であり、正本はJSONとする。
 7. 変更を勝手に修正しない。レビューと指摘に徹する。
 
+## Bazaar command policy
+
+AIチャット、Skill、workflow、追加調査で Bazaar CLI を直接使う場合、必ず `bzr --no-aliases <command>` 形式で実行する。`--no-aliases` を付けない `bzr <command>` の使用は100%禁止する。
+
+理由:
+
+- ユーザー環境によっては `diff` や `log` などに GUI を起動する alias が設定されている場合がある。
+- alias が動くと stdout に差分やログが返らず、レビュー packet や追加調査が機能しない。
+- MCP tool `bazaar_log`、`bazaar_diff_revision`、`bazaar_diff_range`、`bazaar_diff_working_tree`、`bazaar_cat_revision`、`bazaar_status` は拡張機能側で `--no-aliases` を強制するため、通常は MCP tool を優先する。
+
+禁止例:
+
+```bash
+bzr diff -c 1234
+bzr log -r 1234
+bzr status
+```
+
+許可例:
+
+```bash
+bzr --no-aliases diff -c 1234
+bzr --no-aliases log -r 1234
+bzr --no-aliases status
+```
+
 ## Context policy
 
 コンテキストウィンドウを使いすぎない範囲で、必要最小限の追加調査を許可する。

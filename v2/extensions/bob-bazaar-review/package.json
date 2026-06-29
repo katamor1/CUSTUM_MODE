@@ -1,7 +1,7 @@
 {
   "name": "bob-bazaar-review",
-  "displayName": "Bob Bazaar Review",
-  "description": "Companion extension that exposes Bazaar revision review tools and project rule review helpers to IBM Bob through MCP.",
+  "displayName": "Bob Bazaar レビュー支援",
+  "description": "IBM Bob 向けに Bazaar リビジョンレビュー、プロジェクト規約、MCP 連携を提供します。日本語と Shift-JIS 系の Bazaar メッセージ・差分を想定します。",
   "version": "0.3.0",
   "publisher": "local",
   "license": "UNLICENSED",
@@ -40,99 +40,105 @@
     "commands": [
       {
         "command": "bobBazaar.openReviewGui",
-        "title": "Open Bazaar Review GUI",
+        "title": "Bazaar レビュー: GUI を開く",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.collectReviewContext",
-        "title": "Collect Bazaar Review Context",
+        "title": "Bazaar レビュー: レビューコンテキストを収集",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.loadReviewRules",
-        "title": "Load Project Review Rules",
+        "title": "Bazaar レビュー: プロジェクト規約を読み込む",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.captureReviewResult",
-        "title": "Capture Review Result",
+        "title": "Bazaar レビュー: レビュー結果を取り込む",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.saveReviewResultFromClipboard",
-        "title": "Save Review Result from Clipboard",
+        "title": "Bazaar レビュー: クリップボードからレビュー結果を保存",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.configureMcp",
-        "title": "Configure Bazaar MCP for Bob",
+        "title": "Bazaar レビュー: Bob MCP を設定",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.initProjectRules",
-        "title": "Initialize Project Review Rules",
+        "title": "Bazaar レビュー: プロジェクト規約を初期化",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.reviewRevision",
-        "title": "Review Bazaar Revision with Bob",
+        "title": "Bazaar レビュー: 1リビジョンを Bob でレビュー",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.reviewRange",
-        "title": "Review Bazaar Revision Range with Bob",
+        "title": "Bazaar レビュー: リビジョン範囲を Bob でレビュー",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.reviewRevisionWithProjectRules",
-        "title": "Review Bazaar Revision with Project Rules",
+        "title": "Bazaar レビュー: 1リビジョンをプロジェクト規約付きでレビュー",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.reviewRangeWithProjectRules",
-        "title": "Review Bazaar Revision Range with Project Rules",
+        "title": "Bazaar レビュー: リビジョン範囲をプロジェクト規約付きでレビュー",
         "category": "Bob Bazaar"
       },
       {
         "command": "bobBazaar.validateReviewResultJson",
-        "title": "Validate Project Review Result JSON",
+        "title": "Bazaar レビュー: レビュー結果 JSON を検証",
         "category": "Bob Bazaar"
       }
     ],
     "configuration": {
-      "title": "Bob Bazaar Review",
+      "title": "Bob Bazaar レビュー支援",
       "properties": {
         "bobBazaar.bzrPath": {
           "type": "string",
           "default": "bzr",
-          "description": "Path to the Bazaar executable. Use an absolute path when bzr is not on PATH."
+          "description": "Bazaar 実行ファイルのパス。PATH に bzr がない場合は絶対パスを指定します。"
+        },
+        "bobBazaar.textEncoding": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "utf8", "shift_jis", "cp932", "windows-31j"],
+          "description": "Bazaar の log / diff / cat 出力を読み取る文字コード。auto は UTF-8 を優先し、文字化けが疑われる場合に Shift-JIS 系として読み直します。"
         },
         "bobBazaar.mcpServerName": {
           "type": "string",
           "default": "bazaar",
-          "description": "MCP server name written to .bob/mcp.json."
+          "description": ".bob/mcp.json に書き込む MCP サーバー名。"
         },
         "bobBazaar.maxDiffBytes": {
           "type": "number",
           "default": 1048576,
           "minimum": 32768,
-          "description": "Maximum Bazaar diff size to include in the generated review packet."
+          "description": "生成するレビュー packet に含める Bazaar diff の最大サイズ。"
         },
         "bobBazaar.maxAddedFileContentBytes": {
           "type": "number",
           "default": 262144,
           "minimum": 0,
-          "description": "Maximum total size of newly added file contents to include in the generated review packet. Set 0 to omit added file content sections."
+          "description": "新規追加ファイル本文をレビュー packet に含める最大合計サイズ。0 の場合、追加ファイル本文セクションを省略します。"
         },
         "bobBazaar.projectRules.checklistPath": {
           "type": "string",
           "default": ".bob/review/checklist.json",
-          "description": "Workspace-relative or absolute path to the project-specific review checklist JSON."
+          "description": "プロジェクト固有レビュー checklist JSON のワークスペース相対パスまたは絶対パス。"
         },
         "bobBazaar.projectRules.schemaPath": {
           "type": "string",
           "default": ".bob/review/review-result.schema.json",
-          "description": "Workspace-relative or absolute path to the review result JSON schema."
+          "description": "レビュー結果 JSON schema のワークスペース相対パスまたは絶対パス。"
         }
       }
     },

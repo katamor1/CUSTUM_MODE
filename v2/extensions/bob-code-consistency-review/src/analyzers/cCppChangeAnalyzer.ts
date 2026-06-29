@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { languageFromPath } from "../core/gitDiffCollector"
-import { pathExists, resolveWorkspacePath, toPosixPath } from "../core/fileSystem"
+import { pathExists, readTextFile, resolveWorkspacePath, toPosixPath } from "../core/fileSystem"
 import type { CodeAnalysisResult, DiffSummary, EvidenceRef, ReviewInput } from "../core/types"
 
 type FunctionRange = { name: string; start: number; end: number; body: string[] }
@@ -11,7 +11,7 @@ const C_LIKE_LANGUAGES = new Set(["c", "cpp", "h", "hpp"])
 const CALL_EXCLUDES = new Set(["if", "for", "while", "switch", "return", "sizeof", "case"])
 const RT_FORBIDDEN = ["fopen", "fread", "fwrite", "fprintf", "printf", "scanf", "sleep", "Sleep", "malloc", "free", "system"]
 
-export async function analyzeCppChanges(diff: DiffSummary, reviewInput: ReviewInput, options: { workspaceRoot: string }): Promise<CodeAnalysisResult> {
+export async function analyzeCppChanges(diff: DiffSummary, reviewInput: ReviewInput, options: { workspaceRoot: string; textEncoding?: string }): Promise<CodeAnalysisResult> {
   const warnings: string[] = []
   const changedSymbols: CodeAnalysisResult["changedSymbols"] = []
   const functions: CodeAnalysisResult["functions"] = []
@@ -23,19 +23,20 @@ export async function analyzeCppChanges(diff: DiffSummary, reviewInput: ReviewIn
   const globals = new Set<string>()
   const diffLines = parseUnifiedDiff(diff)
   const changedTokens = changedIdentifierTokens(diffLines)
+  const sourceRoot = diff.vcsRoot ?? options.workspaceRoot
   let functionIndex = 1
   let codeEvidenceIndex = 1
 
   for (const file of diff.files) {
     const language = file.language ?? languageFromPath(file.path)
     if (!C_LIKE_LANGUAGES.has(language)) continue
-    const resolved = await resolveSourceFile(options.workspaceRoot, file.path)
+    const resolved = await resolveSourceFile(sourceRoot, file.path)
     if (!resolved) {
-      warnings.push(`changed C/C++ file not found in workspace: ${file.path}`)
+      warnings.push(`変更された C/C++ ファイルがワークスペース内で見つかりません: ${file.path}`)
       continue
     }
 
-    const source = await fs.readFile(resolved, "utf8")
+    const source = await readTextFile(resolved, options.textEncoding)
     const lines = source.split(/\r?\n/)
     const ranges = detectFunctions(lines)
     const fileDiffLines = diffLinesForFile(diffLines, file.path)
@@ -63,7 +64,7 @@ export async function analyzeCppChanges(diff: DiffSummary, reviewInput: ReviewIn
     for (const candidate of detectRtForbidden(fileDiffLines, file.path)) rtForbiddenCandidates.push(candidate)
   }
 
-  if (changedSymbols.length === 0) warnings.push("No changed C/C++ function could be mapped from diff hunks.")
+  if (changedSymbols.length === 0) warnings.push("VCS 差分から変更 C/C++ 関数を特定できませんでした。")
 
   const summaryMarkdown = renderSummary(changedSymbols, defines, globals, callGraph, rtForbiddenCandidates, reviewInput)
   return {
@@ -90,12 +91,17 @@ function parseUnifiedDiff(diff: DiffSummary): DiffLine[] {
   for (const line of text.split(/\r?\n/)) {
     const gitFile = line.match(/^diff --git a\/(.+?) b\/(.+)$/)
     if (gitFile) {
-      currentFile = gitFile[2]
+      currentFile = normalizeDiffPath(gitFile[2])
       continue
     }
-    const plusFile = line.match(/^\+\+\+ b\/(.+)$/)
-    if (plusFile) {
-      currentFile = plusFile[1]
+    const bzrFile = line.match(/^===\s+.+?\s+file '(.+?)'(?:\s+=>\s+'(.+)')?$/)
+    if (bzrFile) {
+      currentFile = normalizeDiffPath(bzrFile[2] ?? bzrFile[1])
+      continue
+    }
+    const plusFile = line.match(/^\+\+\+\s+(.+?)(?:\t.*)?$/)
+    if (plusFile && plusFile[1] !== "/dev/null") {
+      currentFile = normalizeDiffPath(plusFile[1])
       continue
     }
     const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
@@ -104,7 +110,7 @@ function parseUnifiedDiff(diff: DiffSummary): DiffLine[] {
       newLine = Number(hunk[2])
       continue
     }
-    if (!currentFile || line.startsWith("+++ ") || line.startsWith("--- ")) continue
+    if (!currentFile || line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("=== ")) continue
     if (line.startsWith("+")) {
       result.push({ file: currentFile, line: newLine, text: line.slice(1), kind: "add" })
       newLine += 1
@@ -245,7 +251,7 @@ async function findFilesByBasename(root: string, basename: string, limit: number
       return
     }
     for (const entry of entries) {
-      if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "out" || entry.name === "dist") continue
+      if (entry.name === ".git" || entry.name === ".bzr" || entry.name === "node_modules" || entry.name === "out" || entry.name === "dist") continue
       const fullPath = path.join(dir, entry.name)
       if (entry.isFile() && entry.name === basename) result.push(fullPath)
       else if (entry.isDirectory()) await visit(fullPath)
@@ -305,6 +311,10 @@ function renderSummary(
     "",
     ...rtForbiddenCandidates.map((candidate) => `- ${candidate.symbol}: ${candidate.file}${candidate.line ? `:${candidate.line}` : ""} ${candidate.reason}`)
   ].join("\n")
+}
+
+function normalizeDiffPath(filePath: string): string {
+  return filePath.replace(/^a\//, "").replace(/^b\//, "")
 }
 
 function escapeRegExp(value: string): string {

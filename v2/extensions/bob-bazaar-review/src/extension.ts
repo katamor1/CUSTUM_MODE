@@ -11,6 +11,7 @@ import { ReviewResult } from "./projectRules/types"
 import { BazaarReviewInitialTarget, openBazaarReviewGui } from "./reviewGui"
 import { buildAddedFilesContentSection, loadBazaarRevisionPacketInput } from "./revisionInfo"
 import { BazaarReviewContextResult, buildReviewContextResult } from "./workflowBridge"
+import { resolveBazaarWorkspaceFolder, resolveBobWorkspaceFolder } from "./workspaceResolver"
 
 const WORKFLOW_REGISTER_EXTENSION_ID = "local.workflow-register"
 
@@ -19,6 +20,12 @@ interface WorkflowActionExecutionInput {
   inputs: Record<string, unknown>
   state?: Record<string, string>
   workflowId?: string
+  logicalWorkflowId?: string
+  workflowRoot?: string
+  workflowFile?: string
+  workflowFolderName?: string
+  bazaarRoot?: string
+  repositoryRoot?: string
   runId?: string
   stepId?: string
 }
@@ -59,7 +66,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("bobBazaar.reviewRangeWithProjectRules", () => reviewRange(context, true)),
     vscode.commands.registerCommand("bobBazaar.validateReviewResultJson", () => validateActiveReviewResultJson())
   )
-  registerWorkflowProviders(context).catch((error) => console.warn("Bob Bazaar workflow provider registration failed", error))
+  registerWorkflowProviders(context).catch((error) => console.warn("Bob Bazaar ワークフロー provider の登録に失敗しました", error))
 }
 
 export function deactivate(): void {
@@ -71,7 +78,7 @@ async function registerWorkflowProviders(context: vscode.ExtensionContext): Prom
   if (!api) return
   api.registerActionProvider({
     id: "bobBazaar.openReviewGui",
-    execute: (input) => openBazaarReviewGui(context, initialTargetFromWorkflowInputs(input.inputs))
+    execute: (input) => openBazaarReviewGui(context, initialTargetFromWorkflowInputs(input.inputs, input))
   })
   api.registerActionProvider({
     id: "bobBazaar.collectReviewContext",
@@ -79,23 +86,26 @@ async function registerWorkflowProviders(context: vscode.ExtensionContext): Prom
   })
   api.registerActionProvider({
     id: "bobBazaar.loadReviewRules",
-    execute: () => loadReviewRules()
+    execute: (input) => loadReviewRules(input)
   })
   api.registerActionProvider({
     id: "bobBazaar.captureReviewResult",
-    execute: ({ args }) => captureReviewResult(firstStringArg(args))
+    execute: (input) => captureReviewResult(firstStringArg(input.args), {
+      expectedChecklistItems: expectedChecklistItemsFromState(input.state),
+      workspaceRoot: stringInput(input.workflowRoot)
+    })
   })
 }
 
 async function getWorkflowRegisterApi(): Promise<WorkflowRegisterApi | undefined> {
   const extension = vscode.extensions.getExtension<WorkflowRegisterApi>(WORKFLOW_REGISTER_EXTENSION_ID)
   if (!extension) {
-    console.warn(`Workflow register extension is not installed: ${WORKFLOW_REGISTER_EXTENSION_ID}`)
+    console.warn(`workflow-register 拡張機能が見つかりません: ${WORKFLOW_REGISTER_EXTENSION_ID}`)
     return undefined
   }
   const api = extension.isActive ? extension.exports : await extension.activate()
   if (!api?.registerActionProvider) {
-    console.warn(`Workflow register extension does not expose registerActionProvider: ${WORKFLOW_REGISTER_EXTENSION_ID}`)
+    console.warn(`workflow-register 拡張機能が registerActionProvider を公開していません: ${WORKFLOW_REGISTER_EXTENSION_ID}`)
     return undefined
   }
   return api
@@ -107,14 +117,18 @@ function firstStringArg(args: unknown): string | undefined {
   return typeof first === "string" ? first : undefined
 }
 
-function initialTargetFromWorkflowInputs(inputs: Record<string, unknown>): BazaarReviewInitialTarget | undefined {
+function initialTargetFromWorkflowInputs(inputs: Record<string, unknown>, input?: WorkflowActionExecutionInput): BazaarReviewInitialTarget | undefined {
+  const explicitBazaarRoot = stringInput(input?.bazaarRoot) ?? stringInput(input?.repositoryRoot) ?? stringInput(inputs.bazaarRoot) ?? stringInput(inputs.repositoryRoot)
   const target: BazaarReviewInitialTarget = {
     revisionMode: targetMode(inputs.revisionMode),
     revision: stringInput(inputs.revision),
     baseRevision: stringInput(inputs.baseRevision),
-    targetRevision: stringInput(inputs.targetRevision)
+    targetRevision: stringInput(inputs.targetRevision),
+    bazaarRoot: explicitBazaarRoot,
+    repositoryRoot: stringInput(inputs.repositoryRoot),
+    workflowRoot: stringInput(input?.workflowRoot)
   }
-  return target.revisionMode || target.revision || target.baseRevision || target.targetRevision ? target : undefined
+  return target.revisionMode || target.revision || target.baseRevision || target.targetRevision || target.bazaarRoot || target.repositoryRoot || target.workflowRoot ? target : undefined
 }
 
 function targetMode(value: unknown): BazaarReviewInitialTarget["revisionMode"] | undefined {
@@ -126,17 +140,33 @@ function stringInput(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
+function expectedChecklistItemsFromState(state: Record<string, string> | undefined): number | undefined {
+  const reviewRules = parseStateObject(state?.reviewRules)
+  const checklistItems = reviewRules?.checklistItems
+  return Number.isInteger(checklistItems) && (checklistItems as number) >= 0 ? checklistItems as number : undefined
+}
+
+function parseStateObject(value: string | undefined): Record<string, unknown> | undefined {
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function collectReviewContext(): Promise<BazaarReviewContextResult> {
   const packet = findReviewPacketText()
   if (!packet) {
-    throw new Error("No Bazaar review packet document is open. Use Bob Bazaar Review to create and add the review packet first.")
+    throw new Error("Bazaar レビュー packet ドキュメントが開かれていません。先に Bob Bazaar Review でレビュー packet を作成して Bob コンテキストに追加してください。")
   }
   return buildReviewContextResult(packet)
 }
 
-async function loadReviewRules(): Promise<ReviewRulesBridgeResult> {
-  const folder = await pickWorkspaceFolder()
-  if (!folder) throw new Error("Open a Bazaar workspace folder first.")
+async function loadReviewRules(input?: WorkflowActionExecutionInput): Promise<ReviewRulesBridgeResult> {
+  const folder = await pickBobWorkspaceFolder(input?.workflowRoot, input ? false : true)
+  if (!folder) throw new Error("先に Bob ワークスペースフォルダーを開いてください。")
 
   const config = vscode.workspace.getConfiguration("bobBazaar")
   const checklistPath = config.get<string>("projectRules.checklistPath", ".bob/review/checklist.json")
@@ -156,12 +186,12 @@ async function loadReviewRules(): Promise<ReviewRulesBridgeResult> {
     checklistItems: checklist.rules.length,
     categories,
     schemaTopLevelKeys,
-    summary: `Loaded ${checklist.rules.length} project review rule(s) across ${categories.length} categor(ies). Review result schema is available.`
+    summary: `プロジェクトレビュー規約 ${checklist.rules.length} 件を ${categories.length} カテゴリから読み込みました。レビュー結果 schema も利用できます。`
   }
 }
 
 async function configureMcp(context: vscode.ExtensionContext): Promise<void> {
-  const folder = await pickWorkspaceFolder()
+  const folder = await pickBobWorkspaceFolder(undefined, true)
   if (!folder) return
 
   const config = vscode.workspace.getConfiguration("bobBazaar")
@@ -176,38 +206,40 @@ async function configureMcp(context: vscode.ExtensionContext): Promise<void> {
   })
 
   await vscode.window.showInformationMessage(
-    `Configured Bob MCP server '${result.serverName}' in ${result.configPath}. Restart or refresh Bob MCP servers if it is already running.`
+    `Bob MCP サーバー '${result.serverName}' を ${result.configPath} に設定しました。すでに起動中の場合は Bob MCP サーバーを Refresh / Restart してください。`
   )
 }
 
 async function initProjectRules(): Promise<void> {
-  const folder = await pickWorkspaceFolder()
+  const folder = await pickBobWorkspaceFolder(undefined, true)
   if (!folder) return
 
   const paths = await initializeProjectRules(folder.uri.fsPath)
-  await vscode.window.showInformationMessage(`Initialized project review rules in ${paths.reviewDir}`)
+  await vscode.window.showInformationMessage(`プロジェクトレビュー規約を初期化しました: ${paths.reviewDir}`)
 
   const checklistDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(paths.checklistPath))
   await vscode.window.showTextDocument(checklistDoc, { preview: false })
 }
 
 async function reviewRevision(context: vscode.ExtensionContext, withProjectRules: boolean): Promise<void> {
-  const folder = await pickWorkspaceFolder()
-  if (!folder) return
+  const bazaarFolder = await pickBazaarWorkspaceFolder()
+  if (!bazaarFolder) return
+  const bobFolder = withProjectRules ? await pickBobWorkspaceFolder(undefined, true) : undefined
+  if (withProjectRules && !bobFolder) return
 
   const revision = await vscode.window.showInputBox({
-    title: withProjectRules ? "Review Bazaar Revision with Project Rules" : "Review Bazaar Revision with Bob",
-    prompt: "Bazaar revision to review, for example 1234 or revid:...",
-    validateInput: (value) => value.trim() ? undefined : "Revision is required"
+    title: withProjectRules ? "プロジェクト規約付きで Bazaar 1リビジョンをレビュー" : "Bob で Bazaar 1リビジョンをレビュー",
+    prompt: "レビュー対象の Bazaar リビジョンを入力してください。例: 1234 または revid:...",
+    validateInput: (value) => value.trim() ? undefined : "リビジョンは必須です。"
   })
   if (!revision) return
 
-  await withProgress("Preparing Bazaar revision review packet", async () => {
+  await withProgress("Bazaar 1リビジョンレビュー packet を作成しています", async () => {
     const client = makeBazaarClient()
-    const input = await loadBazaarRevisionPacketInput(client, folder.uri.fsPath, revision)
+    const input = await loadBazaarRevisionPacketInput(client, bazaarFolder.uri.fsPath, revision)
     const [addedFilesSection, projectRulesSection] = await Promise.all([
       buildAddedFilesContentSection(client, input.root, revision, input.info, getMaxAddedFileContentBytes()),
-      withProjectRules ? buildProjectRulesSectionForWorkspace(input.root) : Promise.resolve(undefined)
+      withProjectRules && bobFolder ? buildProjectRulesSectionForWorkspace(bobFolder.uri.fsPath) : Promise.resolve(undefined)
     ])
 
     const extraSections = [addedFilesSection, projectRulesSection].filter((section): section is string => Boolean(section))
@@ -226,29 +258,31 @@ async function reviewRevision(context: vscode.ExtensionContext, withProjectRules
 }
 
 async function reviewRange(context: vscode.ExtensionContext, withProjectRules: boolean): Promise<void> {
-  const folder = await pickWorkspaceFolder()
-  if (!folder) return
+  const bazaarFolder = await pickBazaarWorkspaceFolder()
+  if (!bazaarFolder) return
+  const bobFolder = withProjectRules ? await pickBobWorkspaceFolder(undefined, true) : undefined
+  if (withProjectRules && !bobFolder) return
 
   const baseRevision = await vscode.window.showInputBox({
-    title: withProjectRules ? "Review Bazaar Revision Range with Project Rules" : "Review Bazaar Revision Range with Bob",
-    prompt: "Base Bazaar revision, for example 1200",
-    validateInput: (value) => value.trim() ? undefined : "Base revision is required"
+    title: withProjectRules ? "プロジェクト規約付きで Bazaar リビジョン範囲をレビュー" : "Bob で Bazaar リビジョン範囲をレビュー",
+    prompt: "基準となる Bazaar リビジョンを入力してください。例: 1200",
+    validateInput: (value) => value.trim() ? undefined : "基準リビジョンは必須です。"
   })
   if (!baseRevision) return
 
   const targetRevision = await vscode.window.showInputBox({
-    title: withProjectRules ? "Review Bazaar Revision Range with Project Rules" : "Review Bazaar Revision Range with Bob",
-    prompt: "Target Bazaar revision, for example 1234",
-    validateInput: (value) => value.trim() ? undefined : "Target revision is required"
+    title: withProjectRules ? "プロジェクト規約付きで Bazaar リビジョン範囲をレビュー" : "Bob で Bazaar リビジョン範囲をレビュー",
+    prompt: "比較先の Bazaar リビジョンを入力してください。例: 1234",
+    validateInput: (value) => value.trim() ? undefined : "比較先リビジョンは必須です。"
   })
   if (!targetRevision) return
 
-  await withProgress("Preparing Bazaar revision range review packet", async () => {
+  await withProgress("Bazaar リビジョン範囲レビュー packet を作成しています", async () => {
     const client = makeBazaarClient()
-    const root = await client.root(folder.uri.fsPath)
+    const root = await client.root(bazaarFolder.uri.fsPath)
     const [diff, projectRulesSection] = await Promise.all([
       client.diffRange(root, baseRevision, targetRevision),
-      withProjectRules ? buildProjectRulesSectionForWorkspace(root) : Promise.resolve(undefined)
+      withProjectRules && bobFolder ? buildProjectRulesSectionForWorkspace(bobFolder.uri.fsPath) : Promise.resolve(undefined)
     ])
 
     const packet = buildReviewPacket({
@@ -279,7 +313,7 @@ async function buildProjectRulesSectionForWorkspace(workspaceRoot: string): Prom
 async function validateActiveReviewResultJson(): Promise<void> {
   const editor = vscode.window.activeTextEditor
   if (!editor) {
-    await vscode.window.showWarningMessage("Open a review result JSON document first.")
+    await vscode.window.showWarningMessage("先にレビュー結果 JSON ドキュメントを開いてください。")
     return
   }
 
@@ -287,7 +321,7 @@ async function validateActiveReviewResultJson(): Promise<void> {
   const validation = validateReviewResultJson(raw)
   if (!validation.valid) {
     const report = [
-      "# Review Result JSON Validation Failed",
+      "# レビュー結果 JSON 検証エラー",
       "",
       ...validation.issues.map((issue) => `- ${issue.path}: ${issue.message}`)
     ].join("\n")
@@ -296,8 +330,8 @@ async function validateActiveReviewResultJson(): Promise<void> {
     return
   }
 
-  const action = await vscode.window.showInformationMessage("Review result JSON is valid.", "Render Markdown Summary")
-  if (action === "Render Markdown Summary") {
+  const action = await vscode.window.showInformationMessage("レビュー結果 JSON は有効です。", "Markdown サマリを表示")
+  if (action === "Markdown サマリを表示") {
     const result = JSON.parse(raw) as ReviewResult
     const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: renderReviewResultMarkdown(result) })
     await vscode.window.showTextDocument(doc, { preview: false })
@@ -308,7 +342,8 @@ function makeBazaarClient(): BazaarClient {
   const config = vscode.workspace.getConfiguration("bobBazaar")
   return new BazaarClient({
     bzrPath: config.get<string>("bzrPath", "bzr"),
-    maxBuffer: Math.max(getMaxDiffBytes() * 2, 2 * 1024 * 1024)
+    maxBuffer: Math.max(getMaxDiffBytes() * 2, 2 * 1024 * 1024),
+    textEncoding: config.get<string>("textEncoding", "auto")
   })
 }
 
@@ -322,21 +357,12 @@ function getMaxAddedFileContentBytes(): number {
   return config.get<number>("maxAddedFileContentBytes", 256 * 1024)
 }
 
-async function pickWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
-  const folders = vscode.workspace.workspaceFolders ?? []
-  if (folders.length === 0) {
-    await vscode.window.showWarningMessage("Open a Bazaar workspace folder first.")
-    return undefined
-  }
-  if (folders.length === 1) {
-    return folders[0]
-  }
+async function pickBazaarWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {
+  return resolveBazaarWorkspaceFolder({ allowPick: true, title: "Bazaar ワークスペースを選択" })
+}
 
-  const picked = await vscode.window.showQuickPick(
-    folders.map((folder) => ({ label: folder.name, description: folder.uri.fsPath, folder })),
-    { title: "Select Bazaar workspace" }
-  )
-  return picked?.folder
+async function pickBobWorkspaceFolder(workflowRoot?: string, allowPick = true): Promise<vscode.WorkspaceFolder | undefined> {
+  return resolveBobWorkspaceFolder({ workflowRoot, allowPick, title: "Bob ワークスペースを選択" })
 }
 
 function findReviewPacketText(): string | undefined {
@@ -358,17 +384,17 @@ async function showAndOfferBobContext(context: vscode.ExtensionContext, packet: 
   const editor = await vscode.window.showTextDocument(document, { preview: false })
 
   const action = await vscode.window.showInformationMessage(
-    "Bazaar review packet is ready. Add it to Bob context?",
-    "Add to Bob Context",
-    "Copy to Clipboard",
-    "Save File"
+    "Bazaar レビュー packet を作成しました。Bob コンテキストへ追加しますか？",
+    "Bob コンテキストへ追加",
+    "クリップボードへコピー",
+    "ファイルに保存"
   )
 
-  if (action === "Add to Bob Context") {
+  if (action === "Bob コンテキストへ追加") {
     await addToBobContext(editor.document.uri, packet)
-  } else if (action === "Copy to Clipboard") {
+  } else if (action === "クリップボードへコピー") {
     await vscode.env.clipboard.writeText(packet)
-  } else if (action === "Save File") {
+  } else if (action === "ファイルに保存") {
     const target = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.joinPath(context.globalStorageUri, filename),
       filters: { Markdown: ["md"] }
@@ -387,7 +413,7 @@ async function addToBobContext(uri: vscode.Uri, packet: string): Promise<void> {
   } catch (error: any) {
     await vscode.env.clipboard.writeText(packet)
     await vscode.window.showWarningMessage(
-      `Could not call Bob add-to-context command. The review packet was copied to the clipboard instead. ${error?.message ?? ""}`
+      `Bob コンテキスト追加コマンドを呼び出せませんでした。代わりにレビュー packet をクリップボードへコピーしました。${error?.message ? ` ${error.message}` : ""}`
     )
   }
 }

@@ -58,6 +58,15 @@
           "type": "string",
           "minLength": 1
         },
+        "vcs": {
+          "type": "string",
+          "enum": ["git", "bazaar", "bzr"],
+          "default": "git"
+        },
+        "vcs_root": {
+          "type": "string",
+          "minLength": 1
+        },
         "ticket_ids": {
           "type": "array",
           "items": {

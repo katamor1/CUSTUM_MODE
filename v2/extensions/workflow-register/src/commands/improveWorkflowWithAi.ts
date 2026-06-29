@@ -4,6 +4,7 @@ import { formatWorkflowRepairProposal, WorkflowAiProvider } from "../core/workfl
 import { createWorkflowReplacementCandidate, previewFileNameForWorkflow, WorkflowReplacementCandidate } from "../core/workflowReplacementPreview"
 import { buildWorkflowRepairContext, formatWorkflowRepairContext } from "../core/workflowRepairContext"
 import { formatWorkflowDiagnostics, validateWorkflowText } from "../core/workflowValidator"
+import { pickWorkflowRootForUri, workflowRelativePath } from "./workspaceRootPicker"
 
 export interface ImproveWorkflowWithAiOptions {
   sourceId: string
@@ -17,7 +18,7 @@ export async function improveWorkflowWithAi(options: ImproveWorkflowWithAiOption
     await vscode.window.showErrorMessage("No active editor is open.")
     return
   }
-  const filePath = vscode.workspace.asRelativePath(editor.document.uri, false)
+  const filePath = workflowRelativePath(editor.document.uri)
   const workflowText = editor.document.getText()
   const validation = validateWorkflowText({ sourceId: options.sourceId, filePath, text: workflowText })
   const context = buildWorkflowRepairContext(filePath, validation)
@@ -51,9 +52,9 @@ export async function improveWorkflowWithAi(options: ImproveWorkflowWithAiOption
 async function previewAndMaybeApplyReplacement(originalUri: vscode.Uri, candidate: WorkflowReplacementCandidate): Promise<string> {
   const preview = await vscode.workspace.openTextDocument({ language: "markdown", content: candidate.replacementMarkdown })
   await vscode.window.showTextDocument(preview, { preview: false })
-  const folder = vscode.workspace.workspaceFolders?.[0]
-  if (folder) {
-    const previewDir = vscode.Uri.joinPath(folder.uri, ".bob", "workflows", ".previews", candidate.workflowName)
+  const workflowRoot = await pickWorkflowRootForUri(originalUri, "Select workflow workspace for replacement preview")
+  if (workflowRoot) {
+    const previewDir = vscode.Uri.joinPath(vscode.Uri.file(workflowRoot), ".bob", "workflows", ".previews", candidate.workflowName)
     const previewUri = vscode.Uri.joinPath(previewDir, previewFileNameForWorkflow(candidate.filePath, new Date()))
     await vscode.workspace.fs.createDirectory(previewDir)
     await vscode.workspace.fs.writeFile(previewUri, new TextEncoder().encode(candidate.replacementMarkdown))
@@ -71,11 +72,11 @@ async function previewAndMaybeApplyReplacement(originalUri: vscode.Uri, candidat
 }
 
 async function writeBackupAndReplacement(originalUri: vscode.Uri, candidate: WorkflowReplacementCandidate): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0]
-  if (!folder) throw new Error("No workspace folder is open.")
+  const workflowRoot = await pickWorkflowRootForUri(originalUri, "Select workflow workspace for replacement backup")
+  if (!workflowRoot) throw new Error("No workspace folder is open.")
   const parts = candidate.backupRelativePath.split("/").filter(Boolean)
-  const backupUri = vscode.Uri.joinPath(folder.uri, ...parts)
-  const backupDir = vscode.Uri.joinPath(folder.uri, ...parts.slice(0, -1))
+  const backupUri = vscode.Uri.joinPath(vscode.Uri.file(workflowRoot), ...parts)
+  const backupDir = vscode.Uri.joinPath(vscode.Uri.file(workflowRoot), ...parts.slice(0, -1))
   await vscode.workspace.fs.createDirectory(backupDir)
   await vscode.workspace.fs.writeFile(backupUri, new TextEncoder().encode(candidate.originalMarkdown))
   await vscode.workspace.fs.writeFile(originalUri, new TextEncoder().encode(candidate.replacementMarkdown))

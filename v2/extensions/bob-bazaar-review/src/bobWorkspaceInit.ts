@@ -21,6 +21,10 @@ const REQUIRED_FILES = [
   ".bob/workflows/bazaar-project-rule-review/WORKFLOW.md"
 ]
 
+const REFRESHABLE_TEMPLATE_FILES = [
+  ".bob/workflows/bazaar-project-rule-review/WORKFLOW.md"
+]
+
 export async function getBobWorkspaceStatus(workspaceFolder: vscode.WorkspaceFolder, serverName = "bazaar"): Promise<BobWorkspaceStatus> {
   const root = workspaceFolder.uri.fsPath
   const missing: string[] = []
@@ -32,6 +36,14 @@ export async function getBobWorkspaceStatus(workspaceFolder: vscode.WorkspaceFol
       present.push(relative)
     } else {
       missing.push(relative)
+    }
+  }
+
+  const workflowPath = path.join(root, ".bob", "workflows", "bazaar-project-rule-review", "WORKFLOW.md")
+  if (await exists(workflowPath)) {
+    const staleReason = await workflowTemplateStaleReason(workflowPath)
+    if (staleReason && !missing.includes(".bob/workflows/bazaar-project-rule-review/WORKFLOW.md")) {
+      missing.push(`.bob/workflows/bazaar-project-rule-review/WORKFLOW.md#${staleReason}`)
     }
   }
 
@@ -62,6 +74,7 @@ export async function initializeBobWorkspaceFromTemplates(options: {
   const targetRoot = path.join(root, ".bob")
 
   await copyDirectoryMissingOnly(templateRoot, targetRoot, new Set(["mcp.json.template"]))
+  await refreshTemplateFiles(templateRoot, root)
   await configureWorkspaceMcpServer({
     workspaceFolder: options.workspaceFolder,
     extensionContext: options.context,
@@ -88,6 +101,28 @@ async function copyDirectoryMissingOnly(sourceDir: string, targetDir: string, sk
         await fs.copyFile(sourcePath, targetPath)
       }
     }
+  }
+}
+
+async function refreshTemplateFiles(templateRoot: string, workspaceRoot: string): Promise<void> {
+  for (const relative of REFRESHABLE_TEMPLATE_FILES) {
+    const source = path.join(templateRoot, relative.replace(/^\.bob[\\/]/, ""))
+    const target = path.join(workspaceRoot, relative)
+    if (!(await exists(source))) continue
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.copyFile(source, target)
+  }
+}
+
+async function workflowTemplateStaleReason(workflowPath: string): Promise<string | undefined> {
+  try {
+    const text = await fs.readFile(workflowPath, "utf8")
+    if (/^workspaceRequired:\s*true\s*$/m.test(text)) return "workspaceRequired-true"
+    if (!/^workspaceRequired:\s*false\s*$/m.test(text)) return "workspaceRequired-missing"
+    if (!/title:\s*Bazaar プロジェクト規約レビュー/.test(text)) return "template-stale"
+    return undefined
+  } catch {
+    return undefined
   }
 }
 

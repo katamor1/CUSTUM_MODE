@@ -1,0 +1,126 @@
+schema_version: 1
+review_summary:
+  review_id: REVIEW-AI-MATRIX-001
+  package_id: PACKAGE-AI-MATRIX-SAMPLE
+  target_range: "main..feature/ai-verification-matrix"
+  result_type: pre_review
+  final_approval: not_performed
+  scope_statement: "ai-verification-matrix fixture の範囲だけを対象にした代表的なプレレビュー結果。"
+  generated_at: "2026-06-30T12:00:00+09:00"
+  prompt_template_id: consistency-review-v1
+
+findings:
+  - id: PRE-001
+    category: requirement-code-consistency
+    severity: high
+    confidence: high
+    summary: "要求と台帳が ERR_TIMEOUT を求めている箇所で、タイムアウト処理が ERR_OK を返している。"
+    evidence:
+      - evidence_id: REQ-0002
+        type: requirement
+        ref: REQ-NG-001
+      - evidence_id: DD-0002
+        type: detailed_design
+        ref: DD-NG-001
+      - evidence_id: LEDGER-0001
+        type: ledger
+        ref: ERR_TIMEOUT
+      - evidence_id: SRC-0002
+        type: code
+        ref: Payment_HandleTimeout
+    reason: "変更後コードのタイムアウト分岐は ERR_OK を返しているが、要求、詳細設計、台帳はいずれも ERR_TIMEOUT を指定している。"
+    impact: "タイムアウトが正常な決済ステータス更新として扱われる可能性がある。"
+    recommended_action: "タイムアウト分岐で ERR_TIMEOUT を返すよう修正する。仕様変更であれば承認済みの要求と設計を更新する。"
+    human_check: "意図的な仕様変更ではないことを確認する。"
+
+  - id: PRE-002
+    category: design-code-consistency
+    severity: medium
+    confidence: high
+    summary: "不正スコア審査のしきい値が、設計値 80 ではなく 90 として実装されている。"
+    evidence:
+      - evidence_id: REQ-0003
+        type: requirement
+        ref: REQ-FRAUD-030
+      - evidence_id: DD-0003
+        type: detailed_design
+        ref: DD-FRAUD-030
+      - evidence_id: LEDGER-0002
+        type: ledger
+        ref: ERR_FRAUD_REVIEW
+      - evidence_id: SRC-0003
+        type: code
+        ref: Payment_AssessFraudScore
+    reason: "設計では 80 以上で ERR_FRAUD_REVIEW を返すとしているが、変更後コードでは 90 以上が条件になっている。"
+    impact: "80 から 89 のスコアが不正審査を通過する可能性がある。"
+    recommended_action: "コードのしきい値を 80 に修正するか、承認後に設計を更新する。"
+    human_check: "マージ前に承認済みの不正スコアしきい値を確認する。"
+
+  - id: PRE-003
+    category: test-gap
+    severity: medium
+    confidence: medium
+    summary: "不正審査動作に対応するテストケースが、提供されたテスト仕様に存在しない。"
+    evidence:
+      - evidence_id: REQ-0003
+        type: requirement
+        ref: REQ-FRAUD-030
+      - evidence_id: DD-0003
+        type: detailed_design
+        ref: DD-FRAUD-030
+      - evidence_id: SRC-0003
+        type: code
+        ref: Payment_AssessFraudScore
+    reason: "fixture には不正審査の要求と設計根拠があるが、テスト仕様はプレミアム上限とタイムアウト処理だけを扱っている。"
+    impact: "新しい不正審査動作が回帰テストなしでリリースされる可能性がある。"
+    recommended_action: "不正スコアしきい値以上と未満の経路を確認するテストケースを追加する。"
+    human_check: "今回リリースで不正審査テストが必要か確認する。"
+
+  - id: PRE-004
+    category: rt-ts-rule
+    severity: medium
+    confidence: high
+    summary: "リアルタイムキャッシュ更新の RT 経路に printf が追加されている。"
+    evidence:
+      - evidence_id: DD-0004
+        type: detailed_design
+        ref: DD-RT-040
+      - evidence_id: SRC-0004
+        type: code
+        ref: Payment_UpdateRealtimeCache
+    reason: "詳細設計では RT 更新経路でのコンソール出力やブロッキング処理を禁止しているが、変更後コードは printf を追加している。"
+    impact: "コンソール出力によりリアルタイム経路のタイミングへ影響する可能性がある。"
+    recommended_action: "RT 経路から printf を削除するか、承認済みの非ブロッキング trace 方式へ置き換える。"
+    human_check: "Payment_UpdateRealtimeCache が RT タスクで実行されるか確認する。"
+
+questions:
+  - id: Q-001
+    category: document-version
+    summary: "TICKET-AI-105 では最終しきい値が未確定とされており、不正スコアしきい値の承認状態が不明である。"
+    reason: "要求と設計は不正審査動作を記載しているが、チケットでは最終しきい値にオーナー確認が必要とされている。"
+    evidence:
+      - evidence_id: TICKET-0001
+        type: ticket
+        ref: TICKET-AI-105
+      - evidence_id: DD-0003
+        type: detailed_design
+        ref: DD-FRAUD-030
+    suggested_owner: design_owner
+    suggested_action: "承認済みの不正スコアしきい値が 80 か 90 かを確認する。"
+
+coverage_notes:
+  - id: COV-001
+    type: checked
+    summary: "Payment_CalculateLimit は REQ-OK-001、BD-OK-001、DD-OK-001、TC-OK-010 と照合済みで、finding 化する不整合はない。"
+  - id: COV-002
+    type: out_of_scope
+    summary: "性能測定およびダッシュボード表示文言は、このレビューの対象外として明示されている。"
+  - id: COV-003
+    type: not_checked
+    summary: "実行時タイミングの測定データは review-package に含まれていない。"
+
+rejected_or_uncertain:
+  - id: UNC-001
+    summary: "ダッシュボード表示文言への影響"
+    reason: "review-input でダッシュボード表示文言は対象外とされており、この fixture では UI ファイルも変更されていない。"
+    next_action: "必要であれば UI 表示文言に特化した別レビューで確認する。"

@@ -67,9 +67,9 @@ export async function buildAddedFilesContentSection(
   if (addedFiles.length === 0 || maxBytes <= 0) return undefined
 
   const lines: string[] = [
-    "## Added file contents",
+    "## 追加ファイル本文",
     "",
-    "The following files are newly added in this Bazaar revision. Diff output may omit enough context for new files, so their revision content is included explicitly.",
+    "この Bazaar リビジョンで新規追加されたファイルの本文です。diff だけでは十分な文脈が得られない場合があるため、対象リビジョンの内容を明示的に含めます。",
     ""
   ]
   let remainingBytes = maxBytes
@@ -99,13 +99,13 @@ export async function buildAddedFilesContentSection(
     } catch (error: any) {
       lines.push(`### ${entry.path}`)
       lines.push("")
-      lines.push(`Could not load added file content with Bazaar cat at revision ${revision}: ${error?.message ?? String(error)}`)
+      lines.push(`リビジョン ${revision} の Bazaar cat で追加ファイル本文を読み込めませんでした: ${error?.message ?? String(error)}`)
       lines.push("")
     }
   }
 
   if (truncated) {
-    lines.push(`[TRUNCATED: added file contents exceeded ${maxBytes} bytes. Use focused read/search tools for additional context.]`)
+    lines.push(`[TRUNCATED: 追加ファイル本文が ${maxBytes} bytes の上限を超えました。必要に応じて focused read/search tools で追加確認してください。]`)
   }
 
   return lines.join("\n")

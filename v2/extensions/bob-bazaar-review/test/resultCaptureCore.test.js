@@ -37,6 +37,18 @@ function validReviewResult(id = "BRR-TEST-001") {
   }
 }
 
+function checklistResult(ruleId, status, evidence = []) {
+  return {
+    rule_id: ruleId,
+    title: `Rule ${ruleId}`,
+    status,
+    severity: status === "fail" ? "warning" : "info",
+    confidence: "medium",
+    evidence,
+    reason: `${ruleId} was reviewed.`
+  }
+}
+
 test("explicit review-result text is validated and saved as JSON and Markdown", async () => {
   const { captureReviewResultText } = require("../out/projectRules/resultCaptureCore")
   const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-review-capture-"))
@@ -94,6 +106,59 @@ test("placeholder checklist severities from Bob agent output are normalized to i
   assert.equal(result.status, "ok")
   const saved = JSON.parse(await fs.readFile(result.jsonPath, "utf8"))
   assert.equal(saved.checklist_results[0].severity, "info")
+})
+
+test("completed workflow checklist is saved after normalizing mismatched summary counts", async () => {
+  const { captureReviewResultText } = require("../out/projectRules/resultCaptureCore")
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-review-capture-complete-"))
+  const payload = validReviewResult("BRR-SUMMARY-NORMALIZE")
+  payload.checklist_results = [
+    checklistResult("RULE-001", "pass", [{ file: "src/main.c", summary: "Rule one was checked." }]),
+    checklistResult("RULE-002", "unknown"),
+    checklistResult("RULE-003", "not_applicable")
+  ]
+  payload.summary = {
+    pass: 3,
+    fail: 0,
+    unknown: 0,
+    not_applicable: 0,
+    blocked: 0
+  }
+
+  const result = await captureReviewResultText(
+    workspaceRoot,
+    `\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``,
+    "command argument",
+    { expectedChecklistItems: 3 }
+  )
+
+  assert.equal(result.status, "ok")
+  const saved = JSON.parse(await fs.readFile(result.jsonPath, "utf8"))
+  assert.deepEqual(saved.summary, {
+    pass: 1,
+    fail: 0,
+    unknown: 1,
+    not_applicable: 1,
+    blocked: 0
+  })
+  assert.match(await fs.readFile(result.markdownPath, "utf8"), /\| unknown \| 1 \|/)
+})
+
+test("workflow checklist capture rejects incomplete checklist decisions before saving artifacts", async () => {
+  const { captureReviewResultText } = require("../out/projectRules/resultCaptureCore")
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-review-capture-incomplete-"))
+  const payload = validReviewResult("BRR-INCOMPLETE-CHECKLIST")
+
+  const result = await captureReviewResultText(
+    workspaceRoot,
+    `\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``,
+    "command argument",
+    { expectedChecklistItems: 2 }
+  )
+
+  assert.equal(result.status, "error")
+  assert.match(result.issues.map((issue) => issue.message).join("\n"), /expected 2 checklist result\(s\), got 1/)
+  await assert.rejects(fs.stat(path.join(workspaceRoot, ".bob", "review", "results", "BRR-INCOMPLETE-CHECKLIST.json")))
 })
 
 test("command argument capture path returns without awaiting presentation UI", () => {

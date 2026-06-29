@@ -1,7 +1,5 @@
 import { execFile } from "node:child_process"
-import { promisify } from "node:util"
-
-const execFileAsync = promisify(execFile)
+import { decodeTextBuffer } from "./textEncoding"
 
 export interface BazaarCommandResult {
   stdout: string
@@ -14,11 +12,14 @@ export interface BazaarCommandResult {
 export interface BazaarOptions {
   bzrPath: string
   maxBuffer?: number
+  textEncoding?: string
 }
 
 interface RunOptions {
   allowedExitCodes?: Array<number | string>
 }
+
+const REQUIRED_BZR_GLOBAL_OPTION = "--no-aliases"
 
 export class BazaarError extends Error {
   constructor(message: string, readonly details?: unknown) {
@@ -30,10 +31,12 @@ export class BazaarError extends Error {
 export class BazaarClient {
   private readonly bzrPath: string
   private readonly maxBuffer: number
+  private readonly textEncoding: string
 
   constructor(options: BazaarOptions) {
     this.bzrPath = options.bzrPath || "bzr"
     this.maxBuffer = options.maxBuffer ?? 10 * 1024 * 1024
+    this.textEncoding = options.textEncoding ?? "auto"
   }
 
   async root(cwd: string): Promise<string> {
@@ -75,33 +78,24 @@ export class BazaarClient {
 
   async run(cwd: string, args: string[], options: RunOptions = {}): Promise<BazaarCommandResult> {
     if (!cwd || cwd.includes("\0")) {
-      throw new BazaarError("Invalid Bazaar working directory")
+      throw new BazaarError("Bazaar の作業ディレクトリが不正です。")
     }
 
+    const commandArgs = withRequiredGlobalOption(args)
     const allowedExitCodes = options.allowedExitCodes ?? [0]
 
     try {
-      const result = await execFileAsync(this.bzrPath, args, {
-        cwd,
-        shell: false,
-        windowsHide: true,
-        maxBuffer: this.maxBuffer,
-        env: {
-          ...process.env,
-          BZR_PROGRESS_BAR: "none"
-        }
-      })
-
+      const result = await this.exec(cwd, commandArgs)
       return {
-        stdout: result.stdout ?? "",
-        stderr: result.stderr ?? "",
+        stdout: decodeTextBuffer(result.stdout, this.textEncoding),
+        stderr: decodeTextBuffer(result.stderr, this.textEncoding),
         command: this.bzrPath,
-        args,
+        args: commandArgs,
         cwd
       }
     } catch (error: any) {
-      const stdout = typeof error?.stdout === "string" ? error.stdout : ""
-      const stderr = typeof error?.stderr === "string" ? error.stderr : ""
+      const stdout = decodeTextBuffer(toBuffer(error?.stdout), this.textEncoding)
+      const stderr = decodeTextBuffer(toBuffer(error?.stderr), this.textEncoding)
       const code = error?.code
 
       if (allowedExitCodes.includes(code)) {
@@ -109,33 +103,67 @@ export class BazaarClient {
           stdout,
           stderr,
           command: this.bzrPath,
-          args,
+          args: commandArgs,
           cwd
         }
       }
 
       const message = stderr.trim() || stdout.trim() || String(error?.message ?? error)
-      throw new BazaarError(`bzr ${args.join(" ")} failed: ${message}`, {
+      throw new BazaarError(`bzr ${commandArgs.join(" ")} が失敗しました: ${message}`, {
         cwd,
-        args,
+        args: commandArgs,
         stdout,
         stderr,
         code
       })
     }
   }
+
+  private exec(cwd: string, args: string[]): Promise<{ stdout: Buffer; stderr: Buffer }> {
+    return new Promise((resolve, reject) => {
+      execFile(this.bzrPath, args, {
+        cwd,
+        shell: false,
+        windowsHide: true,
+        maxBuffer: this.maxBuffer,
+        encoding: "buffer",
+        env: {
+          ...process.env,
+          BZR_PROGRESS_BAR: "none"
+        }
+      } as any, (error, stdout, stderr) => {
+        if (error) {
+          ;(error as any).stdout = toBuffer(stdout)
+          ;(error as any).stderr = toBuffer(stderr)
+          reject(error)
+          return
+        }
+        resolve({ stdout: toBuffer(stdout), stderr: toBuffer(stderr) })
+      })
+    })
+  }
+}
+
+function withRequiredGlobalOption(args: string[]): string[] {
+  return args.includes(REQUIRED_BZR_GLOBAL_OPTION) ? [...args] : [REQUIRED_BZR_GLOBAL_OPTION, ...args]
+}
+
+function toBuffer(value: unknown): Buffer {
+  if (Buffer.isBuffer(value)) return value
+  if (typeof value === "string") return Buffer.from(value, "utf8")
+  return Buffer.alloc(0)
 }
 
 export function validateRevision(revision: string): string {
   const trimmed = revision.trim()
   if (!trimmed) {
-    throw new BazaarError("Revision must not be empty")
+    throw new BazaarError("リビジョンを入力してください。")
   }
 
   // Supports revno such as 1234, dotted revno such as 1.2.3,
   // date:, tag:, revid:, submit:, before:, ancestor: style revision specs.
   if (!/^[A-Za-z0-9_.:+@/=-]+$/.test(trimmed)) {
-    throw new BazaarError(`Unsafe Bazaar revision: ${revision}`)
+    throw new BazaarError(`安全でない Bazaar リビジョン指定です: ${revision}`)
   }
 
   return trimmed
@@ -144,10 +172,10 @@ export function validateRevision(revision: string): string {
 export function validateRelativePath(relativePath: string): string {
   const normalized = relativePath.replace(/\\/g, "/").trim()
   if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
-    throw new BazaarError(`Unsafe Bazaar path: ${relativePath}`)
+    throw new BazaarError(`安全でない Bazaar パスです: ${relativePath}`)
   }
   if (normalized.split("/").includes("..")) {
-    throw new BazaarError(`Parent path segments are not allowed: ${relativePath}`)
+    throw new BazaarError(`親ディレクトリ参照は許可しません: ${relativePath}`)
   }
   return normalized
 }

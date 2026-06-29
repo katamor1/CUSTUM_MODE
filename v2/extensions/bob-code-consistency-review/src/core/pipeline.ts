@@ -6,11 +6,12 @@ import { buildReviewPackage } from "./reviewPackageBuilder"
 import { validateReviewInput } from "./reviewInputValidator"
 import type { PreprocessResult } from "./types"
 
-export async function preprocessReview(input: { workspaceRoot: string; inputPath: string; outDir: string; diffFixturePath?: string }): Promise<PreprocessResult> {
-  const reviewInput = await validateReviewInput(input.inputPath, input.workspaceRoot)
-  const diff = await collectGitDiff(reviewInput, { workspaceRoot: input.workspaceRoot, diffFixturePath: input.diffFixturePath })
-  const documents = await extractDocuments(reviewInput, { workspaceRoot: input.workspaceRoot })
-  const codeAnalysis = await analyzeCppChanges(diff, reviewInput, { workspaceRoot: input.workspaceRoot })
+export async function preprocessReview(input: { workspaceRoot: string; inputPath: string; outDir: string; diffFixturePath?: string; bzrPath?: string; textEncoding?: string }): Promise<PreprocessResult> {
+  const textEncoding = input.textEncoding ?? "auto"
+  const reviewInput = await validateReviewInput(input.inputPath, input.workspaceRoot, textEncoding)
+  const diff = await collectGitDiff(reviewInput, { workspaceRoot: input.workspaceRoot, diffFixturePath: input.diffFixturePath, bzrPath: input.bzrPath, textEncoding })
+  const documents = await extractDocuments(reviewInput, { workspaceRoot: input.workspaceRoot, textEncoding })
+  const codeAnalysis = await analyzeCppChanges(diff, reviewInput, { workspaceRoot: input.workspaceRoot, textEncoding })
   const traceability = await buildTraceability({ reviewInput, documents, codeAnalysis, diff })
 
   await buildReviewPackage({

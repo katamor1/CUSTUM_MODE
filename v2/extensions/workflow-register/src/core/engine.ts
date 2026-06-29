@@ -169,6 +169,10 @@ export class WorkflowEngine {
         const prompt = renderTemplate(step.prompt ?? "", { inputs: run.inputs, state: run.state, run, workflow, step })
         const agentText = await Promise.resolve(this.agentProvider.run({
           workflowId: workflow.id,
+          logicalWorkflowId: workflow.logicalWorkflowId,
+          workflowRoot: workflow.workflowRoot,
+          workflowFile: workflow.workflowFile,
+          workflowFolderName: workflow.workflowFolderName,
           runId: run.runId,
           stepId: step.id,
           prompt,
@@ -191,6 +195,10 @@ export class WorkflowEngine {
         inputs: run.inputs,
         state: run.state,
         workflowId: workflow.id,
+        logicalWorkflowId: workflow.logicalWorkflowId,
+        workflowRoot: workflow.workflowRoot,
+        workflowFile: workflow.workflowFile,
+        workflowFolderName: workflow.workflowFolderName,
         runId: run.runId,
         stepId: step.id
       })

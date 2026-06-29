@@ -21,7 +21,7 @@ export async function buildReviewPackage(input: {
 
   const evidence = [...documents.evidence, ...codeAnalysis.evidence]
   await writeJsonFile(path.join(outDir, "input-normalized.json"), reviewInput)
-  await writeJsonFile(path.join(outDir, "changed-files.json"), { files: diff.files, warnings: diff.warnings })
+  await writeJsonFile(path.join(outDir, "changed-files.json"), { vcs: diff.vcs ?? "git", vcsRoot: diff.vcsRoot, files: diff.files, warnings: diff.warnings })
   await writeJsonFile(path.join(outDir, "changed-symbols.json"), {
     symbols: codeAnalysis.changedSymbols,
     functions: codeAnalysis.functions,
@@ -66,6 +66,8 @@ function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: Ev
     "created_by: bob-code-consistency-review",
     "preprocess_version: 0.1.0",
     "repository:",
+    `  vcs: ${diff.vcs ?? "git"}`,
+    diff.vcsRoot ? `  root: ${JSON.stringify(relativePosix(workspaceRoot, diff.vcsRoot))}` : undefined,
     `  base: ${diff.base}`,
     `  head: ${diff.head}`,
     "review:",
@@ -78,18 +80,28 @@ function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: Ev
     `  review_package: ${relativePosix(workspaceRoot, outDir)}`,
     `  evidence_count: ${evidence.length}`,
     ""
-  ].join("\n")
+  ].filter((line): line is string => line !== undefined).join("\n")
 }
 
 function buildReviewSummary(reviewInput: ReviewInput, diff: DiffSummary): string {
-  return [
+  const lines = [
     `- review_id: ${reviewInput.review.id}`,
     `- title: ${reviewInput.review.title}`,
+    `- vcs: ${diff.vcs ?? "git"}`,
     `- target_range: ${diff.base}..${diff.head}`,
     `- change_type: ${reviewInput.review.change_type}`,
     `- purpose: ${reviewInput.review.purpose}`,
     `- review_focus: ${reviewInput.review_focus.join(", ")}`
-  ].join("\n")
+  ]
+  if (reviewInput.review.out_of_scope && reviewInput.review.out_of_scope.length > 0) {
+    lines.push(`- out_of_scope: ${joinHumanList(reviewInput.review.out_of_scope)}`)
+  }
+  return lines.join("\n")
+}
+
+function joinHumanList(values: string[]): string {
+  if (values.length <= 1) return values.join("")
+  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`
 }
 
 function buildChangeSummary(reviewInput: ReviewInput, diff: DiffSummary, codeAnalysis: CodeAnalysisResult, documents: DocumentExtractionResult): string {

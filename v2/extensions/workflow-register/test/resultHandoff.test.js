@@ -39,6 +39,35 @@ test("runAgent result handoff executes the result command through an action regi
   assert.equal(calls[0].workflowId, "workflow")
   assert.equal(calls[0].runId, "run")
   assert.equal(calls[0].stepId, "output-result")
+  assert.equal(calls[0].latestAssistantText, "agent result json")
+  assert.equal(calls[0].resultText, "agent result json")
+  assert.equal(calls[0].artifactText, "agent result json")
+})
+
+test("result handoff trims generated artifact text before passing it to providers", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { executeResultHandoff } = require("../out/resultHandoff")
+  let captured
+  const actions = new ActionRegistry()
+  actions.register({
+    id: "example.capture",
+    execute: (input) => {
+      captured = input
+      return { status: "ok" }
+    }
+  })
+
+  const result = await executeResultHandoff({
+    captureResult: true,
+    runAgent: false,
+    resultCommand: "example.capture"
+  }, "\n\n  generated artifact  \n", { actions })
+
+  assert.equal(result.ok, true)
+  assert.deepEqual(captured.args, ["generated artifact"])
+  assert.equal(captured.latestAssistantText, "generated artifact")
+  assert.equal(captured.resultText, "generated artifact")
+  assert.equal(captured.artifactText, "generated artifact")
 })
 
 test("result handoff preserves a legacy executeCommand fallback through action registry", async () => {

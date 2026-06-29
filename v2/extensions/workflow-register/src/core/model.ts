@@ -128,6 +128,7 @@ export interface WorkflowTodoDefinition {
 
 export interface CoreWorkflowDefinition {
   id: string
+  logicalWorkflowId?: string
   name: string
   label: string
   menuLabel?: string
@@ -135,6 +136,9 @@ export interface CoreWorkflowDefinition {
   schemaVersion: WorkflowSchemaVersion
   definitionHash?: string
   filePath?: string
+  workflowRoot?: string
+  workflowFile?: string
+  workflowFolderName?: string
   prompt: string
   promptWithoutTodo: string
   command?: string
@@ -163,6 +167,10 @@ export interface CoreWorkflowDefinition {
 
 export interface AgentExecutionInput {
   workflowId: string
+  logicalWorkflowId?: string
+  workflowRoot?: string
+  workflowFile?: string
+  workflowFolderName?: string
   runId: string
   stepId: string
   prompt: string
@@ -189,8 +197,22 @@ export interface ActionExecutionInput {
   inputs: Record<string, unknown>
   state?: Record<string, string>
   workflowId?: string
+  logicalWorkflowId?: string
+  workflowRoot?: string
+  workflowFile?: string
+  workflowFolderName?: string
   runId?: string
   stepId?: string
+  /**
+   * Latest assistant text captured from the current workflow step chat.
+   * Result handoff providers may use this to resume from an already generated artifact
+   * instead of asking the agent to regenerate earlier outputs.
+   */
+  latestAssistantText?: string
+  /** Alias for latestAssistantText when the text is being handed off as a step result. */
+  resultText?: string
+  /** Alias for latestAssistantText for providers that treat the value as a generated artifact. */
+  artifactText?: string
 }
 
 export interface ActionExecutionResult {

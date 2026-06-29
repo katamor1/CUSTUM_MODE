@@ -36,7 +36,7 @@ const ARTIFACT_TYPES: Record<string, { evidenceType: string; prefix: string; doc
   tickets: { evidenceType: "ticket", prefix: "TICKET", documentPrefix: "TICKET" }
 }
 
-export async function extractDocuments(reviewInput: ReviewInput, options: { workspaceRoot: string }): Promise<DocumentExtractionResult> {
+export async function extractDocuments(reviewInput: ReviewInput, options: { workspaceRoot: string; textEncoding?: string }): Promise<DocumentExtractionResult> {
   const documents: DocumentMeta[] = []
   const evidence: EvidenceRef[] = []
   const excerpts: string[] = []
@@ -61,7 +61,7 @@ export async function extractDocuments(reviewInput: ReviewInput, options: { work
       const selectors = selectorList(item)
       let chunks: ExtractedChunk[] = []
       try {
-        chunks = await extractFileChunks(filePath, item, typeInfo.evidenceType, selectors)
+        chunks = await extractFileChunks(filePath, item, typeInfo.evidenceType, selectors, options.textEncoding)
       } catch (error) {
         warnings.push(`failed to extract ${item.path}: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -105,9 +105,9 @@ function selectorList(item: ArtifactRef): string[] {
   return [...(item.sections ?? []), ...(item.cases ?? []), ...(item.rows ?? [])].map((selector) => selector.trim()).filter(Boolean)
 }
 
-async function extractFileChunks(filePath: string, item: ArtifactRef, evidenceType: string, selectors: string[]): Promise<ExtractedChunk[]> {
+async function extractFileChunks(filePath: string, item: ArtifactRef, evidenceType: string, selectors: string[], textEncoding = "auto"): Promise<ExtractedChunk[]> {
   const extension = path.extname(filePath).toLowerCase()
-  if (extension === ".md" || extension === ".markdown") return extractMarkdownChunks(await readTextFile(filePath), evidenceType, selectors)
+  if (extension === ".md" || extension === ".markdown") return extractMarkdownChunks(await readTextFile(filePath, textEncoding), evidenceType, selectors)
   if (extension === ".docx") return extractDocxChunks(filePath, evidenceType, selectors)
   if (extension === ".xlsx") return extractXlsxChunks(filePath, item, evidenceType, selectors)
   throw new Error(`unsupported document extension: ${extension || "(none)"}`)
@@ -285,5 +285,5 @@ function escapeCell(value: string): string {
 }
 
 function firstKnownId(text: string): string | undefined {
-  return text.match(/\b(?:REQ|BD|DD|TC|ERR|ISSUE|TICKET|LEDGER)-?[A-Za-z0-9_]+\b/)?.[0]
+  return text.match(/\b(?:REQ|BD|DD|TC|ERR|ISSUE|TICKET|LEDGER)(?:[-_][A-Za-z0-9]+)+\b/)?.[0]
 }

@@ -1,8 +1,9 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
+import { decodeTextBuffer } from "./textEncoding"
 
-export async function readTextFile(filePath: string): Promise<string> {
-  return fs.readFile(filePath, "utf8")
+export async function readTextFile(filePath: string, encoding = "auto"): Promise<string> {
+  return decodeTextBuffer(await fs.readFile(filePath), encoding)
 }
 
 export async function writeTextFile(filePath: string, text: string): Promise<void> {

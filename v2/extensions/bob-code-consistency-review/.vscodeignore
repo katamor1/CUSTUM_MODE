@@ -1,27 +1,84 @@
-# Source and build configuration not needed at runtime
+# Development sources; runtime uses compiled JavaScript under out/.
 src/**
+test/**
+tests/**
 *.ts
 *.tsbuildinfo
 tsconfig.json
-
-# Package-manager files
-npm-debug.log*
+package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# Local editor/runtime files
+# Local editor / test / build artifacts.
 .vscode/**
-*.vsix
-.DS_Store
-Thumbs.db
-
-# Tests and temporary output
-test/**
-tests/**
+.vscode-test/**
 coverage/**
 .tmp/**
 tmp/**
+*.vsix
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
 
-# Repository metadata
+# Repository metadata.
 .git/**
 .gitignore
+.gitattributes
+
+# Keep runtime dependencies, but remove common package-internal development assets.
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/__tests__/**
+node_modules/**/spec/**
+node_modules/**/specs/**
+node_modules/**/example/**
+node_modules/**/examples/**
+node_modules/**/demo/**
+node_modules/**/demos/**
+node_modules/**/benchmark/**
+node_modules/**/benchmarks/**
+node_modules/**/.github/**
+node_modules/**/.vscode/**
+node_modules/**/coverage/**
+node_modules/**/.nyc_output/**
+
+# Dependency build/test configuration not needed at runtime.
+node_modules/**/tsconfig.json
+node_modules/**/tsconfig.*.json
+node_modules/**/jest.config.*
+node_modules/**/karma.conf.*
+node_modules/**/rollup.config.*
+node_modules/**/webpack.config.*
+node_modules/**/gulpfile.*
+node_modules/**/Gruntfile.*
+node_modules/**/.eslint*
+node_modules/**/.prettier*
+node_modules/**/.editorconfig
+node_modules/**/.npmignore
+
+# Dependency development sources, type declarations, and source maps.
+# Runtime JS / JSON / assets are kept.
+node_modules/**/*.ts
+node_modules/**/*.tsx
+node_modules/**/*.d.ts
+node_modules/**/*.map
+node_modules/**/*.tsbuildinfo
+node_modules/**/@types/**
+
+# Dependency documentation that is not needed at runtime.
+node_modules/**/README*
+node_modules/**/CHANGELOG*
+node_modules/**/CHANGES*
+node_modules/**/HISTORY*
+node_modules/**/CONTRIBUTING*
+node_modules/**/CODE_OF_CONDUCT*
+node_modules/**/SECURITY*
+node_modules/**/*.md
+node_modules/**/*.markdown
+
+# Binary package caches occasionally included by dependencies.
+node_modules/**/*.tgz
+node_modules/**/*.zip

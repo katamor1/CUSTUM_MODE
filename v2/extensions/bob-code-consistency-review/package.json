@@ -1,7 +1,7 @@
 {
   "name": "bob-code-consistency-review",
-  "displayName": "Bob Code Consistency Review",
-  "description": "Companion extension that prepares code consistency pre-review packages for IBM Bob workflows.",
+  "displayName": "Bob コード整合プレレビュー",
+  "description": "IBM Bob ワークフロー向けに、コード変更と要求・設計・テスト仕様の整合プレレビュー用パッケージを作成します。日本語と Shift-JIS 系テキストを想定します。",
   "version": "0.1.0",
   "publisher": "local",
   "license": "UNLICENSED",
@@ -22,6 +22,7 @@
   ],
   "activationEvents": [
     "onStartupFinished",
+    "onCommand:bobCodeConsistency.initializeWorkspace",
     "onCommand:bobCodeConsistency.preprocess",
     "onCommand:bobCodeConsistency.captureBobOutput",
     "onCommand:bobCodeConsistency.validateOutput",
@@ -31,53 +32,70 @@
   "contributes": {
     "commands": [
       {
+        "command": "bobCodeConsistency.initializeWorkspace",
+        "title": "コード整合レビュー: .bob ワークフロー定義を初期化",
+        "category": "Bob コード整合"
+      },
+      {
         "command": "bobCodeConsistency.preprocess",
-        "title": "Preprocess Code Consistency Review",
-        "category": "Bob Code Consistency"
+        "title": "コード整合レビュー: 入力を前処理して Bob 用パッケージを作成",
+        "category": "Bob コード整合"
       },
       {
         "command": "bobCodeConsistency.captureBobOutput",
-        "title": "Capture Code Consistency Bob Output",
-        "category": "Bob Code Consistency"
+        "title": "コード整合レビュー: Bob 出力 YAML を取り込む",
+        "category": "Bob コード整合"
       },
       {
         "command": "bobCodeConsistency.validateOutput",
-        "title": "Validate Code Consistency Bob Output",
-        "category": "Bob Code Consistency"
+        "title": "コード整合レビュー: Bob 出力 YAML を検証",
+        "category": "Bob コード整合"
       },
       {
         "command": "bobCodeConsistency.triage",
-        "title": "Generate Code Consistency Human Triage",
-        "category": "Bob Code Consistency"
+        "title": "コード整合レビュー: 人間確認用 triage を生成",
+        "category": "Bob コード整合"
       }
     ],
     "configuration": {
-      "title": "Bob Code Consistency Review",
+      "title": "Bob コード整合プレレビュー",
       "properties": {
         "bobCodeConsistency.reviewInputPath": {
           "type": "string",
           "default": "review-input.yaml",
-          "description": "Workspace-relative path to review-input.yaml."
+          "description": "review-input.yaml のワークスペース相対パス。日本語を含む UTF-8 / Shift-JIS 系テキストを自動判定して読み込みます。"
         },
         "bobCodeConsistency.reviewPackagePath": {
           "type": "string",
           "default": ".bob-review/review-package",
-          "description": "Workspace-relative path where the generated review package is written."
+          "description": "生成した review-package を書き込むワークスペース相対パス。"
         },
         "bobCodeConsistency.bobOutputPath": {
           "type": "string",
           "default": ".bob-review/bob-output/bob-output.yaml",
-          "description": "Workspace-relative path where captured Bob YAML output is stored."
+          "description": "取り込んだ Bob YAML 出力を保存するワークスペース相対パス。"
         },
         "bobCodeConsistency.triagePath": {
           "type": "string",
           "default": ".bob-review/human-triage",
-          "description": "Workspace-relative path where human triage files are written."
+          "description": "人間確認用 triage ファイルを書き込むワークスペース相対パス。"
+        },
+        "bobCodeConsistency.bzrPath": {
+          "type": "string",
+          "default": "bzr",
+          "description": "review.vcs が bazaar / bzr の場合に使用する Bazaar 実行ファイルのパス。実行時は必ず --no-aliases を付与します。"
+        },
+        "bobCodeConsistency.textEncoding": {
+          "type": "string",
+          "enum": ["auto", "utf8", "shift_jis", "cp932", "windows-31j"],
+          "default": "auto",
+          "description": "review-input.yaml、Markdown 文書、C/C++ ソース、Git/Bazaar 差分 stdout、diff fixture の読み取り文字コード。auto は UTF-8 を優先し、文字化けが疑われる場合に Shift-JIS 系へ fallback します。"
         }
       }
     },
     "menus": {
       "commandPalette": [
+        { "command": "bobCodeConsistency.initializeWorkspace" },
         { "command": "bobCodeConsistency.preprocess" },
         { "command": "bobCodeConsistency.captureBobOutput" },
         { "command": "bobCodeConsistency.validateOutput" },
@@ -103,6 +121,7 @@
     "@types/node": "^20.11.30",
     "@types/vscode": "^1.106.0",
     "@vscode/vsce": "^3.2.1",
+    "iconv-lite": "^0.6.3",
     "typescript": "^5.4.5"
   }
 }

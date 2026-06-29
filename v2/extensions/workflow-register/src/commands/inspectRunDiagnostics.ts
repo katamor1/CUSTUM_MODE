@@ -1,13 +1,14 @@
 import * as vscode from "vscode"
 import { buildWorkflowRunDiagnosticReport } from "../core/runDiagnostics"
 import { FileRunStateStore } from "../core/runStateStore"
+import { pickWorkflowRoot } from "./workspaceRootPicker"
 
 export interface InspectRunDiagnosticsOptions {
   showMarkdownReport: (title: string, summary: string, lines: string[]) => Promise<void>
 }
 
 export async function inspectRunDiagnostics(options: InspectRunDiagnosticsOptions): Promise<void> {
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+  const workspaceRoot = await pickWorkflowRoot("Select workflow workspace")
   if (!workspaceRoot) {
     await vscode.window.showErrorMessage("No workspace folder is open.")
     return
