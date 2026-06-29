@@ -136,6 +136,49 @@ test("AI verification matrix expected Bob output validates and generates triage"
   assert.match(fs.readFileSync(path.join(triageDir, "questions-to-author.md"), "utf8"), /Q-001/)
 })
 
+test("capture, validate, and triage recover when real AI writes bob-output.yaml inside the review package", async () => {
+  const workspace = createAiVerificationMatrixWorkspace()
+  const packageDir = path.join(workspace, ".bob-review", "review-package")
+  await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: packageDir })
+
+  const fallbackOutputPath = path.join(packageDir, "bob-output.yaml")
+  const canonicalOutputPath = path.join(workspace, ".bob-review", "bob-output", "bob-output.yaml")
+  fs.copyFileSync(aiMatrixExpectedOutputPath, fallbackOutputPath)
+
+  const capture = await captureBobOutput({
+    workspaceRoot: workspace,
+    packageDir,
+    bobOutputPath: canonicalOutputPath,
+    text: "Bob wrote the YAML output to .bob-review/review-package/bob-output.yaml."
+  })
+  assert.equal(capture.status, "ok")
+  assert.equal(path.resolve(capture.sourcePath), path.resolve(fallbackOutputPath))
+  assert.ok(fs.existsSync(canonicalOutputPath))
+
+  fs.rmSync(path.dirname(canonicalOutputPath), { recursive: true, force: true })
+  const report = await validateBobOutput({ packageDir, bobOutputPath: canonicalOutputPath })
+  assert.deepEqual(report.errors, [])
+  assert.ok(report.warnings.some((warning) => warning.includes("review-package/bob-output.yaml")))
+
+  const triageDir = path.join(workspace, ".bob-review", "human-triage")
+  const triage = await generateHumanTriage({ packageDir, bobOutputPath: canonicalOutputPath, outDir: triageDir })
+  assert.equal(triage.status, "ok")
+  assert.ok(triage.itemCount >= 4)
+  assert.match(fs.readFileSync(path.join(triageDir, "accepted-findings.md"), "utf8"), /PRE-001/)
+})
+
+test("generateHumanTriage reports a missing Bob output file without throwing ENOENT", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bob-review-missing-output-"))
+  const result = await generateHumanTriage({
+    packageDir: path.join(root, ".bob-review", "review-package"),
+    bobOutputPath: path.join(root, ".bob-review", "bob-output", "bob-output.yaml"),
+    outDir: path.join(root, ".bob-review", "human-triage")
+  })
+
+  assert.equal(result.status, "error")
+  assert.match(result.message, /Bob output YAML not found/)
+})
+
 test("captureBobOutput canonicalizes common real-AI YAML shorthand before validation", async () => {
   const workspace = createAiVerificationMatrixWorkspace()
   const packageDir = path.join(workspace, ".bob-review", "review-package")

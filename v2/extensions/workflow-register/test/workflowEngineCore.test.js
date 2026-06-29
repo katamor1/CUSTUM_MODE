@@ -442,6 +442,56 @@ test("workflow engine runs command and file-result steps without Bob and persist
   assert.equal(JSON.parse(fs.readFileSync(resultPath, "utf8")).revision, "77")
 })
 
+test("workflow engine fails command steps when providers return structured error results", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { WorkflowEngine } = require("../out/core/engine")
+  const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+  const { FileRunStateStore } = require("../out/core/runStateStore")
+
+  const workspaceRoot = tempDir()
+  const actions = new ActionRegistry()
+  actions.register({
+    id: "sample.validate",
+    execute: async () => ({ status: "error", errors: ["Invalid YAML: missing bob-output.yaml"] })
+  })
+  const sinks = createDefaultResultSinkRegistry({ workspaceRoot, executeCommand: async () => undefined })
+  const runStore = new FileRunStateStore({ workspaceRoot, now: () => "2026-06-28T00:00:00.000Z", engineVersion: "test-engine" })
+  const engine = new WorkflowEngine({ actions, resultSinks: sinks, runStore })
+
+  const workflow = {
+    id: "workflow-register.structured-error",
+    name: "structured-error",
+    label: "Structured Error",
+    schemaVersion: "workflow-register/v1",
+    filePath: ".bob/workflows/structured-error/WORKFLOW.md",
+    inputs: {},
+    engineSteps: [
+      {
+        id: "validate",
+        title: "Validate",
+        type: "command",
+        action: { provider: "sample.validate" },
+        resultKey: "validationResult"
+      },
+      {
+        id: "next",
+        title: "Next",
+        type: "command",
+        action: { provider: "sample.next" }
+      }
+    ]
+  }
+
+  const run = await engine.runWorkflow(workflow, {})
+
+  assert.equal(run.status, "failed")
+  assert.equal(run.currentStep, "validate")
+  assert.equal(run.steps[0].status, "failed")
+  assert.equal(run.steps[1].status, "pending")
+  assert.match(run.error, /Invalid YAML: missing bob-output.yaml/)
+  assert.equal(run.state.validationResult, undefined)
+})
+
 test("workflow engine runs agent steps through an AgentProvider and can hand off the agent text", async () => {
   const { ActionRegistry } = require("../out/core/actionRegistry")
   const { WorkflowEngine } = require("../out/core/engine")

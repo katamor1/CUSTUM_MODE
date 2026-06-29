@@ -9,6 +9,7 @@ import { validateCommandGuardrails } from "./core/guardrails"
 import { collectWorkflowInputsWithResolver } from "./core/inputCollector"
 import { AgentProvider, CoreWorkflowDefinition, EngineStep, ResultSinkDefinition, WorkflowGuardrailsDefinition, WorkflowInputDefinition } from "./core/model"
 import { parseWorkflowMarkdown } from "./core/parser"
+import { reportedActionError } from "./core/reportedActionError"
 import { createDefaultResultSinkRegistry, ResultSinkRegistry } from "./core/resultSinkRegistry"
 import { FileRunStateStore, RunStateStore } from "./core/runStateStore"
 import { fallbackWorkspaceRootCandidates, findWorkflowRootCandidates, MarkerRootCandidate, relativePathFromRoot } from "./core/workspaceRoots"
@@ -1016,7 +1017,11 @@ async function runWorkflowStepCommand(definition: WorkflowDefinition, step: Work
     workflowFolderName: definition.workflowFolderName,
     stepId
   })
-  if (result.ok) return { command: step.command, ok: true, value: result.value }
+  if (result.ok) {
+    const actionError = reportedActionError(result.value)
+    if (actionError) return { command: step.command, ok: false, error: actionError }
+    return { command: step.command, ok: true, value: result.value }
+  }
   return { command: step.command, ok: false, error: result.error ?? `Action provider failed: ${step.command}` }
 }
 
@@ -1035,7 +1040,11 @@ async function runTopLevelWorkflowCommand(definition: WorkflowDefinition, action
     workflowFolderName: definition.workflowFolderName,
     stepId
   })
-  if (result.ok) return { command: definition.command, ok: true, value: result.value }
+  if (result.ok) {
+    const actionError = reportedActionError(result.value)
+    if (actionError) return { command: definition.command, ok: false, error: actionError }
+    return { command: definition.command, ok: true, value: result.value }
+  }
   return { command: definition.command, ok: false, error: result.error ?? `Action provider failed: ${definition.command}` }
 }
 

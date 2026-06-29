@@ -150,7 +150,8 @@ async function runTriage(options?: unknown): Promise<unknown> {
   const bobOutputPath = absolute(workspaceRoot, stringOption(record, "bobOutputPath") ?? config.get<string>("bobOutputPath", ".bob-review/bob-output/bob-output.yaml"))
   const outDir = absolute(workspaceRoot, stringOption(record, "triagePath") ?? stringOption(record, "outDir") ?? config.get<string>("triagePath", ".bob-review/human-triage"))
   const result = await generateHumanTriage({ packageDir, bobOutputPath, outDir })
-  notifyInfo(`人間確認用 triage ファイルを生成しました: ${outDir}`)
+  if (result.status === "ok") notifyInfo(`人間確認用 triage ファイルを生成しました: ${outDir}`)
+  else notifyError(result.message)
   return result
 }
 

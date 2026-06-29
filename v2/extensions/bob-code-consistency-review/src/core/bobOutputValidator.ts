@@ -1,5 +1,6 @@
 import * as path from "node:path"
 import YAML from "yaml"
+import { readBobOutputText } from "./bobOutputSource"
 import { pathExists, readTextFile } from "./fileSystem"
 import { formatSchemaErrors, loadSchemaValidator } from "./schemaLoader"
 import type { ValidationReport } from "./types"
@@ -9,10 +10,14 @@ export async function validateBobOutput(input: { packageDir: string; bobOutputPa
   const warnings: string[] = []
   let parsed: any
 
+  const loaded = await readBobOutputText(input)
+  if (!loaded.ok) return { errors: [loaded.error], warnings }
+  if (loaded.usedFallback) warnings.push(`Bob output YAML fallback used: ${toForwardSlash(path.relative(path.dirname(input.packageDir), loaded.sourcePath) || loaded.sourcePath)}`)
+
   try {
-    parsed = YAML.parse(await readTextFile(input.bobOutputPath))
+    parsed = YAML.parse(loaded.text)
   } catch (error) {
-    return { errors: [`Invalid YAML: ${error instanceof Error ? error.message : String(error)}`], warnings }
+    return { errors: [`Invalid YAML (${loaded.sourcePath}): ${error instanceof Error ? error.message : String(error)}`], warnings }
   }
 
   const validate = await loadSchemaValidator("bob-output")
@@ -37,6 +42,10 @@ export async function validateBobOutput(input: { packageDir: string; bobOutputPa
   if ((parsed?.findings?.length ?? 0) > 30) warnings.push("findings contains more than 30 items.")
   if ((parsed?.questions?.length ?? 0) > 30) warnings.push("questions contains more than 30 items.")
   return { errors, warnings }
+}
+
+function toForwardSlash(value: string): string {
+  return value.replace(/\\/g, "/")
 }
 
 function outputEvidenceRefs(parsed: any): Array<{ path: string; evidence_id?: string }> {

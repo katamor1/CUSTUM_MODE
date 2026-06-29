@@ -1,10 +1,12 @@
 import * as path from "node:path"
 import YAML from "yaml"
 import { pathExists, readTextFile, writeTextFile } from "./fileSystem"
+import { readBobOutputText } from "./bobOutputSource"
 
 export type CaptureBobOutputResult = {
   status: "ok" | "error"
   bobOutputPath?: string
+  sourcePath?: string
   reviewId?: string
   message: string
 }
@@ -38,14 +40,15 @@ const QUESTION_CATEGORIES = new Set(["specification-clarification", "scope-clari
 const COVERAGE_TYPES = new Set(["checked", "partially_checked", "not_checked", "out_of_scope"])
 
 export async function captureBobOutput(input: { workspaceRoot: string; text: string; bobOutputPath: string; packageDir?: string }): Promise<CaptureBobOutputResult> {
-  const yamlText = extractYamlFromText(input.text)
-  if (!yamlText) return { status: "error", message: "Bob 出力内に YAML オブジェクトが見つかりませんでした。" }
+  const source = await resolveCaptureSource(input)
+  if (!source.yamlText) return { status: "error", message: source.message }
 
   let parsed: any
   try {
-    parsed = YAML.parse(yamlText)
+    parsed = YAML.parse(source.yamlText)
   } catch (error) {
-    return { status: "error", message: `YAML が不正です: ${error instanceof Error ? error.message : String(error)}` }
+    const sourceLabel = source.sourcePath ? ` (${source.sourcePath})` : ""
+    return { status: "error", message: `YAML が不正です${sourceLabel}: ${error instanceof Error ? error.message : String(error)}` }
   }
   const evidenceLookup = await loadEvidenceLookup(input.packageDir)
   const canonical = canonicalizeBobOutput(parsed, evidenceLookup)
@@ -54,9 +57,25 @@ export async function captureBobOutput(input: { workspaceRoot: string; text: str
   return {
     status: "ok",
     bobOutputPath: path.resolve(input.bobOutputPath),
+    sourcePath: source.sourcePath,
     reviewId: canonical?.review_summary?.review_id,
-    message: `Bob 出力を保存しました: ${input.bobOutputPath}`
+    message: `Bob 出力を保存しました: ${input.bobOutputPath}${source.sourcePath ? ` (source: ${source.sourcePath})` : ""}`
   }
+}
+
+async function resolveCaptureSource(input: { text: string; bobOutputPath: string; packageDir?: string }): Promise<{ yamlText?: string; sourcePath?: string; message: string }> {
+  const textYaml = extractYamlFromText(input.text)
+  if (textYaml) return { yamlText: textYaml, message: "Bob output was read from command text." }
+
+  const fallback = await readBobOutputText({ bobOutputPath: input.bobOutputPath, packageDir: input.packageDir, includePrimary: false })
+  if (!fallback.ok) {
+    return { message: `Bob 出力内に YAML オブジェクトが見つかりませんでした。${fallback.error}` }
+  }
+  const fallbackYaml = extractYamlFromText(fallback.text)
+  if (!fallbackYaml) {
+    return { sourcePath: fallback.sourcePath, message: `Bob 出力内に YAML オブジェクトが見つかりませんでした: ${fallback.sourcePath}` }
+  }
+  return { yamlText: fallbackYaml, sourcePath: fallback.sourcePath, message: `Bob output was read from ${fallback.sourcePath}.` }
 }
 
 export function extractYamlFromText(text: string): string | undefined {

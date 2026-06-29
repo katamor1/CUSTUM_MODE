@@ -1,13 +1,25 @@
 import * as path from "node:path"
 import YAML from "yaml"
-import { readTextFile, writeTextFile } from "../core/fileSystem"
+import { readBobOutputText } from "../core/bobOutputSource"
+import { writeTextFile } from "../core/fileSystem"
 
-export async function generateHumanTriage(input: { packageDir: string; bobOutputPath: string; outDir: string }): Promise<{ status: "ok"; outDir: string; itemCount: number }> {
-  const raw = await readTextFile(input.bobOutputPath)
-  const bobOutput = YAML.parse(raw) as {
+export type HumanTriageResult =
+  | { status: "ok"; outDir: string; itemCount: number; bobOutputPath: string }
+  | { status: "error"; outDir: string; itemCount: 0; message: string; errors: string[] }
+
+export async function generateHumanTriage(input: { packageDir: string; bobOutputPath: string; outDir: string }): Promise<HumanTriageResult> {
+  const loaded = await readBobOutputText(input)
+  if (!loaded.ok) return triageError(input.outDir, loaded.error)
+
+  let bobOutput: {
     review_summary?: { review_id?: string }
     findings?: Array<Record<string, any>>
     questions?: Array<Record<string, any>>
+  }
+  try {
+    bobOutput = YAML.parse(loaded.text) as typeof bobOutput
+  } catch (error) {
+    return triageError(input.outDir, `Invalid YAML (${loaded.sourcePath}): ${error instanceof Error ? error.message : String(error)}`)
   }
 
   const reviewId = bobOutput.review_summary?.review_id ?? "unknown"
@@ -50,7 +62,11 @@ export async function generateHumanTriage(input: { packageDir: string; bobOutput
   await writeTextFile(path.join(input.outDir, "rejected-findings.md"), "# 棄却したプレレビュー指摘\n\ntriage-result.yaml の decision に基づいて人間が追記する。\n")
   await writeTextFile(path.join(input.outDir, "follow-up-actions.md"), renderFollowUps(findings, questions))
 
-  return { status: "ok", outDir: input.outDir, itemCount: items.length }
+  return { status: "ok", outDir: input.outDir, itemCount: items.length, bobOutputPath: loaded.sourcePath }
+}
+
+function triageError(outDir: string, message: string): HumanTriageResult {
+  return { status: "error", outDir, itemCount: 0, message, errors: [message] }
 }
 
 function renderFindings(title: string, items: Array<Record<string, any>>): string {

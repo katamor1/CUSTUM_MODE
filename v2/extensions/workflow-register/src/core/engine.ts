@@ -12,6 +12,7 @@ import {
   WorkflowPreflightDefinition,
   WorkflowRunState
 } from "./model"
+import { reportedActionError } from "./reportedActionError"
 import { ResultSinkRegistry } from "./resultSinkRegistry"
 import { RunStateStore } from "./runStateStore"
 
@@ -203,6 +204,8 @@ export class WorkflowEngine {
         stepId: step.id
       })
       if (!result.ok) return { ok: false, error: result.error ?? `Action provider failed: ${step.action.provider}` }
+      const actionError = reportedActionError(result.value)
+      if (actionError) return { ok: false, error: actionError }
       if (step.resultKey) run.state[step.resultKey] = formatStateValue(result.value)
       return { ok: true }
     }
