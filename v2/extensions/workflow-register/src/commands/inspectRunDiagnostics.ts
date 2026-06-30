@@ -1,6 +1,7 @@
 import * as vscode from "vscode"
 import { buildWorkflowRunDiagnosticReport } from "../core/runDiagnostics"
 import { FileRunStateStore } from "../core/runStateStore"
+import { FileTaskSnapshotStore } from "../core/taskSnapshots"
 import { pickWorkflowRoot } from "./workspaceRootPicker"
 
 export interface InspectRunDiagnosticsOptions {
@@ -15,6 +16,8 @@ export async function inspectRunDiagnostics(options: InspectRunDiagnosticsOption
   }
   const store = new FileRunStateStore({ workspaceRoot })
   const runs = await store.listRuns()
-  const report = buildWorkflowRunDiagnosticReport(runs)
+  const snapshotStore = new FileTaskSnapshotStore({ workspaceRoot })
+  const snapshotsByRunId = Object.fromEntries(await Promise.all(runs.map(async (run) => [run.runId, await snapshotStore.listSnapshots(run.runId)] as const)))
+  const report = buildWorkflowRunDiagnosticReport(runs, { snapshotsByRunId })
   await options.showMarkdownReport(report.title, report.summary, report.lines)
 }

@@ -1,4 +1,5 @@
 import { RunStepState, WorkflowRunState } from "./model"
+import { TaskSnapshotSummary } from "./taskSnapshots"
 
 export interface WorkflowRunDiagnosticReport {
   title: string
@@ -6,8 +7,12 @@ export interface WorkflowRunDiagnosticReport {
   lines: string[]
 }
 
-export function buildWorkflowRunDiagnosticReport(runs: WorkflowRunState[]): WorkflowRunDiagnosticReport {
-  const lines = runs.length === 0 ? ["- No workflow runs were found."] : runs.flatMap((run) => [...formatWorkflowRunDiagnostics(run), ""])
+export interface WorkflowRunDiagnosticOptions {
+  snapshotsByRunId?: Record<string, TaskSnapshotSummary[]>
+}
+
+export function buildWorkflowRunDiagnosticReport(runs: WorkflowRunState[], options: WorkflowRunDiagnosticOptions = {}): WorkflowRunDiagnosticReport {
+  const lines = runs.length === 0 ? ["- No workflow runs were found."] : runs.flatMap((run) => [...formatWorkflowRunDiagnostics(run, { snapshots: options.snapshotsByRunId?.[run.runId] ?? [] }), ""])
   if (lines[lines.length - 1] === "") lines.pop()
   const failed = runs.filter((run) => run.status === "failed").length
   const held = runs.filter((run) => run.status === "held").length
@@ -18,7 +23,7 @@ export function buildWorkflowRunDiagnosticReport(runs: WorkflowRunState[]): Work
   }
 }
 
-export function formatWorkflowRunDiagnostics(run: WorkflowRunState): string[] {
+export function formatWorkflowRunDiagnostics(run: WorkflowRunState, options: { snapshots?: TaskSnapshotSummary[] } = {}): string[] {
   const lines = [
     `## ${run.runId}`,
     "",
@@ -47,6 +52,7 @@ export function formatWorkflowRunDiagnostics(run: WorkflowRunState): string[] {
   if (run.state["workflow.preflightWarnings"]) lines.push(`- preflight warnings: ${run.state["workflow.preflightWarnings"]}`)
   lines.push("", "Steps:")
   for (const step of run.steps) lines.push(`- ${step.id}: ${step.status}${step.error ? `; error=${step.error}` : ""}`)
+  appendTaskSnapshots(lines, run, options.snapshots ?? [])
   return lines
 }
 
@@ -68,4 +74,18 @@ export function workflowRunFailureHint(error: string): string | undefined {
 function currentProblemStep(run: WorkflowRunState): RunStepState | undefined {
   return run.steps.find((step) => step.id === run.currentStep && (step.status === "failed" || step.status === "held"))
     ?? run.steps.find((step) => step.status === "failed" || step.status === "held")
+}
+
+function appendTaskSnapshots(lines: string[], run: WorkflowRunState, snapshots: TaskSnapshotSummary[]): void {
+  if (snapshots.length === 0) return
+  lines.push("", "Task snapshots:")
+  for (const snapshot of snapshots) {
+    const notes: string[] = []
+    if (snapshot.workflowDefinitionHash && run.workflowDefinitionHash && snapshot.workflowDefinitionHash !== run.workflowDefinitionHash) notes.push("workflow hash mismatch")
+    if (run.currentStep && snapshot.stepId !== run.currentStep) notes.push("step mismatch")
+    if (snapshot.truncated) notes.push("truncated")
+    if (snapshot.handoffError) notes.push(`handoffError=${snapshot.handoffError}`)
+    const suffix = notes.length > 0 ? `; ${notes.join("; ")}` : ""
+    lines.push(`- ${snapshot.createdAt}: ${snapshot.reason}; step=${snapshot.stepId}; lastAssistantText=${snapshot.hasLastAssistantText ? "yes" : "no"}${suffix}`)
+  }
 }

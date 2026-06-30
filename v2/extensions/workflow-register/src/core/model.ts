@@ -223,8 +223,14 @@ export interface ActionExecutionResult {
 
 export interface ResultSinkWriteInput {
   workflowId: string
+  logicalWorkflowId?: string
+  workflowRoot?: string
+  workflowFile?: string
+  workflowFolderName?: string
   runId: string
   stepId: string
+  inputs?: Record<string, unknown>
+  state?: Record<string, string>
   text: string
 }
 

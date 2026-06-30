@@ -134,6 +134,49 @@ test("workflow run diagnostics include failed step and suggested fix", () => {
   assert.equal(buildWorkflowRunDiagnosticReport([run]).summary, "1 run(s); 1 failed; 0 held.")
 })
 
+test("workflow run diagnostics include task snapshot evidence and mismatch warnings", () => {
+  const run = {
+    runId: "20260630T000000Z-sample",
+    workflowId: "workflow-register.sample",
+    workflowName: "sample",
+    workflowDefinitionHash: "hash-current",
+    status: "failed",
+    currentStep: "analyze",
+    inputs: {},
+    state: {},
+    steps: [
+      { id: "analyze", title: "Analyze", type: "agent", status: "failed", error: "Result sink failed" }
+    ],
+    createdAt: "2026-06-30T00:00:00.000Z",
+    updatedAt: "2026-06-30T00:00:01.000Z",
+    error: "Result sink failed"
+  }
+
+  const report = buildWorkflowRunDiagnosticReport([run], {
+    snapshotsByRunId: {
+      [run.runId]: [
+        {
+          fileName: "20260630T000000000Z-analyze-agent-output.json",
+          createdAt: "2026-06-30T00:00:00.000Z",
+          reason: "agent-output",
+          workflowId: run.workflowId,
+          workflowDefinitionHash: "hash-old",
+          stepId: "collect",
+          hasLastAssistantText: true,
+          handoffError: "capture failed"
+        }
+      ]
+    }
+  })
+
+  assert.ok(report.lines.some((line) => line.includes("Task snapshots:")))
+  assert.ok(report.lines.some((line) => line.includes("agent-output")))
+  assert.ok(report.lines.some((line) => line.includes("workflow hash mismatch")))
+  assert.ok(report.lines.some((line) => line.includes("step mismatch")))
+  assert.ok(report.lines.some((line) => line.includes("lastAssistantText=yes")))
+  assert.ok(report.lines.some((line) => line.includes("handoffError=capture failed")))
+})
+
 function fixedNow() {
   return "2026-06-28T00:00:00.000Z"
 }

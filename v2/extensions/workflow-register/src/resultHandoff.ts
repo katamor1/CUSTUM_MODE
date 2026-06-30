@@ -18,6 +18,14 @@ export interface ResultHandoffDeps {
   workflowId?: string
   runId?: string
   stepId?: string
+  recoverResultText?: (input: ResultHandoffRecoveryInput) => Promise<string | undefined> | string | undefined
+}
+
+export interface ResultHandoffRecoveryInput {
+  workflowId?: string
+  runId?: string
+  stepId?: string
+  reason: "missing-result-text"
 }
 
 export interface ResultHandoffResult {
@@ -49,7 +57,13 @@ export function extractLastAssistantText(messages: unknown[], startIndex = 0): s
 
 export async function executeResultHandoff(step: ResultHandoffStep, resultText: string | undefined, deps: ResultHandoffDeps): Promise<ResultHandoffResult> {
   if (!step.captureResult) return { ok: true, skipped: true }
-  const artifactText = resultText?.trim()
+  const recoveredText = resultText?.trim() ? resultText : await deps.recoverResultText?.({
+    workflowId: deps.workflowId,
+    runId: deps.runId,
+    stepId: deps.stepId,
+    reason: "missing-result-text"
+  })
+  const artifactText = recoveredText?.trim()
   if (!artifactText) return { ok: false, error: "No result text was available to hand off." }
   if (!step.resultCommand) return { ok: false, error: "captureResult requires resultCommand." }
   const actions = deps.actions ?? createCommandFallbackRegistry(step.resultCommand, deps.executeCommand)

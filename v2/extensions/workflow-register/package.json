@@ -33,7 +33,9 @@
     "onCommand:workflowRegister.explainWorkflowDiagnostics",
     "onCommand:workflowRegister.validateCurrentWorkflow",
     "onCommand:workflowRegister.validateWorkspaceWorkflows",
-    "onCommand:workflowRegister.createWorkflowFromTemplate"
+    "onCommand:workflowRegister.createWorkflowFromTemplate",
+    "onCommand:workflowRegister.openWorkflowBuilder",
+    "onCommand:workflowRegister.editWorkflowInBuilder"
   ],
   "main": "./out/extensionWithAuthoring.js",
   "contributes": {
@@ -53,7 +55,9 @@
       { "command": "workflowRegister.explainWorkflowDiagnostics", "title": "Bob ワークフロー: 診断を AI で説明", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.validateCurrentWorkflow", "title": "Bob ワークフロー: 現在の定義を検証", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.validateWorkspaceWorkflows", "title": "Bob ワークフロー: ワークスペース定義を検証", "category": "Bob ワークフロー" },
-      { "command": "workflowRegister.createWorkflowFromTemplate", "title": "Bob ワークフロー: テンプレートから作成", "category": "Bob ワークフロー" }
+      { "command": "workflowRegister.createWorkflowFromTemplate", "title": "Bob ワークフロー: テンプレートから作成", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.openWorkflowBuilder", "title": "Bob ワークフロー: GUI で作成", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.editWorkflowInBuilder", "title": "Bob ワークフロー: GUI で編集", "category": "Bob ワークフロー" }
     ],
     "configuration": {
       "title": "Bob ワークフロー登録",
@@ -77,6 +81,33 @@
           "type": "string",
           "default": "",
           "description": "WorkflowAiProvider として使う任意の VS Code command。{ kind, payload } を受け取り、workflow design draft、repair proposal、diagnostic explanation を返します。"
+        },
+        "workflowRegister.taskSnapshots.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Bob UI 実行時に .bob/workflows/runs/<runId>/task-snapshots へ補助 snapshot を保存します。"
+        },
+        "workflowRegister.taskSnapshots.maxBytes": {
+          "type": "number",
+          "default": 262144,
+          "minimum": 1024,
+          "description": "1 task snapshot JSON の最大サイズ。超過時は古い messages から省略します。"
+        },
+        "workflowRegister.taskSnapshots.maxPerRun": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "description": "1 run に保持する task snapshot 数。latest.json はこの数に含めません。"
+        },
+        "workflowRegister.taskSnapshots.includeMessages": {
+          "type": "boolean",
+          "default": true,
+          "description": "task snapshot に Bob chat messages を含めます。無効時も metadata と lastAssistantText は保存対象です。"
+        },
+        "workflowRegister.taskSnapshots.pruneOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "snapshot 保存時に maxPerRun を超えた古い snapshot を削除します。"
         }
       }
     },
@@ -97,7 +128,9 @@
         { "command": "workflowRegister.explainWorkflowDiagnostics" },
         { "command": "workflowRegister.validateCurrentWorkflow" },
         { "command": "workflowRegister.validateWorkspaceWorkflows" },
-        { "command": "workflowRegister.createWorkflowFromTemplate" }
+        { "command": "workflowRegister.createWorkflowFromTemplate" },
+        { "command": "workflowRegister.openWorkflowBuilder" },
+        { "command": "workflowRegister.editWorkflowInBuilder" }
       ]
     }
   },

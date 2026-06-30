@@ -54,7 +54,7 @@ created_by: bob-review-preprocess
 preprocess_version: 0.1.0
 
 repository:
-  name: katamor1/bob_builtin_analyze
+  name: bob_builtin_analyze
   base: main
   base_sha: add8fca075266c7a0af3ce972ce88576c9049628
   head: docs/code-consistency-review-flow

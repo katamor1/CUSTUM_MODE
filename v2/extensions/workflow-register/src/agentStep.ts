@@ -1,11 +1,11 @@
-export interface WorkflowStateEntry {
-  key: string
-  value: string
-}
+import { appendWorkflowContext, type WorkflowStateEntry } from "./workflowPromptContext"
 
 export interface WorkflowAgentPromptInput {
   workflowId: string
   workflowName: string
+  workflowRoot?: string
+  workflowFile?: string
+  workflowFolderName?: string
   stepIndex: number
   stepId: string
   stepTitle: string
@@ -22,7 +22,15 @@ export function buildWorkflowAgentPrompt(input: WorkflowAgentPromptInput): strin
     "Workflow:",
     `- id: ${input.workflowId}`,
     `- name: ${input.workflowName}`,
-    "",
+    ""
+  ]
+  appendWorkflowContext(lines, {
+    workflowRoot: input.workflowRoot,
+    workflowFile: input.workflowFile,
+    workflowFolderName: input.workflowFolderName,
+    stateEntries: input.stateEntries
+  })
+  lines.push(
     `<workflow_step index="${input.stepIndex + 1}" id="${escapeXmlAttribute(input.stepId)}">`,
     `Title: ${input.stepTitle}`,
     "",
@@ -34,7 +42,7 @@ export function buildWorkflowAgentPrompt(input: WorkflowAgentPromptInput): strin
     "<workflow_instructions>",
     input.workflowInstructions,
     "</workflow_instructions>"
-  ]
+  )
   appendWorkflowState(lines, input.stateEntries)
   return lines.join("\n")
 }

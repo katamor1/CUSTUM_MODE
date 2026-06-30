@@ -4,16 +4,17 @@ import * as vscode from "vscode"
 import { buildWorkflowAgentPrompt, extractSubagentResult } from "./agentStep"
 import { ActionProvider, ActionRegistry, createDefaultActionRegistry } from "./core/actionRegistry"
 import { createCommandAgentProvider } from "./core/agentProvider"
-import { WorkflowEngine } from "./core/engine"
+import { WorkflowEngine, WorkflowEngineOptions, WorkflowExecutionHooks } from "./core/engine"
 import { validateCommandGuardrails } from "./core/guardrails"
 import { collectWorkflowInputsWithResolver } from "./core/inputCollector"
-import { AgentProvider, CoreWorkflowDefinition, EngineStep, ResultSinkDefinition, WorkflowGuardrailsDefinition, WorkflowInputDefinition } from "./core/model"
+import { AgentProvider, CoreWorkflowDefinition, EngineStep, ResultSinkDefinition, WorkflowGuardrailsDefinition, WorkflowInputDefinition, WorkflowRunState } from "./core/model"
 import { parseWorkflowMarkdown } from "./core/parser"
-import { reportedActionError } from "./core/reportedActionError"
 import { createDefaultResultSinkRegistry, ResultSinkRegistry } from "./core/resultSinkRegistry"
 import { FileRunStateStore, RunStateStore } from "./core/runStateStore"
-import { fallbackWorkspaceRootCandidates, findWorkflowRootCandidates, MarkerRootCandidate, relativePathFromRoot } from "./core/workspaceRoots"
+import { createBobTaskSnapshotProvider, FileTaskSnapshotStore, snapshotMatchesRun, TaskSnapshotProvider, TaskSnapshotReason, TaskSnapshotStore } from "./core/taskSnapshots"
+import { fallbackWorkspaceRootCandidates, findMarkerRoots, findWorkflowRootCandidates, MarkerRootCandidate, relativePathFromRoot, rootHasMarker } from "./core/workspaceRoots"
 import { executeResultHandoff, extractLastAssistantText, resultSourceForStep, ResultSource } from "./resultHandoff"
+import { appendWorkflowContext } from "./workflowPromptContext"
 
 const BOB_EXTENSION_ID = "IBM.bob-code"
 const WORKFLOW_GLOB = "**/.bob/workflows/*/WORKFLOW.md"
@@ -32,6 +33,7 @@ interface BobWorkflowTask {
   startSubagent?: (prompt: string, preset?: unknown, mask?: unknown) => Promise<unknown> | Thenable<unknown> | unknown
   getMessages?: () => unknown[]
   getAllMetadata?: () => Record<string, unknown>
+  toSerializable?: () => unknown
 }
 
 interface BobWorkflowStep {
@@ -125,6 +127,7 @@ interface WorkflowDefinition {
   workflowFile?: string
   workflowFolderName?: string
   file: vscode.Uri
+  core: CoreWorkflowDefinition
 }
 
 interface LoadResult {
@@ -148,6 +151,7 @@ interface ActiveStep {
   key: string
   workflowId: string
   workflowLabel: string
+  runId: string
   stepId: string
   title: string
   task: BobWorkflowTask
@@ -164,7 +168,15 @@ interface StepCompletionOptions {
   silent?: boolean
 }
 
-type BobWorkflowInputCollector = (definition: WorkflowDefinition, provided: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>
+type BobWorkflowRunnerInputCollector = (task: BobWorkflowTask, provided: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>
+
+interface TaskSnapshotSettings {
+  enabled: boolean
+  maxBytes: number
+  maxPerRun: number
+  includeMessages: boolean
+  pruneOnSave: boolean
+}
 
 export interface WorkflowRegisterApi {
   registerActionProvider: (provider: ActionProvider) => void
@@ -209,16 +221,13 @@ export function deactivate(): void {
 
 class StepRuntime {
   private readonly activeSteps = new Map<string, ActiveStep>()
-  private readonly workflowState = new Map<string, Map<string, string>>()
-  private readonly workflowInputs = new Map<string, Record<string, unknown>>()
   private sequence = 0
 
   hold(
     workflow: WorkflowDefinition,
     step: { id: string; title: string },
     task: BobWorkflowTask,
-    stepDefinition?: WorkflowStepDefinition,
-    context: { actionRegistry?: ActionRegistry; inputs?: Record<string, unknown>; state?: Record<string, string> } = {}
+    context: { runId: string; stepDefinition?: WorkflowStepDefinition; actionRegistry?: ActionRegistry; inputs?: Record<string, unknown>; state?: Record<string, string>; messageStartIndex?: number }
   ): Promise<boolean> {
     const key = `${++this.sequence}:${workflow.id}:${step.id}`
     return new Promise<boolean>((resolve) => {
@@ -226,55 +235,19 @@ class StepRuntime {
         key,
         workflowId: workflow.id,
         workflowLabel: workflow.label,
+        runId: context.runId,
         stepId: step.id,
         title: step.title,
         task,
-        stepDefinition,
+        stepDefinition: context.stepDefinition,
         guardrails: workflow.guardrails,
         actionRegistry: context.actionRegistry,
         inputs: context.inputs,
         state: context.state,
-        messageStartIndex: getTaskMessageCount(task),
+        messageStartIndex: context.messageStartIndex ?? getTaskMessageCount(task),
         resolve
       })
     })
-  }
-
-  resetState(workflow: WorkflowDefinition): void {
-    this.workflowState.delete(workflow.id)
-    this.workflowInputs.delete(workflow.id)
-  }
-
-  saveState(workflow: WorkflowDefinition, key: string, value: string): void {
-    const state = this.workflowState.get(workflow.id) ?? new Map<string, string>()
-    state.set(key, value)
-    this.workflowState.set(workflow.id, state)
-  }
-
-  stateEntries(workflow: WorkflowDefinition, keys: string[]): WorkflowStateEntry[] {
-    const state = this.workflowState.get(workflow.id)
-    if (!state) return []
-    return keys.flatMap((key) => {
-      const value = state.get(key)
-      return value === undefined ? [] : [{ key, value }]
-    })
-  }
-
-  stateRecord(workflow: WorkflowDefinition): Record<string, string> {
-    return Object.fromEntries(this.workflowState.get(workflow.id) ?? [])
-  }
-
-  saveInputs(workflow: WorkflowDefinition, inputs: Record<string, unknown>): void {
-    this.workflowInputs.set(workflow.id, inputs)
-  }
-
-  inputsRecord(workflow: WorkflowDefinition): Record<string, unknown> | undefined {
-    return this.workflowInputs.get(workflow.id)
-  }
-
-  missingStateKeys(workflow: WorkflowDefinition, keys: string[]): string[] {
-    const state = this.workflowState.get(workflow.id)
-    return keys.filter((key) => !state?.has(key))
   }
 
   list(): ActiveStep[] {
@@ -330,6 +303,7 @@ async function captureHeldStepResult(active: ActiveStep): Promise<{ ok: boolean;
     inputs: active.inputs,
     state: active.state,
     workflowId: active.workflowId,
+    runId: active.runId,
     stepId: active.stepId
   })
 }
@@ -465,11 +439,34 @@ class WorkflowRegisterService implements vscode.Disposable {
   }
 
   private createEngine(workspaceRoot: string): WorkflowEngine {
+    const snapshotStore = this.createTaskSnapshotStore(workspaceRoot)
     return new WorkflowEngine({
       actions: this.actionRegistry,
       resultSinks: this.createResultSinks(workspaceRoot),
       runStore: this.createRunStore(workspaceRoot),
-      agentProvider: this.agentProvider ?? this.createCommandAgentProvider()
+      agentProvider: this.agentProvider ?? this.createCommandAgentProvider(),
+      preflightChecks: this.createPreflightChecks(workspaceRoot),
+      recoverResultText: snapshotStore
+        ? (input) => recoverResultTextFromSnapshots(snapshotStore, input.workflow, input.run, input.step)
+        : undefined
+    })
+  }
+
+  private createBobWorkflowRunner(workflow: WorkflowDefinition): BobWorkflowEngineRunner {
+    return new BobWorkflowEngineRunner({
+      definition: workflow,
+      coreWorkflow: workflow.core,
+      actionRegistry: this.actionRegistry,
+      resultSinks: (workspaceRoot) => this.createResultSinks(workspaceRoot),
+      runStore: (workspaceRoot) => this.createRunStore(workspaceRoot),
+      taskSnapshotStore: (workspaceRoot) => this.createTaskSnapshotStore(workspaceRoot),
+      preflightChecks: (workspaceRoot) => this.createPreflightChecks(workspaceRoot),
+      agentProvider: this.agentProvider ?? this.createCommandAgentProvider(),
+      stepRuntime: this.stepRuntime,
+      inputsProvider: (task, provided) => this.collectBobWorkflowInputs(workflow, {
+        ...extractTaskWorkflowInputs(workflow, task),
+        ...provided
+      })
     })
   }
 
@@ -492,6 +489,43 @@ class WorkflowRegisterService implements vscode.Disposable {
 
   private createRunStore(workspaceRoot: string): RunStateStore {
     return new FileRunStateStore({ workspaceRoot, engineVersion: this.engineVersion })
+  }
+
+  private createTaskSnapshotStore(workspaceRoot: string): TaskSnapshotStore | undefined {
+    const settings = this.taskSnapshotSettings()
+    if (!settings.enabled) return undefined
+    return new FileTaskSnapshotStore({
+      workspaceRoot,
+      maxBytes: settings.maxBytes,
+      maxPerRun: settings.maxPerRun,
+      includeMessages: settings.includeMessages,
+      pruneOnSave: settings.pruneOnSave
+    })
+  }
+
+  private createPreflightChecks(workspaceRoot: string): NonNullable<WorkflowEngineOptions["preflightChecks"]> {
+    return {
+      bazaarRepository: () => this.bazaarRepositoryAvailable(workspaceRoot)
+    }
+  }
+
+  private async bazaarRepositoryAvailable(workspaceRoot: string): Promise<boolean> {
+    if (await rootHasMarker(workspaceRoot, ".bzr")) return true
+    const folders = vscode.workspace.workspaceFolders ?? []
+    if (folders.length === 0) return false
+    const candidates = await findMarkerRoots(folders, ".bzr")
+    return candidates.length > 0
+  }
+
+  private taskSnapshotSettings(): TaskSnapshotSettings {
+    const config = vscode.workspace.getConfiguration("workflowRegister")
+    return {
+      enabled: config.get<boolean>("taskSnapshots.enabled", true),
+      maxBytes: config.get<number>("taskSnapshots.maxBytes", 262_144),
+      maxPerRun: config.get<number>("taskSnapshots.maxPerRun", 50),
+      includeMessages: config.get<boolean>("taskSnapshots.includeMessages", true),
+      pruneOnSave: config.get<boolean>("taskSnapshots.pruneOnSave", true)
+    }
   }
 
   private async workflowRootCandidates(): Promise<MarkerRootCandidate[]> {
@@ -641,7 +675,7 @@ class WorkflowRegisterService implements vscode.Disposable {
     let registeredCount = 0
     const registeredIds = new Set<string>()
     for (const workflow of loaded.workflows) {
-      const attempt = await runAttempt(`source.registerWorkflow(${workflow.id})`, () => source.registerWorkflow?.(createBobWorkflow(workflow, this.stepRuntime, this.actionRegistry, (definition, provided) => this.collectBobWorkflowInputs(definition, provided))))
+      const attempt = await runAttempt(`source.registerWorkflow(${workflow.id})`, () => source.registerWorkflow?.(createBobWorkflow(workflow, this.createBobWorkflowRunner(workflow))))
       lines.push(formatAttempt(attempt))
       if (attempt.ok) {
         registeredIds.add(workflow.id)
@@ -761,7 +795,8 @@ function adaptCoreWorkflowForBob(core: CoreWorkflowDefinition, file: vscode.Uri)
     workflowRoot: core.workflowRoot,
     workflowFile: core.workflowFile,
     workflowFolderName: core.workflowFolderName,
-    file
+    file,
+    core
   }
 }
 
@@ -819,8 +854,195 @@ function argumentList(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [value]
 }
 
-function createBobWorkflow(definition: WorkflowDefinition, stepRuntime: StepRuntime, actionRegistry: ActionRegistry, collectInputs: BobWorkflowInputCollector): BobWorkflow {
-  const steps = buildWorkflowSteps(definition, stepRuntime, actionRegistry, collectInputs)
+interface BobWorkflowEngineRunnerOptions {
+  definition: WorkflowDefinition
+  coreWorkflow: CoreWorkflowDefinition
+  actionRegistry: ActionRegistry
+  resultSinks: (workspaceRoot: string) => ResultSinkRegistry
+  runStore: (workspaceRoot: string) => RunStateStore
+  taskSnapshotStore: (workspaceRoot: string) => TaskSnapshotStore | undefined
+  preflightChecks: (workspaceRoot: string) => NonNullable<WorkflowEngineOptions["preflightChecks"]>
+  agentProvider?: AgentProvider
+  stepRuntime: StepRuntime
+  inputsProvider: BobWorkflowRunnerInputCollector
+}
+
+class BobWorkflowEngineRunner {
+  private readonly taskInputs = new WeakMap<object, Record<string, unknown>>()
+
+  constructor(private readonly options: BobWorkflowEngineRunnerOptions) {}
+
+  async runSingleWorkflowStep(task: BobWorkflowTask): Promise<boolean> {
+    return this.runEngine(task, { executionMode: "full" })
+  }
+
+  async runTodoStep(todo: WorkflowTodoItem, index: number, task: BobWorkflowTask): Promise<boolean> {
+    return this.runEngine(task, { executionMode: "singleStep", stepId: todo.id })
+  }
+
+  private async runEngine(task: BobWorkflowTask, request: { executionMode: "full" | "singleStep"; stepId?: string }): Promise<boolean> {
+    const workspaceRoot = this.options.definition.workflowRoot
+    if (!workspaceRoot) {
+      await vscode.window.showErrorMessage("Bob workflow workspace root is not available.")
+      return false
+    }
+    const inputs = await this.inputsForTask(task)
+    if (!inputs) {
+      await vscode.window.showErrorMessage("Bob workflow input failed: Workflow input was cancelled.")
+      return false
+    }
+    const snapshotStore = this.options.taskSnapshotStore(workspaceRoot)
+    const snapshotProvider = createBobTaskSnapshotProvider(task)
+    const manuallyCompleted = new Set<string>()
+    const messageStartIndexes = new Map<string, number>()
+    const engine = new WorkflowEngine({
+      actions: this.options.actionRegistry,
+      resultSinks: this.options.resultSinks(workspaceRoot),
+      runStore: this.options.runStore(workspaceRoot),
+      agentProvider: this.createAgentProvider(task),
+      preflightChecks: this.options.preflightChecks(workspaceRoot),
+      hooks: this.createHooks(task, snapshotProvider, snapshotStore, manuallyCompleted, messageStartIndexes),
+      manualCompletion: async ({ run, step }) => {
+        const completed = await this.options.stepRuntime.hold(this.options.definition, { id: step.id, title: step.title }, task, {
+          runId: run.runId,
+          stepDefinition: this.options.definition.stepsById[step.id],
+          actionRegistry: this.options.actionRegistry,
+          inputs: run.inputs,
+          state: run.state,
+          messageStartIndex: messageStartIndexes.get(stepKey(run.runId, step.id))
+        })
+        if (completed) manuallyCompleted.add(stepKey(run.runId, step.id))
+        return { completed }
+      },
+      recoverResultText: async ({ workflow, run, step }) => {
+        const currentTaskText = extractLastAssistantText(task.getMessages?.() ?? [], 0)
+        if (currentTaskText) return currentTaskText
+        return snapshotStore ? recoverResultTextFromSnapshots(snapshotStore, workflow, run, step) : undefined
+      }
+    })
+    try {
+      const run = await engine.runWorkflow(this.options.coreWorkflow, inputs, {
+        executionMode: request.executionMode,
+        stepId: request.stepId
+      })
+      if (run.status === "failed") await vscode.window.showErrorMessage(`Bob workflow run failed: ${run.error ?? run.runId}`)
+      return run.status === "completed" || run.status === "running"
+    } catch (error) {
+      await vscode.window.showErrorMessage(`Bob workflow execution failed: ${error instanceof Error ? error.message : String(error)}`)
+      return false
+    }
+  }
+
+  private async inputsForTask(task: BobWorkflowTask): Promise<Record<string, unknown> | undefined> {
+    if (isObject(task)) {
+      const existing = this.taskInputs.get(task)
+      if (existing) return existing
+    }
+    const resolved = await this.options.inputsProvider(task, {})
+    if (resolved && isObject(task)) this.taskInputs.set(task, resolved)
+    return resolved
+  }
+
+  private createAgentProvider(task: BobWorkflowTask): AgentProvider | undefined {
+    return {
+      run: async (input) => {
+        if (typeof task.startSubagent === "function") {
+          const stepDefinition = this.options.definition.stepsById[input.stepId]
+          const todoContext = this.todoContext(input.stepId)
+          const value = await task.startSubagent(buildWorkflowAgentPrompt({
+            workflowId: this.options.definition.id,
+            workflowName: this.options.definition.name,
+            workflowRoot: input.workflowRoot ?? this.options.definition.workflowRoot,
+            workflowFile: input.workflowFile ?? this.options.definition.workflowFile,
+            workflowFolderName: input.workflowFolderName ?? this.options.definition.workflowFolderName,
+            stepIndex: todoContext.index,
+            stepId: input.stepId,
+            stepTitle: todoContext.todo?.text ?? stepDefinition?.id ?? input.stepId,
+            stepPrompt: stepDefinition?.prompt ?? input.prompt,
+            workflowInstructions: this.options.definition.promptWithoutTodo,
+            stateEntries: stateEntriesFromRecord(input.state, stepDefinition?.includeState ?? [])
+          }))
+          const result = extractSubagentResult(value)
+          if (!result) throw new Error("Bob subagent returned no result.")
+          return result
+        }
+        if (this.options.agentProvider) return this.options.agentProvider.run(input)
+        throw new Error("Bob startSubagent API is not available.")
+      }
+    }
+  }
+
+  private createHooks(
+    task: BobWorkflowTask,
+    snapshotProvider: TaskSnapshotProvider,
+    snapshotStore: TaskSnapshotStore | undefined,
+    manuallyCompleted: Set<string>,
+    messageStartIndexes: Map<string, number>
+  ): WorkflowExecutionHooks {
+    const snapshot = async (
+      reason: TaskSnapshotReason,
+      input: { workflow: CoreWorkflowDefinition; run: WorkflowRunState; step?: EngineStep; agentText?: string; error?: string }
+    ) => {
+      if (!snapshotStore) return
+      const payload = await Promise.resolve(snapshotProvider.exportTask({
+        reason,
+        workflow: input.workflow,
+        run: input.run,
+        step: input.step,
+        lastAssistantText: input.agentText,
+        handoff: input.error ? { resultCommand: resultCommandForStep(input.step), error: input.error } : undefined
+      }))
+      if (payload) await snapshotStore.saveSnapshot(payload)
+    }
+    return {
+      onWorkflowStart: async ({ workflow, run }) => snapshot("workflow-start", { workflow, run }),
+      onStepStart: async ({ workflow, run, step }) => {
+        if (!step) return
+        messageStartIndexes.set(stepKey(run.runId, step.id), getTaskMessageCount(task))
+        const context = this.todoContext(step.id)
+        const stepDefinition = this.options.definition.stepsById[step.id]
+        const stateEntries = stateEntriesFromRecord(run.state, stepDefinition?.includeState ?? [])
+        const message = context.todo
+          ? buildStepMessage(this.options.definition, context.todo, context.index, stepDefinition, undefined, stateEntries)
+          : buildWorkflowStartMessage(this.options.definition, undefined, 0, stepDefinition, undefined, stateEntries)
+        if (message) await task.sendMessage?.(message, "user")
+        await snapshot("step-start", { workflow, run, step })
+      },
+      onCommandResult: async ({ run, step, commandValue }) => {
+        if (!step || step.type !== "command") return
+        const context = this.todoContext(step.id)
+        if (!context.todo) return
+        const stepDefinition = this.options.definition.stepsById[step.id]
+        const commandResult = { command: step.action.provider, ok: true, value: commandValue }
+        const stateEntries = stateEntriesFromRecord(run.state, stepDefinition?.includeState ?? [])
+        const message = shouldIncludeCommandResult(stepDefinition, commandResult) || stateEntries.length > 0
+          ? buildCommandResultMessage(this.options.definition, context.todo, context.index, commandResult, stateEntries)
+          : undefined
+        if (message) await task.sendMessage?.(message, "user")
+      },
+      onAgentOutput: async ({ workflow, run, step, agentText }) => {
+        if (agentText) await task.sendMessage?.(agentText, "assistant")
+        await snapshot("agent-output", { workflow, run, step, agentText })
+      },
+      onHandoffFailed: async ({ workflow, run, step, agentText, error }) => snapshot("handoff-failed", { workflow, run, step, agentText, error }),
+      onStepHeld: async ({ workflow, run, step, error }) => snapshot("held", { workflow, run, step, error }),
+      onStepFailed: async ({ workflow, run, step, error }) => snapshot("failed", { workflow, run, step, error }),
+      onStepCompleted: async ({ workflow, run, step }) => {
+        if (step && !manuallyCompleted.has(stepKey(run.runId, step.id))) task.setStepComplete?.()
+        await snapshot("completed", { workflow, run, step })
+      },
+      onWorkflowCompleted: async ({ workflow, run }) => snapshot("completed", { workflow, run })
+    }
+  }
+
+  private todoContext(stepId: string): { todo?: WorkflowTodoItem; index: number } {
+    const index = this.options.definition.todos.findIndex((todo) => todo.id === stepId)
+    return { todo: index >= 0 ? this.options.definition.todos[index] : undefined, index: Math.max(0, index) }
+  }
+}
+
+function createBobWorkflow(definition: WorkflowDefinition, runner: BobWorkflowEngineRunner): BobWorkflow {
+  const steps = buildWorkflowSteps(definition, runner)
   return {
     hidden: definition.hidden,
     getId: () => definition.id,
@@ -834,96 +1056,11 @@ function createBobWorkflow(definition: WorkflowDefinition, stepRuntime: StepRunt
   }
 }
 
-function buildWorkflowSteps(definition: WorkflowDefinition, stepRuntime: StepRuntime, actionRegistry: ActionRegistry, collectInputs: BobWorkflowInputCollector): BobWorkflowStep[] {
+function buildWorkflowSteps(definition: WorkflowDefinition, runner: BobWorkflowEngineRunner): BobWorkflowStep[] {
   if (definition.todoEnabled && definition.todoAsSteps && definition.todos.length > 0) {
-    return definition.todos.map((todo, index) => ({ id: todo.id, title: todo.text, execution: async (task) => runTodoStep(definition, stepRuntime, actionRegistry, collectInputs, todo, index, task) }))
+    return definition.todos.map((todo, index) => ({ id: todo.id, title: todo.text, execution: async (task) => runner.runTodoStep(todo, index, task) }))
   }
-  return [{ id: "runWorkflow", title: definition.label, execution: async (task) => runSingleWorkflowStep(definition, stepRuntime, actionRegistry, collectInputs, task) }]
-}
-
-async function runSingleWorkflowStep(definition: WorkflowDefinition, stepRuntime: StepRuntime, actionRegistry: ActionRegistry, collectInputs: BobWorkflowInputCollector, task: BobWorkflowTask): Promise<boolean> {
-  stepRuntime.resetState(definition)
-  const inputResult = await ensureWorkflowInputs(definition, stepRuntime, task, collectInputs)
-  if (!inputResult.ok) {
-    await vscode.window.showErrorMessage(`Bob workflow input failed: ${inputResult.error}`)
-    return stepRuntime.hold(definition, { id: "runWorkflow", title: definition.label }, task)
-  }
-  await task.sendMessage?.(buildWorkflowStartMessage(definition, undefined, 0, undefined, undefined, []), "user")
-  const commandResult = await runTopLevelWorkflowCommand(definition, actionRegistry, stepRuntime, "runWorkflow", inputResult.inputs)
-  if (commandResult && !commandResult.ok) {
-    await vscode.window.showErrorMessage(`Bob workflow command failed: ${commandResult.command}: ${commandResult.error}`)
-    return stepRuntime.hold(definition, { id: "runWorkflow", title: definition.label }, task)
-  }
-  return completeOrHoldStep(task, definition, stepRuntime, "runWorkflow", definition.label)
-}
-
-async function runTodoStep(definition: WorkflowDefinition, stepRuntime: StepRuntime, actionRegistry: ActionRegistry, collectInputs: BobWorkflowInputCollector, todo: WorkflowTodoItem, index: number, task: BobWorkflowTask): Promise<boolean> {
-  if (index === 0) stepRuntime.resetState(definition)
-  const messageStartIndex = getTaskMessageCount(task)
-  const stepDefinition = definition.stepsById[todo.id]
-  const inputResult = await ensureWorkflowInputs(definition, stepRuntime, task, collectInputs)
-  if (!inputResult.ok) {
-    await vscode.window.showErrorMessage(`Bob workflow input failed: ${inputResult.error}`)
-    return stepRuntime.hold(definition, { id: todo.id, title: todo.text }, task, stepDefinition)
-  }
-  const inputs = inputResult.inputs
-  const commandResult = await runWorkflowStepCommand(definition, stepDefinition, actionRegistry, todo.id, stepRuntime.stateRecord(definition), inputs)
-  if (commandResult && !commandResult.ok && stepDefinition?.required !== false) {
-    await vscode.window.showErrorMessage(`Bob workflow step command failed: ${commandResult.command}: ${commandResult.error}`)
-    return stepRuntime.hold(definition, { id: todo.id, title: todo.text }, task, stepDefinition)
-  }
-  if (commandResult?.ok && stepDefinition?.resultKey) {
-    stepRuntime.saveState(definition, stepDefinition.resultKey, formatCommandResult(commandResult.value, stepDefinition.maxResultBytes))
-  }
-  const missingStateKeys = stepDefinition ? stepRuntime.missingStateKeys(definition, stepDefinition.includeState) : []
-  if (missingStateKeys.length > 0 && stepDefinition?.stateRequired !== false) {
-    await vscode.window.showErrorMessage(`Bob workflow step state is missing: ${missingStateKeys.join(", ")}`)
-    return stepRuntime.hold(definition, { id: todo.id, title: todo.text }, task, stepDefinition)
-  }
-  const stateEntries = stepDefinition ? stepRuntime.stateEntries(definition, stepDefinition.includeState) : []
-  const message = buildStepMessage(definition, todo, index, stepDefinition, commandResult, stateEntries)
-  if (message) await task.sendMessage?.(message, "user")
-  if (index === 0 && definition.command && !stepDefinition?.command) {
-    const topLevelCommandResult = await runTopLevelWorkflowCommand(definition, actionRegistry, stepRuntime, todo.id, inputs)
-    if (topLevelCommandResult && !topLevelCommandResult.ok) {
-      await vscode.window.showErrorMessage(`Bob workflow command failed: ${topLevelCommandResult.command}: ${topLevelCommandResult.error}`)
-      return stepRuntime.hold(definition, { id: todo.id, title: todo.text }, task, stepDefinition)
-    }
-  }
-  if (stepDefinition?.runAgent) {
-    const agentResult = await runWorkflowStepAgent(definition, todo, index, stepDefinition, stateEntries, task)
-    if (!agentResult.ok) {
-      await vscode.window.showErrorMessage(`Bob workflow agent step failed: ${todo.id}: ${agentResult.error}`)
-      return stepRuntime.hold(definition, { id: todo.id, title: todo.text }, task, stepDefinition)
-    }
-    if (stepDefinition.resultKey) stepRuntime.saveState(definition, stepDefinition.resultKey, formatCommandResult(agentResult.value, stepDefinition.maxResultBytes))
-    await task.sendMessage?.(agentResult.value, "assistant")
-    const handoff = await captureAgentStepResult(definition, stepDefinition, agentResult.value, task, messageStartIndex, actionRegistry, stepRuntime.stateRecord(definition), inputs)
-    if (!handoff.ok) {
-      await vscode.window.showErrorMessage(`Bob workflow result handoff failed: ${todo.id}: ${handoff.error}`)
-      return stepRuntime.hold(definition, { id: todo.id, title: todo.text }, task, stepDefinition, {
-        actionRegistry,
-        inputs,
-        state: stepRuntime.stateRecord(definition)
-      })
-    }
-    task.setStepComplete?.()
-    return true
-  }
-  if (stepDefinition?.completeOnSuccess && commandResult?.ok) {
-    task.setStepComplete?.()
-    return true
-  }
-  return completeOrHoldStep(task, definition, stepRuntime, todo.id, todo.text, stepDefinition)
-}
-
-async function ensureWorkflowInputs(definition: WorkflowDefinition, stepRuntime: StepRuntime, task: BobWorkflowTask, collectInputs: BobWorkflowInputCollector): Promise<{ ok: true; inputs: Record<string, unknown> } | { ok: false; error: string }> {
-  const existing = stepRuntime.inputsRecord(definition)
-  if (existing) return { ok: true, inputs: existing }
-  const resolved = await collectInputs(definition, extractTaskWorkflowInputs(definition, task))
-  if (!resolved) return { ok: false, error: "Workflow input was cancelled." }
-  stepRuntime.saveInputs(definition, resolved)
-  return { ok: true, inputs: resolved }
+  return [{ id: "runWorkflow", title: definition.label, execution: async (task) => runner.runSingleWorkflowStep(task) }]
 }
 
 function extractTaskWorkflowInputs(definition: WorkflowDefinition, task: BobWorkflowTask): Record<string, unknown> {
@@ -953,116 +1090,41 @@ function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
-async function runWorkflowStepAgent(definition: WorkflowDefinition, todo: WorkflowTodoItem, index: number, stepDefinition: WorkflowStepDefinition, stateEntries: WorkflowStateEntry[], task: BobWorkflowTask): Promise<{ ok: true; value: string } | { ok: false; error: string }> {
-  if (typeof task.startSubagent !== "function") return { ok: false, error: "Bob startSubagent API is not available." }
-  try {
-    const value = await task.startSubagent(buildWorkflowAgentPrompt({
-      workflowId: definition.id,
-      workflowName: definition.name,
-      stepIndex: index,
-      stepId: todo.id,
-      stepTitle: todo.text,
-      stepPrompt: stepDefinition.prompt,
-      workflowInstructions: definition.promptWithoutTodo,
-      stateEntries
-    }))
-    const result = extractSubagentResult(value)
-    if (!result) return { ok: false, error: "Bob subagent returned no result." }
-    return { ok: true, value: result }
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
-  }
+function isObject(value: unknown): value is object {
+  return Boolean(value && typeof value === "object")
 }
 
-async function captureAgentStepResult(
-  definition: WorkflowDefinition,
-  stepDefinition: WorkflowStepDefinition,
-  agentResult: string,
-  task: BobWorkflowTask,
-  messageStartIndex: number,
-  actionRegistry: ActionRegistry,
-  state: Record<string, string>,
-  inputs: Record<string, unknown>
-): Promise<{ ok: boolean; error?: string }> {
-  if (!stepDefinition.captureResult) return { ok: true }
-  if (stepDefinition.resultCommand) {
-    const guardrail = validateCommandGuardrails(definition, stepDefinition.resultCommand)
-    if (guardrail) return { ok: false, error: guardrail }
-  }
-  const source = resultSourceForStep(stepDefinition)
-  const resultText = source === "agent"
-    ? agentResult
-    : extractLastAssistantText(task.getMessages?.() ?? [], messageStartIndex)
-  return executeResultHandoff(stepDefinition, resultText, {
-    actions: actionRegistry,
-    inputs,
-    state,
-    workflowId: definition.id,
-    stepId: stepDefinition.id
-  })
+function stepKey(runId: string, stepId: string): string {
+  return `${runId}:${stepId}`
 }
 
-async function runWorkflowStepCommand(definition: WorkflowDefinition, step: WorkflowStepDefinition | undefined, actionRegistry: ActionRegistry, stepId: string, state: Record<string, string>, inputs: Record<string, unknown>): Promise<WorkflowStepCommandResult | undefined> {
-  if (!step?.command) return undefined
-  const guardrail = validateCommandGuardrails(definition, step.command)
-  if (guardrail) return { command: step.command, ok: false, error: guardrail }
-  const result = await actionRegistry.execute(step.command, {
-    args: step.commandArgs,
-    inputs,
-    state,
-    workflowId: definition.id,
-    logicalWorkflowId: definition.logicalWorkflowId,
-    workflowRoot: definition.workflowRoot,
-    workflowFile: definition.workflowFile,
-    workflowFolderName: definition.workflowFolderName,
-    stepId
-  })
-  if (result.ok) {
-    const actionError = reportedActionError(result.value)
-    if (actionError) return { command: step.command, ok: false, error: actionError }
-    return { command: step.command, ok: true, value: result.value }
-  }
-  return { command: step.command, ok: false, error: result.error ?? `Action provider failed: ${step.command}` }
+function stateEntriesFromRecord(state: Record<string, string>, keys: string[]): WorkflowStateEntry[] {
+  return keys.flatMap((key) => state[key] === undefined ? [] : [{ key, value: state[key] }])
 }
 
-async function runTopLevelWorkflowCommand(definition: WorkflowDefinition, actionRegistry: ActionRegistry, stepRuntime: StepRuntime, stepId: string, inputs: Record<string, unknown>): Promise<WorkflowStepCommandResult | undefined> {
-  if (!definition.command) return undefined
-  const guardrail = validateCommandGuardrails(definition, definition.command)
-  if (guardrail) return { command: definition.command, ok: false, error: guardrail }
-  const result = await actionRegistry.execute("vscode.executeCommand", {
-    args: [definition.command, ...definition.commandArgs],
-    inputs,
-    state: stepRuntime.stateRecord(definition),
-    workflowId: definition.id,
-    logicalWorkflowId: definition.logicalWorkflowId,
-    workflowRoot: definition.workflowRoot,
-    workflowFile: definition.workflowFile,
-    workflowFolderName: definition.workflowFolderName,
-    stepId
-  })
-  if (result.ok) {
-    const actionError = reportedActionError(result.value)
-    if (actionError) return { command: definition.command, ok: false, error: actionError }
-    return { command: definition.command, ok: true, value: result.value }
-  }
-  return { command: definition.command, ok: false, error: result.error ?? `Action provider failed: ${definition.command}` }
+function resultCommandForStep(step: EngineStep | undefined): string | undefined {
+  if (!step || !("result" in step)) return undefined
+  return step.result?.sinks.find((sink): sink is Extract<ResultSinkDefinition, { type: "command" }> => sink.type === "command")?.command
+}
+
+async function recoverResultTextFromSnapshots(snapshotStore: TaskSnapshotStore, workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep): Promise<string | undefined> {
+  const latest = await snapshotStore.loadLatest(run.runId)
+  if (latest && snapshotMatchesRun(latest, workflow, run, step) && latest.lastAssistantText?.trim()) return latest.lastAssistantText
+  const agentOutput = await snapshotStore.findLatestSnapshot(run.runId, (snapshot) => snapshot.reason === "agent-output" && snapshotMatchesRun(snapshot, workflow, run, step) && Boolean(snapshot.lastAssistantText?.trim()))
+  return agentOutput?.lastAssistantText
 }
 
 function buildStepMessage(definition: WorkflowDefinition, todo: WorkflowTodoItem, index: number, stepDefinition?: WorkflowStepDefinition, commandResult?: WorkflowStepCommandResult, stateEntries: WorkflowStateEntry[] = []): string | undefined {
   if (index === 0) return buildWorkflowStartMessage(definition, todo, index, stepDefinition, commandResult, stateEntries)
-  if (definition.stepMessage === "silent") return shouldIncludeCommandResult(stepDefinition, commandResult) || stateEntries.length > 0 ? buildCommandResultMessage(todo, index, commandResult, stateEntries) : undefined
+  if (definition.stepMessage === "silent") return shouldIncludeCommandResult(stepDefinition, commandResult) || stateEntries.length > 0 ? buildCommandResultMessage(definition, todo, index, commandResult, stateEntries) : undefined
   if (definition.stepMessage === "full") return buildWorkflowTodoStepMessage(definition, todo, index, stepDefinition, commandResult, stateEntries)
-  if (definition.stepMessage === "step") return buildStepPromptMessage(definition, todo, index, stepDefinition, commandResult, stateEntries) ?? buildCurrentTodoMessage(todo, index, stepDefinition, commandResult, stateEntries)
-  return buildCurrentTodoMessage(todo, index, stepDefinition, commandResult, stateEntries)
-}
-
-async function completeOrHoldStep(task: BobWorkflowTask, definition: WorkflowDefinition, stepRuntime: StepRuntime, stepId: string, stepTitle: string, stepDefinition?: WorkflowStepDefinition): Promise<boolean> {
-  if (definition.stepCompletion === "auto") { task.setStepComplete?.(); return true }
-  return stepRuntime.hold(definition, { id: stepId, title: stepTitle }, task, stepDefinition)
+  if (definition.stepMessage === "step") return buildStepPromptMessage(definition, todo, index, stepDefinition, commandResult, stateEntries) ?? buildCurrentTodoMessage(definition, todo, index, stepDefinition, commandResult, stateEntries)
+  return buildCurrentTodoMessage(definition, todo, index, stepDefinition, commandResult, stateEntries)
 }
 
 function buildWorkflowStartMessage(definition: WorkflowDefinition, currentTodo?: WorkflowTodoItem, currentIndex = 0, stepDefinition?: WorkflowStepDefinition, commandResult?: WorkflowStepCommandResult, stateEntries: WorkflowStateEntry[] = []): string {
   const lines = ["You are starting the following Bob workflow.", "", "Workflow:", `- id: ${definition.id}`, `- name: ${definition.name}`, `- title: ${definition.label}`, `- mode: ${definition.mode}`, ""]
+  appendWorkflowContext(lines, { workflowRoot: definition.workflowRoot, workflowFile: definition.workflowFile, workflowFolderName: definition.workflowFolderName, stateEntries })
   if (definition.todoEnabled) lines.push("First, create or update your Todo list using exactly the items below.", "Do not immediately mark them complete. Work through them one by one and only mark an item complete after the corresponding work is actually done.", "", "<workflow_todos>", ...definition.todos.map((todo) => `- [ ] ${todo.id}: ${todo.text}`), "</workflow_todos>", "")
   lines.push("Then follow the workflow instructions below.", "", "<workflow_instructions>", definition.promptWithoutTodo, "</workflow_instructions>")
   if (definition.stepMessage === "step" && currentTodo) {
@@ -1074,15 +1136,17 @@ function buildWorkflowStartMessage(definition: WorkflowDefinition, currentTodo?:
   return lines.join("\n")
 }
 
-function buildCurrentTodoMessage(todo: WorkflowTodoItem, index: number, stepDefinition?: WorkflowStepDefinition, commandResult?: WorkflowStepCommandResult, stateEntries: WorkflowStateEntry[] = []): string {
+function buildCurrentTodoMessage(definition: WorkflowDefinition, todo: WorkflowTodoItem, index: number, stepDefinition?: WorkflowStepDefinition, commandResult?: WorkflowStepCommandResult, stateEntries: WorkflowStateEntry[] = []): string {
   const lines = ["Current workflow Todo item:", `<workflow_todo index=\"${index + 1}\" id=\"${todo.id}\">`, `- [ ] ${todo.id}: ${todo.text}`, "</workflow_todo>"]
+  appendWorkflowContext(lines, { workflowRoot: definition.workflowRoot, workflowFile: definition.workflowFile, workflowFolderName: definition.workflowFolderName, stateEntries })
   appendCommandResult(lines, stepDefinition, commandResult)
   appendWorkflowState(lines, stateEntries)
   return lines.join("\n")
 }
 
-function buildCommandResultMessage(todo: WorkflowTodoItem, index: number, commandResult?: WorkflowStepCommandResult, stateEntries: WorkflowStateEntry[] = []): string | undefined {
+function buildCommandResultMessage(definition: WorkflowDefinition, todo: WorkflowTodoItem, index: number, commandResult?: WorkflowStepCommandResult, stateEntries: WorkflowStateEntry[] = []): string | undefined {
   const lines = ["Workflow step command result:", `<workflow_todo index=\"${index + 1}\" id=\"${todo.id}\">`, `- [ ] ${todo.id}: ${todo.text}`, "</workflow_todo>"]
+  appendWorkflowContext(lines, { workflowRoot: definition.workflowRoot, workflowFile: definition.workflowFile, workflowFolderName: definition.workflowFolderName, stateEntries })
   if (commandResult) lines.push("", buildCommandResultBlock(commandResult))
   appendWorkflowState(lines, stateEntries)
   return lines.join("\n")
@@ -1092,6 +1156,7 @@ function buildStepPromptMessage(definition: WorkflowDefinition, todo: WorkflowTo
   const stepBlock = buildStepPromptBlock(stepDefinition, todo, index)
   if (!stepBlock) return undefined
   const lines = ["Continue the Bob workflow using the current Step instructions.", "", stepBlock]
+  appendWorkflowContext(lines, { workflowRoot: definition.workflowRoot, workflowFile: definition.workflowFile, workflowFolderName: definition.workflowFolderName, stateEntries })
   appendCommandResult(lines, stepDefinition, commandResult)
   appendWorkflowState(lines, stateEntries)
   return lines.join("\n")
@@ -1105,6 +1170,7 @@ function buildStepPromptBlock(stepDefinition: WorkflowStepDefinition | undefined
 
 function buildWorkflowTodoStepMessage(definition: WorkflowDefinition, todo: WorkflowTodoItem, index: number, stepDefinition?: WorkflowStepDefinition, commandResult?: WorkflowStepCommandResult, stateEntries: WorkflowStateEntry[] = []): string {
   const lines = ["Continue the Bob workflow Todo list.", "", "Workflow:", `- id: ${definition.id}`, `- name: ${definition.name}`, `- title: ${definition.label}`, `- mode: ${definition.mode}`, "", "Current Todo item:", `<workflow_todo index=\"${index + 1}\" id=\"${todo.id}\">`, `- [ ] ${todo.id}: ${todo.text}`, "</workflow_todo>", "", "Work only on this Todo item now. Mark it complete only after the corresponding work is actually done."]
+  appendWorkflowContext(lines, { workflowRoot: definition.workflowRoot, workflowFile: definition.workflowFile, workflowFolderName: definition.workflowFolderName, stateEntries })
   appendCommandResult(lines, stepDefinition, commandResult)
   appendWorkflowState(lines, stateEntries)
   return lines.join("\n")

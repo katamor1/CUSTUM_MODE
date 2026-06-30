@@ -12,39 +12,43 @@
 
 - コード差分、要求、設計、テスト仕様が別ファイルに分散している。
 - Word、Excel、Markdown など文書形式が混在する。
+- Git / Bazaar など VCS 差分の取得方法が環境により異なる。
 - Bob に全量投入すると、対象外情報の混入、根拠不明な断定、トークン過多が起きやすい。
 - C / C++ の変更箇所、変更関数、関連 caller / callee、グローバル変数候補などを事前に整理したい。
 - Bob の指摘が、どの文書・コード根拠に基づくかを `evidence_id` で追跡したい。
 - Bob 出力を schema と evidence index で検証し、人間 triage へつなげたい。
+- workflow として配布できる初期 `WORKFLOW.md` が必要である。
 
-本拡張はこれらに対し、決定論的な前処理、根拠 ID 付き review-package、Bob 出力 YAML の検証、人間 triage 生成を提供する。
+本拡張はこれらに対し、決定論的な前処理、根拠 ID 付き review-package、Bob 出力 YAML の検証、人間 triage 生成、workflow 初期化を提供する。
 
 ## 3. スコープ
 
 ### 3.1 対象範囲
 
-- `review-input.yaml` の読み込みと schema 検証
-- Git 差分の収集
-- 変更ファイル一覧、変更行、変更関数候補の抽出
-- Markdown / Word `.docx` / Excel `.xlsx` からの根拠抜粋
-- C / C++ の軽量変更解析
-- traceability map の生成
-- `review-package` の生成
-- Bob 投入用 `bob-input.md` と prompt template の生成
-- Bob 出力 YAML の抽出、正規化、保存
-- Bob 出力 YAML の schema 検証と evidence 参照検証
-- 人間 triage ファイルの生成
-- `workflow-register` action provider としての連携
+- `review-input.yaml` の読み込みと schema 検証。
+- Git 差分の収集。
+- review input で `review.vcs` が Bazaar / bzr の場合の Bazaar 差分取得。
+- 変更ファイル一覧、変更行、変更関数候補の抽出。
+- Markdown / Word `.docx` / Excel `.xlsx` からの根拠抜粋。
+- C / C++ の軽量変更解析。
+- traceability map の生成。
+- `review-package` の生成。
+- Bob 投入用 `bob-input.md` と prompt template の生成。
+- Bob 出力 YAML の抽出、正規化、保存。
+- Bob 出力 YAML の schema 検証と evidence 参照検証。
+- 人間 triage ファイルの生成。
+- `.bob/workflows/code-consistency-review/WORKFLOW.md` の初期化。
+- `workflow-register` action provider としての連携。
 
 ### 3.2 対象外
 
-- 正式レビューの承認
-- Bob 出力の自動採用
-- 任意ファイル全探索による根拠の推測
-- コミット、push、PR コメント投稿などの副作用
-- clang AST 等による完全な C / C++ 意味解析
-- 関数ポインタ、マクロ展開、include graph を含む完全な静的解析
-- 文書全量の Bob 投入
+- 正式レビューの承認。
+- Bob 出力の自動採用。
+- 任意ファイル全探索による根拠の推測。
+- コミット、push、PR コメント投稿などの副作用。
+- clang AST 等による完全な C / C++ 意味解析。
+- 関数ポインタ、マクロ展開、include graph を含む完全な静的解析。
+- 文書全量の Bob 投入。
 
 ## 4. 利用者と利用シーン
 
@@ -55,6 +59,7 @@
 | 設計担当者 | 要求・設計・テスト仕様とコード差分の対応関係を確認する。 |
 | 人間 triage 担当者 | Bob 出力を採用・棄却・追加調査に振り分ける。 |
 | ワークフロー設計者 | `workflow-register` の step から本拡張の前処理・検証・triage を呼び出す。 |
+| 導入担当者 | 初期化コマンドで `.bob` 配下に workflow template を配置する。 |
 
 ## 5. 全体構成
 
@@ -63,8 +68,9 @@ flowchart TD
   VSCode[VS Code Extension Host]
   WF[workflow-register]
   Ext[bob-code-consistency-review]
+  Init[Workspace Initializer]
   Input[review-input.yaml]
-  Git[Git diff]
+  VCS[Git / Bazaar diff]
   Docs[Requirements / Design / Test docs]
   Code[Changed C/C++ files]
   Preprocess[Preprocess Pipeline]
@@ -76,8 +82,9 @@ flowchart TD
 
   VSCode --> Ext
   WF --> Ext
+  Ext --> Init
   Input --> Preprocess
-  Git --> Preprocess
+  VCS --> Preprocess
   Docs --> Preprocess
   Code --> Preprocess
   Ext --> Preprocess
@@ -94,9 +101,12 @@ flowchart TD
 | コンポーネント | 主な責務 | 主なファイル |
 | --- | --- | --- |
 | Extension Entry | VS Code command 登録、workflow-register action provider 登録 | `src/extension.ts` |
+| Workspace Initializer | `.bob/workflows/code-consistency-review/WORKFLOW.md` の作成・更新・backup | `src/workspaceInitializer.ts` |
 | Workspace Resolver | Bob workspace root の解決 | `src/workspaceResolver.ts` |
+| Workflow Options | workflow action input / args / state から option を構築 | `src/workflowOptions.ts` |
 | Review Input Validator | `review-input.yaml` の schema 検証と関連文書存在確認 | `src/core/reviewInputValidator.ts` |
 | Git Diff Collector | Git 差分、変更ファイル、numstat、unified diff の収集 | `src/core/gitDiffCollector.ts` |
+| Text Encoding | UTF-8 / Shift-JIS / CP932 系 decode | `src/core/textEncoding.ts` |
 | Document Extractor | Markdown / docx / xlsx から根拠抜粋を生成 | `src/analyzers/documentExtractor.ts` |
 | C/C++ Change Analyzer | 変更関数、call graph 候補、define / global / RT 禁止候補の抽出 | `src/analyzers/cCppChangeAnalyzer.ts` |
 | Traceability Builder | 文書根拠とコード根拠の対応候補を作る | `src/analyzers/traceabilityBuilder.ts` |
@@ -104,7 +114,7 @@ flowchart TD
 | Bob Output Capture | Bob 出力 YAML を抽出して保存 | `src/core/bobOutputCapture.ts` |
 | Bob Output Validator | YAML schema と evidence 参照を検証 | `src/core/bobOutputValidator.ts` |
 | Human Triage Helper | 人間確認用 triage ファイルを生成 | `src/triage/humanTriageHelper.ts` |
-| Prompt Templates | Bob 投入用 system / task / output-format template | `src/templates/*` |
+| Prompt Templates | Bob 投入用 system / task / output-format / bob-input template | `src/templates/*` |
 
 ## 7. 入力モデル
 
@@ -119,6 +129,7 @@ flowchart TD
 | `review.change_type` | bugfix / feature / refactor などの変更種別。 |
 | `review.purpose` | 変更目的。 |
 | `review.base` / `review.head` | Git diff の比較範囲。 |
+| `review.vcs` | Git / Bazaar など差分取得方式の指定。 |
 | `artifacts` | 要求、基本設計、詳細設計、テスト仕様、台帳、チケットの関連文書。 |
 | `review_focus` | Bob に重点確認させる整合観点。 |
 | `analysis_options` | 解析深度、言語、台帳利用などのオプション。 |
@@ -137,13 +148,11 @@ flowchart TD
 
 既定の出力先は `.bob-review/review-package` である。
 
-主な成果物は次の通り。
-
 | ファイル | 用途 |
 | --- | --- |
 | `manifest.yaml` | package 作成情報、対象範囲、template ID、evidence 件数。 |
 | `input-normalized.json` | 検証済み `review-input.yaml` の正規化結果。 |
-| `changed-files.json` | Git 差分から得た変更ファイル一覧。 |
+| `changed-files.json` | VCS 差分から得た変更ファイル一覧。 |
 | `changed-symbols.json` | 変更関数、define、global、call graph、RT 禁止候補。 |
 | `document-index.json` | 文書と evidence の対応。 |
 | `evidence-index.json` | Bob 出力検証に使う evidence metadata。本文は含めない。 |
@@ -158,17 +167,11 @@ flowchart TD
 | `code-slices/*.md` | コード根拠ごとの Markdown。 |
 | `tables/*.md` | 表形式 evidence の個別 Markdown。 |
 
-### 8.2 Bob output
+### 8.2 Bob output / triage
 
-Bob 出力は YAML として扱い、既定では次へ保存する。
+Bob 出力は YAML として扱い、既定では `.bob-review/bob-output/bob-output.yaml` に保存する。
 
-```text
-.bob-review/bob-output/bob-output.yaml
-```
-
-### 8.3 Human triage
-
-既定の出力先は `.bob-review/human-triage` である。
+人間 triage の既定出力先は `.bob-review/human-triage` である。
 
 | ファイル | 用途 |
 | --- | --- |
@@ -180,14 +183,18 @@ Bob 出力は YAML として扱い、既定では次へ保存する。
 
 ## 9. 処理フロー
 
-### 9.1 前処理
+### 9.1 workspace 初期化
+
+`bobCodeConsistency.initializeWorkspace` は同梱 template を `.bob/workflows/code-consistency-review/WORKFLOW.md` へ配置する。既存ファイルがある場合は backup を作成して更新する。
+
+### 9.2 前処理
 
 ```mermaid
 sequenceDiagram
   participant U as User / Workflow
   participant E as Extension
   participant V as ReviewInputValidator
-  participant G as GitDiffCollector
+  participant G as VCS Diff Collector
   participant D as DocumentExtractor
   participant C as CCppChangeAnalyzer
   participant T as TraceabilityBuilder
@@ -196,7 +203,7 @@ sequenceDiagram
   U->>E: preprocess
   E->>V: validate review-input.yaml
   V-->>E: ReviewInput
-  E->>G: collect git diff
+  E->>G: collect diff
   G-->>E: DiffSummary
   E->>D: extract documents
   D-->>E: DocumentExtractionResult
@@ -208,7 +215,7 @@ sequenceDiagram
   P-->>E: files written
 ```
 
-### 9.2 Bob 出力取り込み・検証・triage
+### 9.3 Bob 出力取り込み・検証・triage
 
 ```mermaid
 sequenceDiagram
@@ -224,7 +231,7 @@ sequenceDiagram
   E->>V: validateOutput
   V-->>E: errors / warnings
   E->>H: triage
-  H-->>E: human-triage files
+  H-->>E: triage files
 ```
 
 ## 10. `workflow-register` 連携
@@ -233,6 +240,7 @@ sequenceDiagram
 
 | Provider | 処理 |
 | --- | --- |
+| `bobCodeConsistency.initializeWorkspace` | workflow template を `.bob/workflows/code-consistency-review/WORKFLOW.md` に作成・更新する。 |
 | `bobCodeConsistency.preprocess` | review-package を生成する。 |
 | `bobCodeConsistency.captureBobOutput` | Bob 出力 YAML を取り込む。 |
 | `bobCodeConsistency.validateOutput` | Bob 出力を schema と evidence index で検証する。 |
@@ -240,7 +248,28 @@ sequenceDiagram
 
 workflow 実行時は `workflowRoot` / `bobRoot` / `workspaceRoot` を優先して workspace root を解決する。command palette から実行する場合は、VS Code workspace folder を選択する。
 
-## 11. Bob にさせること / させないこと
+## 11. 同梱 workflow
+
+同梱 template:
+
+```text
+templates/.bob/workflows/code-consistency-review/WORKFLOW.md
+```
+
+現行 template は `schemaVersion: workflow-register/v1`、`requires`、`guardrails.requireApproval`、`inputs`、`tools`、`artifacts`、`completion`、typed `steps` を持つ。
+
+主な step:
+
+| Step | Type | Provider / 処理 |
+| --- | --- | --- |
+| `preprocess-review-package` | command | `bobCodeConsistency.preprocess` |
+| `run-bob-pre-review` | agent | `bob-input.md` に基づく整合プレレビュー |
+| `capture-bob-output` | command | `bobCodeConsistency.captureBobOutput` |
+| `validate-bob-output` | command | `bobCodeConsistency.validateOutput` |
+| `human-triage` | command | `bobCodeConsistency.triage` |
+| `handoff-formal-review` | agent | 正式レビューへの引き継ぎ Markdown を作る |
+
+## 12. Bob にさせること / させないこと
 
 | 区分 | 方針 |
 | --- | --- |
@@ -249,7 +278,7 @@ workflow 実行時は `workflowRoot` / `bobRoot` / `workspaceRoot` を優先し�
 | 人間が行うこと | 指摘の採用判断、棄却理由、追加調査、正式レビュー、最終承認。 |
 | Bob にさせないこと | 正式承認、根拠なし断定、対象外ファイル推測、大量ファイル探索、破壊的操作、コミットや PR 更新。 |
 
-## 12. セキュリティと安全設計
+## 13. セキュリティと安全設計
 
 - Bob に投入する前に、根拠を `review-package` として固定する。
 - Bob 入力は根拠 ID 付き抜粋に限定する。
@@ -260,24 +289,26 @@ workflow 実行時は `workflowRoot` / `bobRoot` / `workspaceRoot` を優先し�
 - 承認判断は必ず人間が行う。
 - 通常フローに commit、push、PR コメント投稿などの副作用を含めない。
 
-## 13. エラー処理方針
+## 14. エラー処理方針
 
 | 場面 | 方針 |
 | --- | --- |
 | `review-input.yaml` 不正 | schema error として処理を中止する。 |
 | 関連文書欠落 | missing artifact として処理を中止する。 |
-| Git diff 収集失敗 | preprocess を失敗させる。 |
+| Git / Bazaar diff 収集失敗 | preprocess を失敗させる。 |
 | 文書抽出失敗 | warning に記録し、可能な範囲で続行する。 |
 | 変更関数を特定できない | warning に記録する。 |
 | Bob 出力 YAML 不在 | capture 結果を error とする。 |
 | Bob 出力 schema 不一致 | validation error とする。 |
 | evidence 参照不一致 | validation error とする。 |
 | triage 入力不備 | triage 生成を失敗させる。 |
+| workflow template 初期化 | 既存ファイルを backup して更新する。 |
 
-## 14. テスト方針
+## 15. テスト方針
 
+- workspace initializer の作成・更新・backup を検証する。
 - `review-input.yaml` schema validation を検証する。
-- Git diff collector の changed files / language 判定を検証する。
+- Git / Bazaar diff collector の changed files / language 判定を検証する。
 - Markdown / docx / xlsx の文書抽出を検証する。
 - C / C++ 変更解析の changed function / code evidence 生成を検証する。
 - `review-package` の生成ファイル一覧と内容を検証する。
@@ -285,8 +316,9 @@ workflow 実行時は `workflowRoot` / `bobRoot` / `workspaceRoot` を優先し�
 - Bob output validator の schema / evidence 参照検証を検証する。
 - triage 生成ファイルを検証する。
 - workflow-register provider 登録を検証する。
+- 同梱 workflow template の requires / guardrails / steps を検証する。
 
-## 15. 今後の拡張方針
+## 16. 今後の拡張方針
 
 - clang AST 連携による C / C++ 解析強化。
 - 関数ポインタ、構造体メンバ、グローバル変数影響の解析強化。

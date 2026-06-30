@@ -346,5 +346,6 @@ workflow-register-0.1.0.vsix
 - `docs/basic-design-ja.md`
 - `docs/detailed-design-ja.md`
 - `docs/workflow-authoring-guide-ja.md`
+- `docs/bob-task-export-recovery-plan-ja.md`
 - `extensions/bob-bazaar-review/README.md`
 - `extensions/README.md`

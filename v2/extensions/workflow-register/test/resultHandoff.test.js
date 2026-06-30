@@ -70,6 +70,44 @@ test("result handoff trims generated artifact text before passing it to provider
   assert.equal(captured.artifactText, "generated artifact")
 })
 
+test("result handoff can recover missing artifact text from a resolver", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { executeResultHandoff } = require("../out/resultHandoff")
+  let captured
+  const actions = new ActionRegistry()
+  actions.register({
+    id: "example.capture",
+    execute: (input) => {
+      captured = input
+      return { status: "ok" }
+    }
+  })
+
+  const result = await executeResultHandoff({
+    captureResult: true,
+    runAgent: true,
+    resultCommand: "example.capture"
+  }, undefined, {
+    actions,
+    workflowId: "workflow",
+    runId: "run-1",
+    stepId: "analyze",
+    recoverResultText: async (input) => {
+      assert.equal(input.workflowId, "workflow")
+      assert.equal(input.runId, "run-1")
+      assert.equal(input.stepId, "analyze")
+      assert.equal(input.reason, "missing-result-text")
+      return "recovered output"
+    }
+  })
+
+  assert.equal(result.ok, true)
+  assert.deepEqual(captured.args, ["recovered output"])
+  assert.equal(captured.runId, "run-1")
+  assert.equal(captured.stepId, "analyze")
+  assert.equal(captured.latestAssistantText, "recovered output")
+})
+
 test("result handoff preserves a legacy executeCommand fallback through action registry", async () => {
   const { executeResultHandoff } = require("../out/resultHandoff")
   const calls = []

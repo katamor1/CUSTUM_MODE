@@ -7,6 +7,7 @@ import { buildProjectRulesSection } from "./projectRules/packet"
 import { validateReviewResultJson } from "./projectRules/validator"
 import { renderReviewResultMarkdown } from "./projectRules/markdown"
 import { captureReviewResult, saveReviewResultFromClipboard } from "./projectRules/resultCapture"
+import { CaptureReviewResultOptions } from "./projectRules/resultCaptureCore"
 import { ReviewResult } from "./projectRules/types"
 import { BazaarReviewInitialTarget, openBazaarReviewGui } from "./reviewGui"
 import { buildAddedFilesContentSection, loadBazaarRevisionPacketInput } from "./revisionInfo"
@@ -56,7 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("bobBazaar.openReviewGui", () => openBazaarReviewGui(context)),
     vscode.commands.registerCommand("bobBazaar.collectReviewContext", () => collectReviewContext()),
     vscode.commands.registerCommand("bobBazaar.loadReviewRules", () => loadReviewRules()),
-    vscode.commands.registerCommand("bobBazaar.captureReviewResult", (inputText?: string) => captureReviewResult(inputText)),
+    vscode.commands.registerCommand("bobBazaar.captureReviewResult", (inputText?: string, ...args: unknown[]) => captureReviewResult(inputText, captureOptionsFromCommandArgs(args))),
     vscode.commands.registerCommand("bobBazaar.saveReviewResultFromClipboard", () => saveReviewResultFromClipboard()),
     vscode.commands.registerCommand("bobBazaar.configureMcp", () => configureMcp(context)),
     vscode.commands.registerCommand("bobBazaar.initProjectRules", () => initProjectRules()),
@@ -92,7 +93,8 @@ async function registerWorkflowProviders(context: vscode.ExtensionContext): Prom
     id: "bobBazaar.captureReviewResult",
     execute: (input) => captureReviewResult(firstStringArg(input.args), {
       expectedChecklistItems: expectedChecklistItemsFromState(input.state),
-      workspaceRoot: stringInput(input.workflowRoot)
+      workspaceRoot: stringInput(input.workflowRoot),
+      workflowState: input.state
     })
   })
 }
@@ -138,6 +140,30 @@ function targetMode(value: unknown): BazaarReviewInitialTarget["revisionMode"] |
 
 function stringInput(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function captureOptionsFromCommandArgs(args: unknown[]): CaptureReviewResultOptions {
+  const context = recordInput(args[args.length - 1])
+  if (!context) return {}
+  const workflowState = recordStringMap(context.state)
+  return {
+    expectedChecklistItems: expectedChecklistItemsFromState(workflowState),
+    workspaceRoot: stringInput(context.workflowRoot),
+    workflowState
+  }
+}
+
+function recordStringMap(value: unknown): Record<string, string> | undefined {
+  const record = recordInput(value)
+  if (!record) return undefined
+  const entries = Object.entries(record)
+  return entries.every(([, item]) => typeof item === "string")
+    ? Object.fromEntries(entries) as Record<string, string>
+    : undefined
+}
+
+function recordInput(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 }
 
 function expectedChecklistItemsFromState(state: Record<string, string> | undefined): number | undefined {

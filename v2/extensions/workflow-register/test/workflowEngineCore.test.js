@@ -352,8 +352,12 @@ test("result sink registry writes command and file sinks with allowlist enforcem
     args: ["extra"]
   }, {
     workflowId: "workflow-register.sample",
+    logicalWorkflowId: "workflow-register.sample",
+    workflowRoot: workspaceRoot,
     runId: "run-1",
     stepId: "save",
+    inputs: { revision: "77" },
+    state: { reviewContext: "{\"ok\":true}" },
     text: "{\"ok\":true}"
   })
   const rejected = await registry.write({
@@ -376,7 +380,19 @@ test("result sink registry writes command and file sinks with allowlist enforcem
   })
 
   assert.equal(commandResult.ok, true)
-  assert.deepEqual(calls, [["bobBazaar.captureReviewResult", "{\"ok\":true}", "extra"]])
+  assert.deepEqual(calls[0].slice(0, 3), ["bobBazaar.captureReviewResult", "{\"ok\":true}", "extra"])
+  assert.deepEqual(calls[0][3], {
+    workflowId: "workflow-register.sample",
+    logicalWorkflowId: "workflow-register.sample",
+    workflowRoot: workspaceRoot,
+    runId: "run-1",
+    stepId: "save",
+    inputs: { revision: "77" },
+    state: { reviewContext: "{\"ok\":true}" },
+    latestAssistantText: "{\"ok\":true}",
+    resultText: "{\"ok\":true}",
+    artifactText: "{\"ok\":true}"
+  })
   assert.equal(rejected.ok, false)
   assert.match(rejected.error, /Unsupported result command/)
   assert.equal(fileResult.ok, true)
@@ -543,6 +559,62 @@ test("workflow engine runs agent steps through an AgentProvider and can hand off
   assert.equal(fs.readFileSync(outputPath, "utf8"), "agent output for 88")
 })
 
+test("workflow engine can replace agent result state with command sink artifact text", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { WorkflowEngine } = require("../out/core/engine")
+  const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+  const { FileRunStateStore } = require("../out/core/runStateStore")
+
+  const workspaceRoot = tempDir()
+  const normalizedJson = "{\"status\":\"ok\"}"
+  const engine = new WorkflowEngine({
+    actions: new ActionRegistry(),
+    resultSinks: createDefaultResultSinkRegistry({
+      workspaceRoot,
+      executeCommand: async () => ({ status: "ok", jsonText: normalizedJson })
+    }),
+    runStore: new FileRunStateStore({ workspaceRoot, now: () => "2026-06-28T00:00:00.000Z" }),
+    agentProvider: {
+      run: async () => "markdown checklist output"
+    }
+  })
+  const workflow = {
+    id: "workflow-register.agent-normalized-result",
+    name: "agent-normalized-result",
+    label: "Agent Normalized Result",
+    description: "Agent workflow",
+    schemaVersion: "workflow-register/v1",
+    inputs: {},
+    artifacts: [
+      {
+        id: "reviewResultJson",
+        producedBy: "output-result",
+        path: ".bob/workflows/runs/{{run.id}}/review-result.json"
+      }
+    ],
+    engineSteps: [
+      {
+        id: "output-result",
+        title: "Output",
+        type: "agent",
+        prompt: "Output",
+        resultKey: "reviewResultJson",
+        result: {
+          source: "agent",
+          sinks: [{ type: "command", command: "bobBazaar.captureReviewResult" }]
+        }
+      }
+    ]
+  }
+
+  const run = await engine.runWorkflow(workflow, {})
+  const artifactPath = path.join(workspaceRoot, ".bob", "workflows", "runs", run.runId, "review-result.json")
+
+  assert.equal(run.status, "completed")
+  assert.equal(run.state.reviewResultJson, normalizedJson)
+  assert.equal(fs.readFileSync(artifactPath, "utf8"), normalizedJson)
+})
+
 test("workflow engine rejects invalid input values before running steps", async () => {
   const { ActionRegistry } = require("../out/core/actionRegistry")
   const { WorkflowEngine } = require("../out/core/engine")
@@ -658,6 +730,106 @@ test("workflow engine holds manual steps and resumes them", async () => {
   assert.equal(held.currentStep, "approve")
   assert.equal(resumed.status, "completed")
   assert.equal(fs.readFileSync(path.join(workspaceRoot, ".bob", "workflows", "runs", held.runId, "steps", "write.txt"), "utf8"), "done")
+})
+
+test("workflow engine can execute a single requested step and leave the run recoverable", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { WorkflowEngine } = require("../out/core/engine")
+  const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+  const { FileRunStateStore } = require("../out/core/runStateStore")
+
+  const workspaceRoot = tempDir()
+  const calls = []
+  const actions = new ActionRegistry()
+  actions.register({
+    id: "sample.collect",
+    execute: async (input) => {
+      calls.push(["collect", input.runId, input.stepId])
+      return `context-${input.inputs.revision}`
+    }
+  })
+  actions.register({
+    id: "sample.analyze",
+    execute: async (input) => {
+      calls.push(["analyze", input.runId, input.stepId, input.state.context])
+      return `analysis-${input.state.context}`
+    }
+  })
+  const runStore = new FileRunStateStore({ workspaceRoot, now: () => "2026-06-28T00:00:00.000Z" })
+  const events = []
+  const engine = new WorkflowEngine({
+    actions,
+    resultSinks: createDefaultResultSinkRegistry({ workspaceRoot, executeCommand: async () => undefined }),
+    runStore,
+    hooks: {
+      onWorkflowStart: async ({ run }) => events.push(["workflow-start", run.runId]),
+      onStepStart: async ({ run, step }) => events.push(["step-start", run.runId, step.id]),
+      onStepCompleted: async ({ run, step }) => events.push(["step-completed", run.runId, step.id])
+    }
+  })
+  const workflow = {
+    id: "workflow-register.single-step",
+    name: "single-step",
+    label: "Single Step",
+    schemaVersion: "workflow-register/v1",
+    inputs: { revision: { type: "string", required: true } },
+    engineSteps: [
+      { id: "collect", title: "Collect", type: "command", action: { provider: "sample.collect" }, resultKey: "context" },
+      { id: "analyze", title: "Analyze", type: "command", action: { provider: "sample.analyze" }, resultKey: "analysis" }
+    ]
+  }
+
+  const first = await engine.runWorkflow(workflow, { revision: "77" }, { executionMode: "singleStep", stepId: "collect" })
+  const second = await engine.runWorkflow(workflow, { revision: "77" }, { executionMode: "singleStep", stepId: "analyze" })
+
+  assert.equal(first.runId, second.runId)
+  assert.equal(first.status, "running")
+  assert.equal(first.currentStep, "collect")
+  assert.equal(first.steps.map((step) => step.status).join(","), "completed,pending")
+  assert.equal(second.status, "completed")
+  assert.equal(second.state.context, "context-77")
+  assert.equal(second.state.analysis, "analysis-context-77")
+  assert.deepEqual(calls.map((call) => [call[0], call[2]]), [["collect", "collect"], ["analyze", "analyze"]])
+  assert.deepEqual(events.map((event) => event[0]), ["workflow-start", "step-start", "step-completed", "step-start", "step-completed"])
+})
+
+test("workflow engine manual completion controller can complete a held step in single-step mode", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { WorkflowEngine } = require("../out/core/engine")
+  const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+  const { FileRunStateStore } = require("../out/core/runStateStore")
+
+  const workspaceRoot = tempDir()
+  const completions = []
+  const runStore = new FileRunStateStore({ workspaceRoot, now: () => "2026-06-28T00:00:00.000Z" })
+  const engine = new WorkflowEngine({
+    actions: new ActionRegistry(),
+    resultSinks: createDefaultResultSinkRegistry({ workspaceRoot, executeCommand: async () => undefined }),
+    runStore,
+    manualCompletion: async ({ run, step }) => {
+      completions.push([run.runId, step.id])
+      return { completed: true }
+    }
+  })
+  const workflow = {
+    id: "workflow-register.manual-single",
+    name: "manual-single",
+    label: "Manual Single",
+    schemaVersion: "workflow-register/v1",
+    inputs: {},
+    engineSteps: [
+      { id: "approve", title: "Approve", type: "manual" },
+      { id: "next", title: "Next", type: "result", result: { source: "literal", text: "done", sinks: [{ type: "file", path: ".bob/workflows/runs/{{run.id}}/steps/next.txt" }] } }
+    ]
+  }
+
+  const run = await engine.runWorkflow(workflow, {}, { executionMode: "singleStep", stepId: "approve" })
+
+  assert.equal(run.status, "running")
+  assert.equal(run.currentStep, "approve")
+  assert.equal(run.steps[0].status, "completed")
+  assert.equal(run.steps[1].status, "pending")
+  assert.deepEqual(completions, [[run.runId, "approve"]])
 })
 
 test("workflow engine validates requiredWhen inputs and select options", async () => {

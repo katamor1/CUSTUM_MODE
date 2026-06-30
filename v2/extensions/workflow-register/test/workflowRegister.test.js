@@ -82,6 +82,17 @@ test("package contributes standalone workflow launcher commands without a hard B
   assert.match(source, /new FileRunStateStore\(\{ workspaceRoot, engineVersion: this\.engineVersion \}\)/)
 })
 
+test("package exposes task snapshot retention settings", () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(extensionRoot, "package.json"), "utf8"))
+  const properties = packageJson.contributes.configuration.properties
+
+  assert.equal(properties["workflowRegister.taskSnapshots.enabled"].default, true)
+  assert.equal(properties["workflowRegister.taskSnapshots.maxBytes"].default, 262144)
+  assert.equal(properties["workflowRegister.taskSnapshots.maxPerRun"].default, 50)
+  assert.equal(properties["workflowRegister.taskSnapshots.includeMessages"].default, true)
+  assert.equal(properties["workflowRegister.taskSnapshots.pruneOnSave"].default, true)
+})
+
 test("standalone workflow launcher wires an AgentProvider through API or configured command", () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(extensionRoot, "package.json"), "utf8"))
   const source = fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8")
@@ -109,14 +120,29 @@ test("default action registry is domain agnostic", () => {
   assert.match(source, /registry\.register\(\{[\s\S]*id: "vscode\.executeCommand"[\s\S]*options\.executeCommand\(command, \.\.\.args\)[\s\S]*\}\)/)
 })
 
-test("Bob workflow Todo commands run through registered action providers", () => {
+test("Bob workflow Todo execution delegates to the shared WorkflowEngine runner", () => {
   const source = fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8")
 
-  assert.match(source, /createBobWorkflow\(workflow, this\.stepRuntime, this\.actionRegistry, \(definition, provided\) => this\.collectBobWorkflowInputs\(definition, provided\)\)/)
-  assert.match(source, /async function runWorkflowStepCommand\([\s\S]*actionRegistry: ActionRegistry[\s\S]*\)/)
-  assert.match(source, /actionRegistry\.execute\(step\.command, \{[\s\S]*args: step\.commandArgs[\s\S]*workflowId[\s\S]*stepId[\s\S]*\}\)/)
+  assert.match(source, /createBobWorkflow\(workflow, this\.createBobWorkflowRunner\(workflow\)\)/)
+  assert.match(source, /class BobWorkflowEngineRunner/)
+  assert.match(source, /runTodoStep\(todo: WorkflowTodoItem, index: number, task: BobWorkflowTask\): Promise<boolean> \{[\s\S]*executionMode: "singleStep"[\s\S]*stepId: todo\.id/)
+  assert.match(source, /engine\.runWorkflow\(this\.options\.coreWorkflow, inputs, \{[\s\S]*executionMode: request\.executionMode[\s\S]*stepId: request\.stepId[\s\S]*\}\)/)
+  assert.match(source, /createBobTaskSnapshotProvider\(task\)/)
+  assert.match(source, /new FileTaskSnapshotStore\(/)
+  assert.doesNotMatch(source, /async function runWorkflowStepCommand\(/)
   assert.doesNotMatch(source, /step\.command === "bobBazaar\./)
   assert.doesNotMatch(source, /Unsupported step command\. Add it to the workflow-register allowlist before use\./)
+})
+
+test("Engine preflight checks Bazaar repositories across multi-root workspaces", () => {
+  const source = fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8")
+
+  assert.match(source, /import \{[\s\S]*findMarkerRoots[\s\S]*\} from "\.\/core\/workspaceRoots"/)
+  assert.match(source, /private createPreflightChecks\(workspaceRoot: string\): NonNullable<WorkflowEngineOptions\["preflightChecks"\]>/)
+  assert.match(source, /bazaarRepository: \(\) => this\.bazaarRepositoryAvailable\(workspaceRoot\)/)
+  assert.match(source, /preflightChecks: this\.createPreflightChecks\(workspaceRoot\)/)
+  assert.match(source, /preflightChecks: \(workspaceRoot\) => this\.createPreflightChecks\(workspaceRoot\)/)
+  assert.match(source, /await findMarkerRoots\(folders, "\.bzr"\)/)
 })
 
 test("Bob registration deactivates the previous source before replacing workflows", () => {
@@ -153,15 +179,23 @@ test("Bob adapter resolves workflow inputs and passes them to command providers"
   assert.match(source, /inputs: Record<string, WorkflowInputDefinition>/)
   assert.match(source, /inputs: core\.inputs/)
   assert.match(source, /workflowRoot: core\.workflowRoot/)
-  assert.match(source, /private readonly workflowInputs = new Map<string, Record<string, unknown>>\(\)/)
   assert.match(source, /collectBobWorkflowInputs\(workflow: WorkflowDefinition, provided: Record<string, unknown>\)/)
-  assert.match(source, /extractTaskWorkflowInputs\(definition, task\)/)
+  assert.match(source, /extractTaskWorkflowInputs\(workflow, task\)/)
   assert.match(source, /collectWorkflowInputsWithResolver\(\{[\s\S]*inputs: workflow\.inputs,[\s\S]*provided,[\s\S]*prompt: \(key, definition, required\) => this\.promptForInput\(key, definition, required\)[\s\S]*\}\)/)
-  assert.match(source, /actionRegistry\.execute\(step\.command, \{[\s\S]*inputs,[\s\S]*state,[\s\S]*workflowId: definition\.id,[\s\S]*workflowRoot: definition\.workflowRoot,[\s\S]*stepId[\s\S]*\}\)/)
-  assert.match(source, /captureAgentStepResult\([\s\S]*actionRegistry,[\s\S]*stepRuntime\.stateRecord\(definition\),[\s\S]*inputs[\s\S]*\)/)
-  assert.match(source, /actions: active\.actionRegistry/)
-  assert.match(source, /state: active\.state/)
+  assert.match(source, /createBobWorkflowRunner\(workflow: WorkflowDefinition\): BobWorkflowEngineRunner/)
+  assert.match(source, /inputsProvider: \(task, provided\) => this\.collectBobWorkflowInputs\(workflow, \{[\s\S]*\.\.\.extractTaskWorkflowInputs\(workflow, task\)[\s\S]*\.\.\.provided[\s\S]*\}\)/)
+  assert.match(source, /runId: run\.runId/)
+  assert.match(source, /state: run\.state/)
   assert.doesNotMatch(source, /inputs: \{\}/)
+})
+
+test("Bob workflow chat messages include bounded workflow root context", () => {
+  const source = fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8")
+
+  assert.match(source, /import \{ appendWorkflowContext \} from "\.\/workflowPromptContext"/)
+  assert.match(source, /appendWorkflowContext\(lines, \{[\s\S]*workflowRoot: definition\.workflowRoot[\s\S]*workflowFile: definition\.workflowFile[\s\S]*workflowFolderName: definition\.workflowFolderName[\s\S]*stateEntries[\s\S]*\}\)/)
+  assert.match(source, /buildCommandResultMessage\(this\.options\.definition, context\.todo, context\.index, commandResult, stateEntries\)/)
+  assert.match(source, /buildCurrentTodoMessage\(definition, todo, index, stepDefinition, commandResult, stateEntries\)/)
 })
 
 test("Bob adapter applies guardrails to Todo, result, and legacy top-level commands", () => {
@@ -172,10 +206,9 @@ test("Bob adapter applies guardrails to Todo, result, and legacy top-level comma
   assert.match(engine, /import \{ validateCommandGuardrails \} from "\.\/guardrails"/)
   assert.match(source, /guardrails: WorkflowGuardrailsDefinition/)
   assert.match(source, /guardrails: core\.guardrails/)
-  assert.match(source, /validateCommandGuardrails\(definition, step\.command\)/)
-  assert.match(source, /validateCommandGuardrails\(definition, stepDefinition\.resultCommand\)/)
-  assert.match(source, /validateCommandGuardrails\(definition, definition\.command\)/)
-  assert.match(source, /actionRegistry\.execute\("vscode\.executeCommand", \{[\s\S]*args: \[definition\.command, \.\.\.definition\.commandArgs\][\s\S]*\}\)/)
+  assert.match(engine, /validateCommandGuardrails\(workflow, step\.action\.provider\)/)
+  assert.match(source, /validateCommandGuardrails\(\{ guardrails: active\.guardrails \}, step\.resultCommand\)/)
+  assert.match(source, /actionRegistry: this\.actionRegistry/)
   assert.doesNotMatch(source, /vscode\.commands\.executeCommand\(definition\.command/)
 })
 

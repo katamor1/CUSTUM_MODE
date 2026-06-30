@@ -67,7 +67,7 @@ npm.cmd run package
 隔離された Bob workspace を作成して起動します。
 
 ```powershell
-cd C:\Users\stell\source\repos\bob_builtin_analyze
+cd C:\Users\st\source\repos\bob_builtin_analyze
 .\docs\workflows\code-consistency-review\integration\launch-bob-code-consistency-sandbox.ps1 -Sample ai-verification-matrix
 ```
 

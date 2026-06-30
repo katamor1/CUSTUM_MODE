@@ -78,6 +78,127 @@ test("invalid explicit review-result JSON returns validation issues without savi
   assert.match(result.issues.map((issue) => issue.path).join("\n"), /\$\.vcs/)
 })
 
+test("workflow capture recovers review-result JSON from markdown checklist output", async () => {
+  const { captureReviewResultText } = require("../out/projectRules/resultCaptureCore")
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-review-capture-markdown-"))
+  await fs.mkdir(path.join(workspaceRoot, ".bob", "review"), { recursive: true })
+  await fs.writeFile(path.join(workspaceRoot, ".bob", "review", "checklist.json"), JSON.stringify({
+    version: "1.0.0",
+    project: "legacy-control",
+    rules: [
+      {
+        id: "RT-001",
+        category: "realtime",
+        title: "RTスレッド内でI/Oを行っていない",
+        description: "RT threads must not perform I/O.",
+        severity_on_fail: "error"
+      },
+      {
+        id: "DOC-001",
+        category: "design-doc",
+        title: "基本設計・詳細設計・台帳との不整合がない",
+        description: "Design documents must stay consistent.",
+        severity_on_fail: "warning"
+      }
+    ]
+  }, null, 2), "utf8")
+  const markdown = [
+    "## チェックリスト分析結果",
+    "",
+    "| ルールID | カテゴリ | タイトル | 適用条件の該当 | 判定 |",
+    "|----------|----------|----------|----------------|------|",
+    "| **RT-001** | realtime | RTスレッド内でI/Oを行っていない | 変更ファイルが `src/rt_*.c` 外 | **not_applicable** |",
+    "| **DOC-001** | design-doc | 基本設計・詳細設計・台帳との不整合がない | 仕様変更キーワードなし | **not_applicable** |"
+  ].join("\n")
+
+  const result = await captureReviewResultText(workspaceRoot, markdown, "agent output", {
+    expectedChecklistItems: 2,
+    workflowState: {
+      reviewContext: JSON.stringify({
+        workspacePath: "C:/repo/project",
+        mode: "singleRevision",
+        revision: "3",
+        targetRevision: "3"
+      }),
+      reviewRules: JSON.stringify({ checklistPath: ".bob/review/checklist.json", checklistItems: 2 })
+    }
+  })
+
+  assert.equal(result.status, "ok")
+  assert.equal(result.source, "agent output markdown recovery")
+  assert.equal(result.reviewId, "bazaar-r3-project-rule-review")
+  assert.match(result.jsonText, /"review_id": "bazaar-r3-project-rule-review"/)
+  const saved = JSON.parse(await fs.readFile(result.jsonPath, "utf8"))
+  assert.equal(saved.vcs.repository, "C:/repo/project")
+  assert.deepEqual(saved.summary, { pass: 0, fail: 0, unknown: 0, not_applicable: 2, blocked: 0 })
+  assert.deepEqual(saved.checklist_results.map((item) => [item.rule_id, item.status, item.severity]), [
+    ["RT-001", "not_applicable", "info"],
+    ["DOC-001", "not_applicable", "info"]
+  ])
+  assert.equal(saved.checklist_results[0].reason, "変更ファイルが src/rt_*.c 外")
+  assert.match(await fs.readFile(result.markdownPath, "utf8"), /bazaar-r3-project-rule-review/)
+})
+
+test("workflow capture recovers review-result JSON from markdown rule headings and status lines", async () => {
+  const { captureReviewResultText } = require("../out/projectRules/resultCaptureCore")
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-review-capture-heading-markdown-"))
+  await fs.mkdir(path.join(workspaceRoot, ".bob", "review"), { recursive: true })
+  await fs.writeFile(path.join(workspaceRoot, ".bob", "review", "checklist.json"), JSON.stringify({
+    version: "1.0.0",
+    project: "legacy-control",
+    rules: [
+      {
+        id: "RT-001",
+        category: "realtime",
+        title: "RTスレッド内でI/Oを行っていない",
+        description: "RT threads must not perform I/O.",
+        severity_on_fail: "error"
+      },
+      {
+        id: "DOC-001",
+        category: "design-doc",
+        title: "基本設計・詳細設計・台帳との不整合がない",
+        description: "Design documents must stay consistent.",
+        severity_on_fail: "warning"
+      }
+    ]
+  }, null, 2), "utf8")
+  const markdown = [
+    "### 各ルール判定詳細",
+    "",
+    "#### RT-001 — RTスレッド内でI/Oを行っていない",
+    "- `applies_when` : `changed_file_matches:src/rt_*.c` → **該当なし**",
+    "- **ステータス: `not_applicable`** （confidence: high）",
+    "",
+    "#### DOC-001 — 基本設計・詳細設計・台帳との不整合がない",
+    "- 差分テキストだけでは設計書との関係が判断できません。",
+    "- **status: unknown**"
+  ].join("\n")
+
+  const result = await captureReviewResultText(workspaceRoot, markdown, "agent output", {
+    expectedChecklistItems: 2,
+    workflowState: {
+      reviewContext: JSON.stringify({
+        workspacePath: "C:/repo/project",
+        mode: "revisionRange",
+        baseRevision: "1",
+        targetRevision: "4"
+      }),
+      reviewRules: JSON.stringify({ checklistPath: ".bob/review/checklist.json", checklistItems: 2 })
+    }
+  })
+
+  assert.equal(result.status, "ok")
+  assert.equal(result.reviewId, "bazaar-r1-4-project-rule-review")
+  const saved = JSON.parse(await fs.readFile(result.jsonPath, "utf8"))
+  assert.deepEqual(saved.summary, { pass: 0, fail: 0, unknown: 1, not_applicable: 1, blocked: 0 })
+  assert.deepEqual(saved.checklist_results.map((item) => [item.rule_id, item.status]), [
+    ["RT-001", "not_applicable"],
+    ["DOC-001", "unknown"]
+  ])
+  assert.match(saved.checklist_results[0].reason, /changed_file_matches:src\/rt_\*\.c/)
+})
+
 test("placeholder checklist severities from Bob agent output are normalized to info", async () => {
   const { captureReviewResultText } = require("../out/projectRules/resultCaptureCore")
   const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-review-capture-severity-"))

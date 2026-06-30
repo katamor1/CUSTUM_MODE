@@ -40,7 +40,7 @@ export function createDefaultResultSinkRegistry(options: DefaultResultSinkRegist
   registry.register("command", async (sink, input) => {
     if (sink.type !== "command") return { ok: false, error: `Invalid command sink: ${sink.type}` }
     if (!allowedCommandSinks.has(sink.command)) return { ok: false, error: `Unsupported result command: ${sink.command}` }
-    const value = await Promise.resolve(options.executeCommand(sink.command, input.text, ...(sink.args ?? [])))
+    const value = await Promise.resolve(options.executeCommand(sink.command, input.text, ...(sink.args ?? []), commandContext(input, options.workspaceRoot)))
     const reportedError = commandReportedError(value)
     if (reportedError) return { ok: false, value, error: reportedError }
     return { ok: true, value }
@@ -74,6 +74,27 @@ function renderTemplate(value: string, input: ResultSinkWriteInput): string {
     .replace(/\{\{\s*step\.id\s*\}\}/g, input.stepId)
     .replace(/\{\{\s*stepId\s*\}\}/g, input.stepId)
     .replace(/\{\{\s*workflow\.id\s*\}\}/g, input.workflowId)
+}
+
+function commandContext(input: ResultSinkWriteInput, workspaceRoot: string): Record<string, unknown> {
+  return compactObject({
+    workflowId: input.workflowId,
+    logicalWorkflowId: input.logicalWorkflowId,
+    workflowRoot: input.workflowRoot ?? workspaceRoot,
+    workflowFile: input.workflowFile,
+    workflowFolderName: input.workflowFolderName,
+    runId: input.runId,
+    stepId: input.stepId,
+    inputs: input.inputs,
+    state: input.state,
+    latestAssistantText: input.text,
+    resultText: input.text,
+    artifactText: input.text
+  })
+}
+
+function compactObject(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined))
 }
 
 function commandReportedError(value: unknown): string | undefined {

@@ -19,7 +19,16 @@ test("Bazaar companion extension registers workflow providers with workflow-regi
   assert.match(source, /id: "bobBazaar\.loadReviewRules"/)
   assert.match(source, /execute: \(input\) => loadReviewRules\(input\)/)
   assert.match(source, /id: "bobBazaar\.captureReviewResult"/)
-  assert.match(source, /execute: \(input\) => captureReviewResult\(firstStringArg\(input\.args\), \{[\s\S]*expectedChecklistItems: expectedChecklistItemsFromState\(input\.state\),[\s\S]*workspaceRoot: stringInput\(input\.workflowRoot\)[\s\S]*\}\)/)
+  assert.match(source, /execute: \(input\) => captureReviewResult\(firstStringArg\(input\.args\), \{[\s\S]*expectedChecklistItems: expectedChecklistItemsFromState\(input\.state\),[\s\S]*workspaceRoot: stringInput\(input\.workflowRoot\),[\s\S]*workflowState: input\.state[\s\S]*\}\)/)
+})
+
+test("Bazaar capture command accepts workflow context appended by result sinks", () => {
+  const source = fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8")
+
+  assert.match(source, /registerCommand\("bobBazaar\.captureReviewResult", \(inputText\?: string, \.\.\.args: unknown\[\]\) => captureReviewResult\(inputText, captureOptionsFromCommandArgs\(args\)\)\)/)
+  assert.match(source, /function captureOptionsFromCommandArgs\(args: unknown\[\]\): CaptureReviewResultOptions/)
+  assert.match(source, /const workflowState = recordStringMap\(context\.state\)/)
+  assert.match(source, /workflowState[\s\S]*\}/)
 })
 
 test("Bazaar workflow provider resolves repository root independently from workflowRoot", () => {
