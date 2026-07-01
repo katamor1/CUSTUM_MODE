@@ -12,8 +12,8 @@ test("agent step prompt includes only the current workflow step and requested st
   const prompt = buildWorkflowAgentPrompt({
     workflowId: "workflow-register.bazaar-project-rule-review",
     workflowName: "bazaar-project-rule-review",
-    workflowRoot: "C:\\Users\\st\\source\\repos\\workspace",
-    workflowFile: "C:\\Users\\st\\source\\repos\\workspace\\.bob\\workflows\\bazaar-project-rule-review\\WORKFLOW.md",
+    workflowRoot: "C:\\Users\\stell\\source\\repos\\workspace",
+    workflowFile: "C:\\Users\\stell\\source\\repos\\workspace\\.bob\\workflows\\bazaar-project-rule-review\\WORKFLOW.md",
     workflowFolderName: "bazaar-project-rule-review",
     stepIndex: 3,
     stepId: "analyze-changes",
@@ -21,15 +21,15 @@ test("agent step prompt includes only the current workflow step and requested st
     stepPrompt: "Analyze the current change.",
     workflowInstructions: "Review the selected Bazaar revision.",
     stateEntries: [
-      { key: "reviewContext", value: "{\"target\":\"2\",\"workspacePath\":\"C:/Users/st/source/repos/bazaar_test/banch2\"}" },
+      { key: "reviewContext", value: "{\"target\":\"2\",\"workspacePath\":\"C:/Users/stell/source/repos/bazaar_test/banch2\"}" },
       { key: "reviewRules", value: "{\"rules\":[]}" }
     ]
   })
 
   assert.match(prompt, /workflow-register\.bazaar-project-rule-review/)
   assert.match(prompt, /<workflow_context>/)
-  assert.match(prompt, /<workflow_root>C:\\Users\\st\\source\\repos\\workspace<\/workflow_root>/)
-  assert.match(prompt, /<bazaar_repository_root>C:\/Users\/st\/source\/repos\/bazaar_test\/banch2<\/bazaar_repository_root>/)
+  assert.match(prompt, /<workflow_root>C:\\Users\\stell\\source\\repos\\workspace<\/workflow_root>/)
+  assert.match(prompt, /<bazaar_repository_root>C:\/Users\/stell\/source\/repos\/bazaar_test\/banch2<\/bazaar_repository_root>/)
   assert.match(prompt, /Do not search parent directories, sibling workspace folders, or full workspace trees for \.bob/)
   assert.match(prompt, /<workflow_step index="4" id="analyze-changes">/)
   assert.match(prompt, /Analyze the current change\./)
@@ -40,7 +40,7 @@ test("agent step prompt includes only the current workflow step and requested st
 
 test("agent step prompt treats identical workflow and Bazaar roots as resolved roles", () => {
   const { buildWorkflowAgentPrompt } = require("../out/agentStep")
-  const root = "C:\\Users\\st\\source\\repos\\workspace"
+  const root = "C:\\Users\\stell\\source\\repos\\workspace"
 
   const prompt = buildWorkflowAgentPrompt({
     workflowId: "workflow-register.bazaar-project-rule-review",

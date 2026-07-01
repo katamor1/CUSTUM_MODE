@@ -1,10 +1,11 @@
 export function renderWorkflowBuilderStyles(): string {
   return String.raw`
-body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 0; margin: 0; }
-header { padding: 14px 18px; border-bottom: 1px solid var(--vscode-panel-border); }
-main { display: grid; grid-template-columns: 340px minmax(420px, 1fr) minmax(280px, 360px); min-height: calc(100vh - 64px); }
-aside { border-right: 1px solid var(--vscode-panel-border); padding: 14px; overflow: auto; }
-section { padding: 14px 18px; overflow: auto; }
+body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 0; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+header { padding: 14px 18px; border-bottom: 1px solid var(--vscode-panel-border); flex: 0 0 auto; }
+main { display: grid; grid-template-columns: 340px minmax(420px, 1fr) minmax(280px, 360px); flex: 1 1 auto; min-height: 0; overflow: hidden; }
+aside, section, .help-panel { min-height: 0; min-width: 0; overflow: auto; }
+aside { border-right: 1px solid var(--vscode-panel-border); padding: 14px; }
+section { padding: 14px 18px; }
 h1 { font-size: 18px; margin: 0 0 4px; }
 h2 { font-size: 15px; margin: 18px 0 8px; }
 h3 { font-size: 13px; margin: 14px 0 6px; }
@@ -30,7 +31,9 @@ pre { white-space: pre-wrap; overflow: auto; padding: 10px; background: var(--vs
 .diagnostics.ng, .reference-issue { border-left: 4px solid var(--vscode-testing-iconFailed); }
 .issue-list { margin: 6px 0 0 18px; padding: 0; }
 .issue-list li { margin: 4px 0; }
-.help-panel { border-left: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); padding: 14px; overflow: auto; }
+.help-inline-guide { border-left: 4px solid var(--vscode-focusBorder); }
+.help-inline-guide ol { margin: 6px 0 0 20px; padding: 0; }
+.help-panel { border-left: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); padding: 14px; }
 .help-panel h2 { margin-top: 0; }
 .help-panel p { line-height: 1.55; }
 .help-title { font-size: 14px; font-weight: 700; margin-top: 8px; }

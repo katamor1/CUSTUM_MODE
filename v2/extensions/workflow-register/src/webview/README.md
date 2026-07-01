@@ -7,10 +7,12 @@ Webview の表示とクライアント処理は次のファイルへ分割する
 | file | role |
 | --- | --- |
 | `workflowBuilderPanel.ts` | WebviewPanel 作成、preview / diff / save、backup、`workflowRegister.reload` 実行。 |
-| `workflowBuilderHtml.ts` | HTML shell、CSP、nonce、初期 state、help catalog 埋め込み。 |
+| `workflowBuilderHtml.ts` | HTML shell、CSP、nonce、初期 state、help catalog 埋め込み、client script fragments の合成。 |
 | `workflowBuilderStyles.ts` | Webview CSS。3カラムレイアウトとヘルプパネルも定義する。 |
 | `workflowBuilderClientScript.ts` | Webview 内で動く form state / tab / preview / guardrails UI 処理。 |
+| `workflowBuilderGuidedHelpScript.ts` | Step type guide、動的選択肢ラベル、Diagnostics から設定項目への誘導。 |
 | `workflowBuilderBodyScript.ts` | YAML front matter 以外の Markdown body 編集 UI を追加する補助 script。 |
+| `workflowBuilderHelpIds.ts` | help id の定数 registry。renderer / catalog / diagnostics 誘導の typo を減らす。 |
 | `workflowBuilderHelpCatalog.ts` | GUI 設定者向けの日本語ヘルプ文言と選択肢説明。 |
 | `workflowBuilderHelpScript.ts` | 既存 form DOM へ `?` ボタン、field key、固定ヘルプパネル、検索、項目ジャンプを追加する補助 script。 |
 
@@ -40,6 +42,36 @@ Webview form state
 ```
 
 GUI が作った state でも、保存直前に必ず既存 validator を通す。これにより Webview 側の入力不整合がそのままファイルに保存されることを避ける。
+
+## Script split policy
+
+`workflowBuilderClientScript.ts` はまだ大きいが、Phase 8 以降は機能単位の script fragment へ段階的に分割する。
+
+最初の分割対象として、次を `workflowBuilderGuidedHelpScript.ts` に切り出した。
+
+- `stepTypeGuideHtml`
+- `stepOptionLabel`
+- `resultKeyOptionLabel`
+- `diagnosticTarget`
+- `diagnosticLinkHtml`
+- `renderDiagnosticsList`
+- `gotoHelpTarget`
+
+`workflowBuilderHtml.ts` は `renderWorkflowBuilderClientScript()` の後に `renderWorkflowBuilderGuidedHelpScript()` を合成する。これにより、既存の form state / event handler を保ちながら、Guided Help 周辺だけを独立してテストできる。
+
+## Help ID Registry
+
+`workflowBuilderHelpIds.ts` は help id を定数化する registry である。
+
+```ts
+WorkflowBuilderHelpIds.StepPrompt
+WorkflowBuilderHelpIds.StepIncludeState
+WorkflowBuilderHelpIds.CommandProvider
+WorkflowBuilderHelpIds.ResultSource
+WorkflowBuilderHelpIds.ArtifactProducedBy
+```
+
+`workflowBuilderHelpIdValues` と `isWorkflowBuilderHelpId()` は、テストや将来の catalog 整合性チェックで利用する。
 
 ## Contextual Help
 
@@ -75,7 +107,7 @@ approval rule の `when` は条件式として読む人間に分かりやすい�
 
 空欄の場合は serializer 側の既存挙動により title / description から既定本文を生成する。
 
-この拡張は意図的に小さく保っている。将来 `workflowBuilderClientScript.ts` を機能別 module に分割する場合は、body tab も通常の tab renderer として統合する。
+この拡張は意図的に小さく保っている。将来 `workflowBuilderClientScript.ts` をさらに分割する場合は、body tab も通常の tab renderer として統合する。
 
 ## 既存 workflow 編集時の注意
 

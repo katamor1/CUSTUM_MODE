@@ -1,6 +1,7 @@
 import { WorkflowAuthoringModel } from "../core/workflowAuthoringModel"
 import { renderWorkflowBuilderBodyScript } from "./workflowBuilderBodyScript"
 import { renderWorkflowBuilderClientScript } from "./workflowBuilderClientScript"
+import { renderWorkflowBuilderGuidedHelpScript } from "./workflowBuilderGuidedHelpScript"
 import { workflowBuilderHelpCatalog } from "./workflowBuilderHelpCatalog"
 import { renderWorkflowBuilderHelpScript } from "./workflowBuilderHelpScript"
 import { renderWorkflowBuilderStyles } from "./workflowBuilderStyles"
@@ -59,8 +60,10 @@ const helpCatalog = ${JSON.stringify(workflowBuilderHelpCatalog)};
 let model = ${JSON.stringify(options.initialModel)};
 let editMode = ${JSON.stringify(options.isEditMode)};
 ${renderWorkflowBuilderClientScript()}
+${renderWorkflowBuilderGuidedHelpScript()}
 ${renderWorkflowBuilderBodyScript()}
 ${renderWorkflowBuilderHelpScript()}
+window.workflowBuilderJumpToHelp = typeof jumpToHelpEntry === 'function' ? jumpToHelpEntry : undefined;
 </script>
 </body>
 </html>`

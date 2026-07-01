@@ -23,6 +23,11 @@
   "activationEvents": [
     "onStartupFinished",
     "onCommand:bobCodeConsistency.initializeWorkspace",
+    "onCommand:bobCodeConsistency.createReviewInput",
+    "onCommand:bobCodeConsistency.prepareAiReviewInputDraft",
+    "onCommand:bobCodeConsistency.applyAiReviewInputDraft",
+    "onCommand:bobCodeConsistency.repairReviewInput",
+    "onCommand:bobCodeConsistency.explainReviewInputDiagnostics",
     "onCommand:bobCodeConsistency.preprocess",
     "onCommand:bobCodeConsistency.captureBobOutput",
     "onCommand:bobCodeConsistency.validateOutput",
@@ -33,7 +38,32 @@
     "commands": [
       {
         "command": "bobCodeConsistency.initializeWorkspace",
-        "title": "コード整合レビュー: .bob ワークフロー定義を初期化",
+        "title": "コード整合レビュー: .bob ワークフロー定義と review-input 雛形を初期化",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.createReviewInput",
+        "title": "コード整合レビュー: 対話式に review-input.yaml を作成",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.prepareAiReviewInputDraft",
+        "title": "コード整合レビュー: AI draft 用プロンプトを作成",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.applyAiReviewInputDraft",
+        "title": "コード整合レビュー: AI draft JSON から review-input.yaml を生成",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.repairReviewInput",
+        "title": "コード整合レビュー: review-input.yaml を自動修復",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.explainReviewInputDiagnostics",
+        "title": "コード整合レビュー: review-input.yaml 診断を説明",
         "category": "Bob コード整合"
       },
       {
@@ -96,6 +126,11 @@
     "menus": {
       "commandPalette": [
         { "command": "bobCodeConsistency.initializeWorkspace" },
+        { "command": "bobCodeConsistency.createReviewInput" },
+        { "command": "bobCodeConsistency.prepareAiReviewInputDraft" },
+        { "command": "bobCodeConsistency.applyAiReviewInputDraft" },
+        { "command": "bobCodeConsistency.repairReviewInput" },
+        { "command": "bobCodeConsistency.explainReviewInputDiagnostics" },
         { "command": "bobCodeConsistency.preprocess" },
         { "command": "bobCodeConsistency.captureBobOutput" },
         { "command": "bobCodeConsistency.validateOutput" },

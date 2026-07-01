@@ -25,6 +25,8 @@ requires:
     - review-input.yaml
 guardrails:
   allowedCommands:
+    - bobCodeConsistency.prepareAiReviewInputDraft
+    - bobCodeConsistency.applyAiReviewInputDraft
     - bobCodeConsistency.preprocess
     - bobCodeConsistency.captureBobOutput
     - bobCodeConsistency.validateOutput
@@ -45,6 +47,22 @@ inputs:
     type: string
     title: review-package の出力先
     default: .bob-review/review-package
+  aiDraftPromptPath:
+    type: string
+    title: AI draft 用プロンプトの出力先
+    default: .bob-review/review-input-draft
+  base:
+    type: string
+    title: 比較元 revision
+    default: HEAD~1
+  head:
+    type: string
+    title: 比較先 revision
+    default: HEAD
+  vcs:
+    type: string
+    title: VCS 種別
+    default: git
   textEncoding:
     type: string
     title: テキスト読み取り文字コード
@@ -58,6 +76,16 @@ inputs:
     title: 人間 triage の出力先
     default: .bob-review/human-triage
 tools:
+  bobCodeConsistency.prepareAiReviewInputDraft:
+    purpose: AI に ReviewInputDraft JSON だけを返させるための制約付きプロンプトを生成します。
+    required: false
+    outputKey: aiDraftPrompt
+    failurePolicy: continue
+  bobCodeConsistency.applyAiReviewInputDraft:
+    purpose: AI が返した ReviewInputDraft JSON を builder と validator に通して review-input.yaml に保存します。
+    required: false
+    outputKey: aiDraftApplyResult
+    failurePolicy: stop
   bobCodeConsistency.preprocess:
     purpose: review-package と bob-input.md を生成します。
     required: true
@@ -80,6 +108,9 @@ tools:
     outputKey: triageResult
     failurePolicy: stop
 artifacts:
+  - id: aiDraftPrompt
+    producedBy: prepare-ai-review-input-draft
+    path: .bob-review/review-input-draft/ai-draft-prompt.md
   - id: reviewPackage
     producedBy: preprocess-review-package
     path: .bob-review/review-package
@@ -101,6 +132,32 @@ completion:
     type: mermaid
     enabled: false
 steps:
+  - id: prepare-ai-review-input-draft
+    title: AI draft 用プロンプトを作成
+    type: command
+    action:
+      provider: bobCodeConsistency.prepareAiReviewInputDraft
+    prompt: |
+      必要に応じて、AI に review-input.yaml の材料を選ばせるための制約付きプロンプトを作成してください。
+      AI には最終 YAML ではなく ReviewInputDraft JSON だけを返させてください。
+    sendResult: true
+    resultKey: aiDraftPrompt
+    maxResultBytes: 20000
+    required: false
+    completeOnSuccess: true
+  - id: apply-ai-review-input-draft
+    title: AI draft JSON を review-input.yaml に反映
+    type: command
+    action:
+      provider: bobCodeConsistency.applyAiReviewInputDraft
+    prompt: |
+      AI が返した ReviewInputDraft JSON を clipboard または引数から取り込み、ReviewInputBuilder と validator を通して review-input.yaml に保存してください。
+      存在しない path、無効 enum、schema error が残る場合は停止してください。
+    sendResult: true
+    resultKey: aiDraftApplyResult
+    maxResultBytes: 12000
+    required: false
+    completeOnSuccess: true
   - id: preprocess-review-package
     title: review-package と bob-input.md を生成
     type: command

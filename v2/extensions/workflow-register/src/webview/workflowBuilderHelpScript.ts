@@ -65,6 +65,14 @@ function searchHelpEntries(query) {
     return words.every(function(word) { return text.indexOf(word) >= 0; });
   }).slice(0, 12);
 }
+function controlForHelpId(id) {
+  if (!id) return undefined;
+  return document.querySelector('[data-help-id="' + id + '"]:not(.help-button)') || document.querySelector('[data-section-help="' + id + '"]');
+}
+function resolveHelpControl(id, control) {
+  if (control && control.isConnected !== false) return control;
+  return controlForHelpId(id) || control;
+}
 function helpTabForId(id) {
   if (!id) return undefined;
   if (id.indexOf('tab.') === 0) return id.slice(4);
@@ -96,6 +104,7 @@ function helpSearchHtml() {
 function renderHelpPanel(id, control) {
   activeHelpId = id || activeHelpId || defaultHelpId;
   const entry = helpEntry(activeHelpId);
+  const activeControl = resolveHelpControl(activeHelpId, control);
   const panel = ensureHelpPanel();
   if (!entry || !panel) return;
   panel.innerHTML = helpSearchHtml() + '<h2>この項目の説明</h2>' +
@@ -105,7 +114,7 @@ function renderHelpPanel(id, control) {
     '<h3>効果</h3><p>' + escapeHtml(entry.effect) + '</p>' +
     (entry.whenToUse ? '<h3>使う場面</h3><p>' + escapeHtml(entry.whenToUse) + '</p>' : '') +
     (entry.caution ? '<h3>注意</h3><p class="help-caution">' + escapeHtml(entry.caution) + '</p>' : '') +
-    optionHelpHtml(entry, control) +
+    optionHelpHtml(entry, activeControl) +
     (entry.example ? '<h3>YAML例</h3><pre>' + escapeHtml(entry.example) + '</pre>' : '') +
     (entry.related && entry.related.length ? '<h3>関連</h3><ul>' + entry.related.map(function(item) { return '<li>' + escapeHtml(item) + '</li>'; }).join('') + '</ul>' : '');
 }
@@ -161,8 +170,18 @@ function sectionHelpIdForHeading(heading) {
   if (text === 'Result') return 'section.result';
   return undefined;
 }
+function matchingElements(scope, selector) {
+  const matches = [];
+  if (scope && scope.nodeType === 1 && scope.matches && scope.matches(selector)) matches.push(scope);
+  if (scope && scope.querySelectorAll) {
+    scope.querySelectorAll(selector).forEach(function(item) {
+      if (!matches.includes(item)) matches.push(item);
+    });
+  }
+  return matches;
+}
 function decorateSectionHelp(scope) {
-  scope.querySelectorAll('h3').forEach(function(heading) {
+  matchingElements(scope, 'h3').forEach(function(heading) {
     if (heading.dataset.helpDecorated) return;
     const id = sectionHelpIdForHeading(heading);
     if (!id || !helpCatalog[id]) return;
@@ -183,7 +202,7 @@ function decorateSectionHelp(scope) {
 function decorateHelpTargets(root) {
   const scope = root || document;
   decorateSectionHelp(scope);
-  scope.querySelectorAll('input, select, textarea, button[data-action="add-step"]').forEach(function(control) {
+  matchingElements(scope, 'input, select, textarea, button[data-action="add-step"]').forEach(function(control) {
     const id = fieldIdForControl(control);
     if (!id || !helpCatalog[id]) return;
     control.setAttribute('data-help-id', id);
@@ -218,7 +237,7 @@ function helpForActiveTab() {
   return 'tab.' + tab.dataset.tab;
 }
 function focusHelpTarget(id) {
-  const target = document.querySelector('[data-help-id="' + id + '"]:not(.help-button)') || document.querySelector('[data-section-help="' + id + '"]');
+  const target = controlForHelpId(id);
   if (target && typeof target.focus === 'function') target.focus();
   if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'center', behavior: 'smooth' });
   if (target) {
@@ -270,14 +289,18 @@ document.addEventListener('focusin', function(event) {
 });
 document.addEventListener('input', function(event) {
   const search = event.target && event.target.closest ? event.target.closest('[data-help-search]') : undefined;
-  if (!search) return;
-  helpSearchQuery = search.value;
-  renderHelpPanel(activeHelpId);
-  const nextSearch = document.querySelector('[data-help-search]');
-  if (nextSearch) {
-    nextSearch.focus();
-    nextSearch.setSelectionRange(nextSearch.value.length, nextSearch.value.length);
+  if (search) {
+    helpSearchQuery = search.value;
+    renderHelpPanel(activeHelpId);
+    const nextSearch = document.querySelector('[data-help-search]');
+    if (nextSearch) {
+      nextSearch.focus();
+      nextSearch.setSelectionRange(nextSearch.value.length, nextSearch.value.length);
+    }
+    return;
   }
+  const control = event.target && event.target.closest ? event.target.closest('[data-help-id]') : undefined;
+  if (control) renderHelpPanel(control.dataset.helpId, control);
 });
 document.addEventListener('change', function(event) {
   const control = event.target && event.target.closest ? event.target.closest('[data-help-id]') : undefined;
