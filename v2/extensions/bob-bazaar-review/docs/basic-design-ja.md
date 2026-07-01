@@ -35,7 +35,7 @@ Bazaar を用いる既存プロジェクトでは、差分レビュー時に次�
 - `bzr --no-aliases` の強制。
 - Bazaar 出力の UTF-8 / Shift-JIS 系 decode。
 - Bazaar review packet の生成。
-- Bob context への packet 追加。
+- `IBM.bob-code` 導入時の Bob context への packet 追加。未導入時は Markdown 作成で停止する。
 - `.bob` 初期化。
 - project review checklist / schema / prompt template の読み込み。
 - review-result JSON の検証、正規化、保存、Markdown 生成。
@@ -108,7 +108,7 @@ flowchart TD
 | Extension Entry | VS Code command 登録、workflow-register action provider 登録 | `src/extension.ts` |
 | Bazaar Client | Bazaar CLI 実行、引数検証、decode、alias 無効化 | `src/bazaar.ts` |
 | Text Encoding | UTF-8 / Shift-JIS / CP932 系 decode | `src/textEncoding.ts` |
-| Review GUI | Webview UI、target 選択、packet 生成、Bob context 追加 | `src/reviewGui.ts` |
+| Review GUI | Webview UI、target 選択、packet 生成、任意の Bob context 追加 | `src/reviewGui.ts` |
 | Workspace Resolver | `.bob` root と `.bzr` root の分離解決 | `src/workspaceResolver.ts`, `src/workspaceRoots.ts` |
 | Bob Workspace Init | `.bob` 初期化、template refresh、MCP 設定 | `src/bobWorkspaceInit.ts` |
 | MCP Config | `.bob/mcp.json` 生成・更新 | `src/mcpConfig.ts` |
@@ -126,8 +126,8 @@ flowchart TD
 
 | 依存 | 用途 |
 | --- | --- |
-| `IBM.bob-code` | Bob context 追加、workflow UI、MCP 利用。 |
-| `local.workflow-register` | action provider 登録、Bob workflow step 実行。 |
+| `IBM.bob-code` | 任意連携。導入時のみ Bob context 追加、workflow UI、MCP 利用に使う。 |
+| `local.workflow-register` | 任意連携。導入時のみ action provider 登録、Bob workflow step 実行に使う。 |
 | Bazaar CLI | `bzr root` / `diff` / `log` / `cat` / `status` など。 |
 | Node.js | VS Code extension と MCP server の実行。 |
 
@@ -173,7 +173,7 @@ bzr --no-aliases status
 5. Bazaar log / diff / status を取得する。
 6. target metadata と changed files を表示する。
 7. review packet を生成する。
-8. Bob context へ packet を追加する。
+8. `IBM.bob-code` が導入されている場合は Bob context へ packet を追加する。未導入の場合は Markdown document 作成で停止する。
 9. workflow 実行中の場合、GUI action 完了後に現在 step を完了できる。
 
 ### 10.1 Review target
@@ -205,7 +205,7 @@ bzr --no-aliases status
 
 ## 12. workflow-register 連携
 
-本拡張は `workflow-register` API へ次の action provider を登録する。
+本拡張は `workflow-register` が導入されている場合だけ `workflow-register` API へ次の action provider を登録する。未導入でも拡張機能は起動でき、GUI / レビューコマンドで `# Bazaar Revision Review Request` packet を生成できる。`IBM.bob-code` が導入されている場合だけ、生成した packet を Bob context へ追加する。
 
 | Provider | 用途 |
 | --- | --- |
@@ -268,6 +268,7 @@ Bob が出力した review-result JSON は、次の入力元から抽出でき�
 | workflow action failure | workflow-register へ error を返し step を pending / held にする。 |
 | review-result JSON 不在 | warning message または validation issue として返す。 |
 | schema validation 失敗 | Markdown validation report を表示する。 |
+| `IBM.bob-code` 未導入 | packet Markdown を作成して停止し、Bob context 追加は試行しない。 |
 | Bob context 追加失敗 | packet を clipboard へ fallback copy する。 |
 | current workflow step 完了失敗 | warning 表示に留め、packet 生成は成功扱いにする。 |
 

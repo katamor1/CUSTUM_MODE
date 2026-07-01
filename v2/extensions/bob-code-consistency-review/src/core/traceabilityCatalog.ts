@@ -1,8 +1,8 @@
 import type { ReviewFocus, ReviewInputArtifactDraft, ReviewInputDraft } from "./reviewInputBuilder"
 
 export type TraceabilityStatus = "proposed" | "accepted" | "rejected" | "deprecated"
-export type TraceabilityItemType = "requirement" | "basic_design" | "detailed_design" | "test_spec"
-export type TraceabilityLinkType = "satisfies" | "elaborates" | "verified_by" | "references"
+export type TraceabilityItemType = "requirement" | "basic_design" | "detailed_design" | "test_spec" | "qa_item" | "review_finding"
+export type TraceabilityLinkType = "satisfies" | "elaborates" | "verified_by" | "clarifies" | "reviewed_by" | "references"
 export type TraceabilityGate = "basic_design" | "detailed_design" | "test"
 
 export interface TraceabilityCatalog {
@@ -46,6 +46,16 @@ export interface TraceabilityItem {
     source_hash?: string
     current_hash?: string
   }
+  qa?: {
+    question?: string
+    answer?: string
+    status?: string
+  }
+  review?: {
+    severity?: string
+    action_plan?: string
+    status?: string
+  }
 }
 
 export interface TraceabilityLink {
@@ -86,14 +96,18 @@ const TYPE_PREFIX: Record<TraceabilityItemType, string> = {
   requirement: "REQ",
   basic_design: "BD",
   detailed_design: "DD",
-  test_spec: "TC"
+  test_spec: "TC",
+  qa_item: "QA",
+  review_finding: "RV"
 }
 
 const ARTIFACT_KIND: Record<TraceabilityItemType, ReviewInputArtifactDraft["kind"]> = {
   requirement: "requirements",
   basic_design: "basic_design",
   detailed_design: "detailed_design",
-  test_spec: "test_spec"
+  test_spec: "test_spec",
+  qa_item: "ledgers",
+  review_finding: "tickets"
 }
 
 export function validateTraceabilityCatalog(catalog: TraceabilityCatalog): TraceabilityValidationReport {
@@ -185,7 +199,7 @@ export function validateTraceabilityCatalog(catalog: TraceabilityCatalog): Trace
     }
   }
 
-  addGateIssues(catalog, acceptedItems, errors)
+  addGateIssues(catalog, acceptedItems, errors, warnings)
   return { status: errors.length === 0 ? "ok" : "error", errors, warnings }
 }
 
@@ -212,6 +226,7 @@ export function buildReviewInputDraftFromTraceability(
     const key = `${kind}\n${artifactPath}`
     const artifact = artifactMap.get(key) ?? { kind, path: artifactPath }
     if (item.type === "test_spec") uniquePush(artifact.cases ??= [], item.id)
+    else if (item.type === "qa_item" || item.type === "review_finding") uniquePush(artifact.rows ??= [], item.id)
     else uniquePush(artifact.sections ??= [], item.id)
     artifactMap.set(key, artifact)
   }
@@ -260,15 +275,20 @@ function validateAcceptedLink(link: TraceabilityLink, acceptedItems: Map<string,
     errors.push(issue("error", "accepted_link_missing_endpoint", "accepted links must use from/to endpoints", link.from ?? link.to))
     return
   }
-  if (!acceptedItems.has(link.from)) {
+  const fromItem = acceptedItems.get(link.from)
+  const toItem = acceptedItems.get(link.to)
+  if (!fromItem) {
     errors.push(issue("error", "link_from_not_accepted", `accepted link from '${link.from}' does not reference an accepted item`, link.from))
   }
-  if (!acceptedItems.has(link.to)) {
+  if (!toItem) {
     errors.push(issue("error", "link_to_not_accepted", `accepted link to '${link.to}' does not reference an accepted item`, link.to))
+  }
+  if (fromItem && toItem && !isAllowedLinkDirection(link.link_type, fromItem.type, toItem.type)) {
+    errors.push(issue("error", "invalid_link_direction", `accepted ${link.link_type} link '${link.from}' -> '${link.to}' has invalid item types`, link.from))
   }
 }
 
-function addGateIssues(catalog: TraceabilityCatalog, acceptedItems: Map<string, TraceabilityItem>, errors: TraceabilityIssue[]): void {
+function addGateIssues(catalog: TraceabilityCatalog, acceptedItems: Map<string, TraceabilityItem>, errors: TraceabilityIssue[], warnings: TraceabilityIssue[]): void {
   const links = (catalog.links ?? []).filter((link) => link.status === "accepted" && link.from && link.to) as Array<TraceabilityLink & { from: string; to: string }>
   const decisions = (catalog.decisions ?? []).filter((decision) => decision.status === "accepted" && decision.decision === "n/a")
 
@@ -287,7 +307,33 @@ function addGateIssues(catalog: TraceabilityCatalog, acceptedItems: Map<string, 
     if (item.type === "detailed_design" && !hasAcceptedLinkToType(id, "verified_by", "test_spec", links, acceptedItems) && !hasAcceptedDecision(id, "test", decisions)) {
       errors.push(issue("error", "missing_test", `detailed design '${id}' has no accepted test link or n/a decision`, id))
     }
+    if (item.type === "qa_item") {
+      if (!hasAcceptedLinkFromType(id, "clarifies", ["requirement", "basic_design", "detailed_design", "test_spec", "review_finding"], links, acceptedItems)) {
+        errors.push(issue("error", "missing_qa_clarifies", `QA item '${id}' has no accepted clarifies link`, id))
+      }
+      if (item.qa?.status === "answered") {
+        warnings.push(issue("warning", "qa_answered_not_closed", `QA item '${id}' is answered but not closed`, id))
+      }
+    }
+    if (item.type === "review_finding") {
+      if (!hasAcceptedLinkToItemType(id, "reviewed_by", ["requirement", "basic_design", "detailed_design", "test_spec", "qa_item"], links, acceptedItems)) {
+        errors.push(issue("error", "missing_reviewed_by", `review finding '${id}' has no accepted reviewed_by link`, id))
+      }
+      if (!isResolvedReviewFinding(item)) {
+        errors.push(issue("error", "unresolved_review_finding", `review finding '${id}' is not closed`, id))
+      }
+    }
   }
+}
+
+function isAllowedLinkDirection(linkType: TraceabilityLinkType, fromType: TraceabilityItemType, toType: TraceabilityItemType): boolean {
+  if (linkType === "references") return true
+  if (linkType === "satisfies") return fromType === "requirement" && toType === "basic_design"
+  if (linkType === "elaborates") return fromType === "basic_design" && toType === "detailed_design"
+  if (linkType === "verified_by") return (fromType === "requirement" || fromType === "detailed_design") && toType === "test_spec"
+  if (linkType === "clarifies") return fromType === "qa_item" && ["requirement", "basic_design", "detailed_design", "test_spec", "review_finding"].includes(toType)
+  if (linkType === "reviewed_by") return ["requirement", "basic_design", "detailed_design", "test_spec", "qa_item"].includes(fromType) && toType === "review_finding"
+  return false
 }
 
 function hasAcceptedLinkToType(
@@ -298,6 +344,31 @@ function hasAcceptedLinkToType(
   items: Map<string, TraceabilityItem>
 ): boolean {
   return links.some((link) => link.from === from && link.link_type === linkType && items.get(link.to)?.type === targetType)
+}
+
+function hasAcceptedLinkFromType(
+  from: string,
+  linkType: TraceabilityLinkType,
+  targetTypes: TraceabilityItemType[],
+  links: Array<TraceabilityLink & { from: string; to: string }>,
+  items: Map<string, TraceabilityItem>
+): boolean {
+  return links.some((link) => link.from === from && link.link_type === linkType && targetTypes.includes(items.get(link.to)?.type as TraceabilityItemType))
+}
+
+function hasAcceptedLinkToItemType(
+  to: string,
+  linkType: TraceabilityLinkType,
+  sourceTypes: TraceabilityItemType[],
+  links: Array<TraceabilityLink & { from: string; to: string }>,
+  items: Map<string, TraceabilityItem>
+): boolean {
+  return links.some((link) => link.to === to && link.link_type === linkType && sourceTypes.includes(items.get(link.from)?.type as TraceabilityItemType))
+}
+
+function isResolvedReviewFinding(item: TraceabilityItem): boolean {
+  const status = item.review?.status?.trim().toLowerCase()
+  return status === "closed" || status === "resolved" || status === "fixed" || status === "done"
 }
 
 function hasAcceptedDecision(subject: string, gate: TraceabilityGate, decisions: TraceabilityDecision[]): boolean {

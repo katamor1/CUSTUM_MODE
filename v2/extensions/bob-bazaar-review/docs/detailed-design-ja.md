@@ -150,7 +150,7 @@ windows-31j
 | `selectWorkspace` | Bazaar workspace を選択する。 |
 | `initializeBobWorkspace` | `.bob` template 初期化を行う。 |
 | `loadTarget` | Bazaar target metadata を取得する。 |
-| `reviewTarget` | packet を生成して Bob context へ追加する。 |
+| `reviewTarget` | packet を生成する。`IBM.bob-code` 導入時のみ Bob context へ追加する。 |
 
 GUI sequence:
 
@@ -195,7 +195,7 @@ sequenceDiagram
 
 ## 10. Review Packet 詳細
 
-review packet は Bob chat / context に投入するための Markdown であり、レビュー対象、Bazaar log、diff、追加ファイル本文、project rules をまとめる。
+review packet はレビュー対象、Bazaar log、diff、追加ファイル本文、project rules をまとめる Markdown である。`IBM.bob-code` 導入時は Bob chat / context に投入し、未導入時は Markdown document 作成で停止する。
 
 主な section:
 
@@ -289,7 +289,7 @@ workflow template は `workspaceRequired`、日本語 title、`schemaVersion: wo
 
 ## 14. workflow-register 連携詳細
 
-`registerWorkflowProviders` は `local.workflow-register` を取得し、次の provider を登録する。
+`registerWorkflowProviders` は `local.workflow-register` を取得できた場合だけ、次の provider を登録する。取得できない場合は provider 登録をスキップし、拡張機能の起動と通常コマンド利用は継続する。
 
 ```ts
 bobBazaar.openReviewGui
@@ -303,6 +303,8 @@ bobBazaar.captureReviewResult
 `loadReviewRules` は workflow action 実行時に `input.workflowRoot` を使い、QuickPick を出さない。通常 command 実行時は Bob workspace を選択可能とする。
 
 `captureReviewResult` は workflow-register result handoff から `args[0]` または `latestAssistantText` 相当の assistant 成果物 text を受け取る。`input.workflowRoot` は保存先 Bob workspace として使う。
+
+`workflow-register` 未導入時にレビューコマンドから packet を作成した場合は、`IBM.bob-code` が導入されていれば確認ダイアログを挟まず `bob-code.addToContext` で Bob chat / context へ追加する。`IBM.bob-code` が見つからない場合は、`# Bazaar Revision Review Request` Markdown を開いたところで停止し、Bob context 追加を試行しない。GUI 経路も同じく `IBM.bob-code` 導入時だけ Bob context 追加まで実行し、workflow step 完了は best effort とする。
 
 ## 15. Workflow template 詳細
 
@@ -378,7 +380,7 @@ file basename は `review_id` を sanitize して作る。`review_id` が無い�
 
 ## 19. Workflow Step Completion 詳細
 
-GUI から Bob context へ packet を追加したあと、`workflowStepCompletion.ts` は `workflowRegister.completeCurrentStep` を呼び出す。
+GUI から Bob context へ packet を追加できたあと、`workflowStepCompletion.ts` は `workflowRegister.completeCurrentStep` を呼び出す。`IBM.bob-code` 未導入時は Markdown 作成で停止するため、workflow step 完了も試行しない。
 
 失敗時は warning を表示し、packet 生成自体は成功扱いとする。これにより、workflow-register 側と疎結合に保つ。
 

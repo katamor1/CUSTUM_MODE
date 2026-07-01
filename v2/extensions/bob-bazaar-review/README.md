@@ -26,20 +26,19 @@ AIチャット、Skill、Workflow、手動調査で Bazaar CLI を直接使う�
 - Bob が出力した review-result JSON を検証し、JSON と Markdown の成果物として保存する。
 - 読み取り専用の Bazaar MCP ツールと、プロジェクト規約支援ツールを提供する。
 
-## 依存関係
+## 任意連携
 
-```json
-"extensionDependencies": [
-  "IBM.bob-code",
-  "local.workflow-register"
-]
-```
+`bob-bazaar-review` は VS Code の必須 `extensionDependencies` を持ちません。`IBM.bob-code` や `workflow-register` が未導入でも拡張機能はロードでき、GUI またはレビューコマンドで `# Bazaar Revision Review Request` の Markdown packet を生成できます。
+
+`IBM.bob-code` が導入されている場合は、生成した Markdown packet を Bob chat / context へ追加できます。`IBM.bob-code` が見つからない場合は、Markdown document を作成してそこで停止します。
+
+`workflow-register` は任意です。導入されている場合は同梱ワークフロー `bazaar-project-rule-review` から action provider として呼び出せます。導入されていない場合でも、`IBM.bob-code` があれば生成した Markdown packet を Bob chat / context へ追加できます。
 
 導入順は次を推奨します。
 
-1. `IBM.bob-code`
-2. `workflow-register`
-3. `bob-bazaar-review`
+1. `bob-bazaar-review`
+2. `IBM.bob-code`（Bob chat / context へ追加する場合のみ）
+3. `workflow-register`（ワークフロー連携を使う場合のみ）
 
 ## 代表的な利用フロー
 
@@ -48,7 +47,7 @@ AIチャット、Skill、Workflow、手動調査で Bazaar CLI を直接使う�
 3. `.bob` が未初期化の場合は `.bobを初期化` を押す。
 4. レビュー対象を選ぶ。
 5. `取得` で revision 情報と変更ファイルを確認する。
-6. `レビューしてBobにADD` でレビュー用パケットを作成し、Bob context に追加する。
+6. `レビューしてBobにADD` でレビュー用パケットを作成する。`IBM.bob-code` が導入済みなら Bob context に追加する。
 7. Bob のワークフローで `bazaar-project-rule-review` を実行する。
 8. Bob が出力した JSON を `Bob Bazaar: Capture Review Result` で検証、保存する。
 
@@ -116,7 +115,7 @@ completeOnSuccess: false
 ```
 ~~~~
 
-`collectReviewContext` は、GUI やコマンドで作成された Bazaar review packet を読み、revision 情報、変更ファイル、byte count、Bob context に追加済みであることを示す summary を返します。
+`collectReviewContext` は、GUI やコマンドで作成された Bazaar review packet を読み、revision 情報、変更ファイル、byte count、packet 概要を返します。
 
 ### 規約読み込み
 

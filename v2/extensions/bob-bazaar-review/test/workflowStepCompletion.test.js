@@ -67,7 +67,15 @@ test("GUI workflow completion reports command failures without failing the GUI a
 test("review GUI only completes the workflow step after Bob context ADD succeeds", () => {
   const source = fs.readFileSync(path.join(extensionRoot, "src", "reviewGui.ts"), "utf8")
 
-  assert.match(source, /const addResult = await addToBobContext\(doc\.uri, packet\)/)
+  assert.match(source, /if \(isBobCodeExtensionAvailable\(\)\) \{[\s\S]*addResult = await addPacketToBobContext\(doc\.uri, packet\)/)
   assert.match(source, /addResult === "added"[\s\S]*completeCurrentWorkflowStepAfterGuiAction/)
-  assert.match(source, /type AddToBobContextResult = "added" \| "clipboardFallback"/)
+  assert.match(source, /import \{ addMarkdownPacketToBobContext \} from "\.\/bobContext"/)
+})
+
+test("review GUI stops after markdown creation when IBM Bob is absent", () => {
+  const source = fs.readFileSync(path.join(extensionRoot, "src", "reviewGui.ts"), "utf8")
+
+  assert.match(source, /import \{ isBobCodeExtensionAvailable \} from "\.\/bobCodeExtension"/)
+  assert.match(source, /if \(isBobCodeExtensionAvailable\(\)\) \{[\s\S]*await addPacketToBobContext\(doc\.uri, packet\)[\s\S]*\} else \{[\s\S]*IBM Bob 拡張機能が見つからないため/)
+  assert.match(source, /bobContextAvailable:/)
 })

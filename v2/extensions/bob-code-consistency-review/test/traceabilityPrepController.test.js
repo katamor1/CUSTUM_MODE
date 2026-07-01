@@ -1,0 +1,100 @@
+const assert = require("node:assert/strict")
+const test = require("node:test")
+
+const {
+  applyTraceabilityPrepAction,
+  buildTraceabilityPrepModel
+} = require("../out/core/traceabilityPrepController")
+
+test("applyTraceabilityPrepAction approves proposed items and links into accepted endpoints", () => {
+  const catalog = proposedCatalog()
+
+  const itemResult = applyTraceabilityPrepAction(catalog, { type: "approveItem", proposed_id: "REQ-RS001-PAY-0001" })
+  assert.equal(itemResult.status, "ok")
+  assert.equal(itemResult.catalog.items[0].status, "accepted")
+  assert.equal(itemResult.catalog.items[0].id, "REQ-RS001-PAY-0001")
+
+  const linkResult = applyTraceabilityPrepAction(itemResult.catalog, {
+    type: "approveLink",
+    proposed_from: "REQ-RS001-PAY-0001",
+    proposed_to: "BD-BD001-PAY-0001",
+    link_type: "satisfies"
+  })
+  assert.equal(linkResult.status, "ok")
+  assert.equal(linkResult.catalog.links[0].status, "accepted")
+  assert.equal(linkResult.catalog.links[0].from, "REQ-RS001-PAY-0001")
+  assert.equal(linkResult.catalog.links[0].to, "BD-BD001-PAY-0001")
+})
+
+test("applyTraceabilityPrepAction rejects n/a approval without a reason", () => {
+  const catalog = proposedCatalog()
+  catalog.decisions.push({ subject: "REQ-RS001-PAY-0001", gate: "basic_design", decision: "n/a", status: "proposed" })
+
+  const result = applyTraceabilityPrepAction(catalog, {
+    type: "approveDecision",
+    subject: "REQ-RS001-PAY-0001",
+    gate: "basic_design"
+  })
+
+  assert.equal(result.status, "error")
+  assert.match(result.message, /reason/)
+})
+
+test("buildTraceabilityPrepModel exposes QA and review gate issues for the Webview", () => {
+  const catalog = proposedCatalog()
+  catalog.items.push({
+    id: "QA-QA001-PAY-0001",
+    proposed_id: "QA-QA001-PAY-0001",
+    type: "qa_item",
+    source_document_id: "QA001",
+    domain: "PAY",
+    sequence: 1,
+    status: "accepted",
+    qa: { question: "Q", answer: "A", status: "answered" }
+  })
+  catalog.documents.push({ document_id: "QA001", source_path: "docs/qa.xlsx", id_source: "extracted" })
+
+  const model = buildTraceabilityPrepModel(catalog)
+
+  assert.ok(model.report.errors.some((item) => item.code === "missing_qa_clarifies"))
+  assert.ok(model.report.warnings.some((item) => item.code === "qa_answered_not_closed"))
+})
+
+function proposedCatalog() {
+  return {
+    schema_version: 1,
+    documents: [
+      { document_id: "RS001", source_path: "docs/requirements.md", id_source: "extracted" },
+      { document_id: "BD001", source_path: "docs/basic-design.md", id_source: "extracted" }
+    ],
+    domains: [{ code: "PAY", status: "accepted" }],
+    items: [
+      {
+        proposed_id: "REQ-RS001-PAY-0001",
+        type: "requirement",
+        source_document_id: "RS001",
+        domain: "PAY",
+        sequence: 1,
+        status: "proposed"
+      },
+      {
+        id: "BD-BD001-PAY-0001",
+        proposed_id: "BD-BD001-PAY-0001",
+        type: "basic_design",
+        source_document_id: "BD001",
+        domain: "PAY",
+        sequence: 1,
+        status: "accepted"
+      }
+    ],
+    links: [
+      {
+        proposed_from: "REQ-RS001-PAY-0001",
+        proposed_to: "BD-BD001-PAY-0001",
+        link_type: "satisfies",
+        status: "proposed"
+      }
+    ],
+    decisions: []
+  }
+}

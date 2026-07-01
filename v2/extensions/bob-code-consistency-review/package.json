@@ -26,6 +26,11 @@
     "onCommand:bobCodeConsistency.createReviewInput",
     "onCommand:bobCodeConsistency.prepareAiReviewInputDraft",
     "onCommand:bobCodeConsistency.applyAiReviewInputDraft",
+    "onCommand:bobCodeConsistency.prepareAiTraceabilityDraft",
+    "onCommand:bobCodeConsistency.applyAiTraceabilityDraft",
+    "onCommand:bobCodeConsistency.openTraceabilityPrep",
+    "onCommand:bobCodeConsistency.validateTraceabilityCatalog",
+    "onCommand:bobCodeConsistency.createReviewInputFromTraceability",
     "onCommand:bobCodeConsistency.repairReviewInput",
     "onCommand:bobCodeConsistency.explainReviewInputDiagnostics",
     "onCommand:bobCodeConsistency.preprocess",
@@ -54,6 +59,31 @@
       {
         "command": "bobCodeConsistency.applyAiReviewInputDraft",
         "title": "コード整合レビュー: AI draft JSON から review-input.yaml を生成",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.prepareAiTraceabilityDraft",
+        "title": "コード整合レビュー: traceability AI draft 用プロンプトを作成",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.applyAiTraceabilityDraft",
+        "title": "コード整合レビュー: traceability AI draft JSON を catalog に反映",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.openTraceabilityPrep",
+        "title": "コード整合レビュー: traceability prep を開く",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.validateTraceabilityCatalog",
+        "title": "コード整合レビュー: traceability catalog を検証",
+        "category": "Bob コード整合"
+      },
+      {
+        "command": "bobCodeConsistency.createReviewInputFromTraceability",
+        "title": "コード整合レビュー: traceability catalog から review-input.yaml を生成",
         "category": "Bob コード整合"
       },
       {
@@ -100,6 +130,16 @@
           "default": ".bob-review/review-package",
           "description": "生成した review-package を書き込むワークスペース相対パス。"
         },
+        "bobCodeConsistency.traceabilityCatalogPath": {
+          "type": "string",
+          "default": ".bob-trace/traceability-catalog.json",
+          "description": "上流仕様書を変更せずに traceability ID・リンク・承認状態を保持する sidecar catalog のワークスペース相対パス。"
+        },
+        "bobCodeConsistency.traceabilityGateReportPath": {
+          "type": "string",
+          "default": ".bob-trace/gate-report.md",
+          "description": "traceability catalog のレビューゲート検証結果を書き込む Markdown レポートのワークスペース相対パス。"
+        },
         "bobCodeConsistency.bobOutputPath": {
           "type": "string",
           "default": ".bob-review/bob-output/bob-output.yaml",
@@ -129,6 +169,11 @@
         { "command": "bobCodeConsistency.createReviewInput" },
         { "command": "bobCodeConsistency.prepareAiReviewInputDraft" },
         { "command": "bobCodeConsistency.applyAiReviewInputDraft" },
+        { "command": "bobCodeConsistency.prepareAiTraceabilityDraft" },
+        { "command": "bobCodeConsistency.applyAiTraceabilityDraft" },
+        { "command": "bobCodeConsistency.openTraceabilityPrep" },
+        { "command": "bobCodeConsistency.validateTraceabilityCatalog" },
+        { "command": "bobCodeConsistency.createReviewInputFromTraceability" },
         { "command": "bobCodeConsistency.repairReviewInput" },
         { "command": "bobCodeConsistency.explainReviewInputDiagnostics" },
         { "command": "bobCodeConsistency.preprocess" },

@@ -1,5 +1,7 @@
 import * as vscode from "vscode"
 import { BazaarClient, BazaarCommandResult } from "./bazaar"
+import { isBobCodeExtensionAvailable } from "./bobCodeExtension"
+import { addMarkdownPacketToBobContext } from "./bobContext"
 import { buildReviewPacket } from "./reviewPacket"
 import { buildProjectRulesSection } from "./projectRules/packet"
 import { loadProjectChecklist, loadReviewResultSchema } from "./projectRules/io"
@@ -51,8 +53,6 @@ interface PreparedTarget {
   diff: BazaarCommandResult
   addedFilesSection?: string
 }
-
-type AddToBobContextResult = "added" | "clipboardFallback"
 
 export function openBazaarReviewGui(context: vscode.ExtensionContext, initialTarget?: BazaarReviewInitialTarget): void {
   const panel = vscode.window.createWebviewPanel("bobBazaarReviewGui", "Bazaar レビュー", vscode.ViewColumn.One, {
@@ -185,18 +185,24 @@ class BazaarReviewGuiController {
 
     const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: packet })
     await vscode.window.showTextDocument(doc, { preview: false })
-    const addResult = await addToBobContext(doc.uri, packet)
+    let addResult: "added" | "clipboardFallback" | "skipped" = "skipped"
     let workflowStepCompleted = false
-    if (addResult === "added") {
-      workflowStepCompleted = await completeCurrentWorkflowStepAfterGuiAction({
-        executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
-        showWarningMessage: (message) => vscode.window.showWarningMessage(message)
-      })
+    if (isBobCodeExtensionAvailable()) {
+      addResult = await addPacketToBobContext(doc.uri, packet)
+      if (addResult === "added") {
+        workflowStepCompleted = await completeCurrentWorkflowStepAfterGuiAction({
+          executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
+          showWarningMessage: (message) => vscode.window.showWarningMessage(message)
+        })
+      }
+    } else {
+      await vscode.window.showInformationMessage("IBM Bob 拡張機能が見つからないため、Bazaar Revision Review Request の Markdown を作成しました。Bob コンテキスト追加は行いません。")
     }
     this.post({
       type: "reviewAdded",
       info: prepared.info,
       packetBytes: Buffer.byteLength(packet, "utf8"),
+      bobContextAvailable: addResult !== "skipped",
       bobContextAdded: addResult === "added",
       workflowStepCompleted
     })
@@ -416,15 +422,12 @@ function buildTargetMetadataSection(info: TargetInfo): string {
   ].filter((line): line is string => line !== undefined).join("\n")
 }
 
-async function addToBobContext(uri: vscode.Uri, packet: string): Promise<AddToBobContextResult> {
-  try {
-    await vscode.commands.executeCommand("bob-code.addToContext", uri, packet, 1, packet.split(/\r?\n/).length)
-    return "added"
-  } catch (error: any) {
-    await vscode.env.clipboard.writeText(packet)
-    await vscode.window.showWarningMessage(`Bob コンテキスト追加コマンドを呼び出せませんでした。代わりにレビュー packet をクリップボードへコピーしました。${error?.message ? ` ${error.message}` : ""}`)
-    return "clipboardFallback"
-  }
+async function addPacketToBobContext(uri: vscode.Uri, packet: string) {
+  return addMarkdownPacketToBobContext({
+    executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
+    writeClipboard: (text) => vscode.env.clipboard.writeText(text),
+    showWarningMessage: (message) => vscode.window.showWarningMessage(message)
+  }, uri, packet)
 }
 
 function renderHtml(cspSource: string, initialTarget?: BazaarReviewInitialTarget): string {
@@ -452,7 +455,7 @@ function loadTarget(){const t=collectTarget();if(t.mode==='singleRevision'&&!t.r
 function renderBobStatus(s){bobInitialized=!!s.initialized;$('initCard').classList.toggle('hidden',bobInitialized);$('missingFiles').innerHTML='';(s.missing||[]).forEach(f=>{const li=document.createElement('li');li.textContent=f;$('missingFiles').appendChild(li)});updateReviewButton()}
 function renderInfo(info){loaded=true;$('info').classList.remove('hidden');updateReviewButton();$('infoMode').textContent=info.mode||'';$('infoTarget').textContent=info.targetLabel||'';$('infoRevision').textContent=info.revision||info.targetRevision||'';$('infoRevno').textContent=info.revno||'';$('infoAuthor').textContent=info.author||'';$('infoCommitter').textContent=info.committer||'';$('infoTimestamp').textContent=info.timestamp||'';$('infoChangedCount').textContent=String(info.changedFileCount??0);$('infoMessage').textContent=info.message||'(メッセージなし)';$('infoFiles').innerHTML='';(info.changedFileEntries||[]).forEach(e=>{const li=document.createElement('li');li.textContent=e.status+': '+e.path;$('infoFiles').appendChild(li)})}
 function renderWorkspaceState(m){const parts=[];if(m.workspace)parts.push('Bazaar: '+m.workspace);if(m.bobWorkspace)parts.push('Bob: '+m.bobWorkspace);$('workspace').textContent=parts.join(' / ')||'ワークスペース未選択'}
-window.addEventListener('message',(event)=>{const m=event.data;if(m.type==='workspaceState')renderWorkspaceState(m);else if(m.type==='bobWorkspaceStatus')renderBobStatus(m);else if(m.type==='initialized')setStatus(m.message,false,true);else if(m.type==='loading')setStatus(m.message);else if(m.type==='targetInfo'){renderInfo(m.info);setStatus('対象情報を取得しました',false,true)}else if(m.type==='reviewAdded'){renderInfo(m.info);const contextText=m.bobContextAdded?'Bob コンテキストへ追加しました':'Bob コンテキスト追加に失敗したためクリップボードへコピーしました';const stepText=m.workflowStepCompleted?' 現在のワークフローステップも完了しました。':'';setStatus('レビュー packet を作成し、'+contextText+'。packet bytes: '+m.packetBytes+stepText,false,true)}else if(m.type==='error')setStatus(m.message||'エラー',true)});
+window.addEventListener('message',(event)=>{const m=event.data;if(m.type==='workspaceState')renderWorkspaceState(m);else if(m.type==='bobWorkspaceStatus')renderBobStatus(m);else if(m.type==='initialized')setStatus(m.message,false,true);else if(m.type==='loading')setStatus(m.message);else if(m.type==='targetInfo'){renderInfo(m.info);setStatus('対象情報を取得しました',false,true)}else if(m.type==='reviewAdded'){renderInfo(m.info);const contextText=m.bobContextAdded?'Bob コンテキストへ追加しました':m.bobContextAvailable===false?'IBM Bob 拡張機能が見つからないため Markdown 作成のみで停止しました':'Bob コンテキスト追加に失敗したためクリップボードへコピーしました';const stepText=m.workflowStepCompleted?' 現在のワークフローステップも完了しました。':'';setStatus('レビュー packet を作成し、'+contextText+'。packet bytes: '+m.packetBytes+stepText,false,true)}else if(m.type==='error')setStatus(m.message||'エラー',true)});
 updateMode();applyInitialTarget(initialTarget);vscode.postMessage({type:'ready'});
 </script></body></html>`
 }

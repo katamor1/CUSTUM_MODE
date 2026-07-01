@@ -90,6 +90,61 @@ test("buildReviewInputDraftFromTraceability converts accepted catalog items into
   ])
 })
 
+test("validateTraceabilityCatalog accepts linked QA and resolved review findings", () => {
+  const report = validateTraceabilityCatalog(sampleCatalogWithQaAndReview())
+
+  assert.deepEqual(report.errors, [])
+  assert.deepEqual(report.warnings, [])
+})
+
+test("validateTraceabilityCatalog reports accepted QA items without clarifies links", () => {
+  const catalog = sampleCatalogWithQaAndReview()
+  catalog.links = catalog.links.filter((link) => link.link_type !== "clarifies")
+
+  const report = validateTraceabilityCatalog(catalog)
+
+  assert.ok(report.errors.some((item) => item.code === "missing_qa_clarifies"))
+})
+
+test("validateTraceabilityCatalog reports unlinked or unresolved review findings", () => {
+  const catalog = sampleCatalogWithQaAndReview()
+  catalog.links = catalog.links.filter((link) => link.link_type !== "reviewed_by")
+  catalog.items.find((item) => item.type === "review_finding").review.status = "open"
+
+  const report = validateTraceabilityCatalog(catalog)
+
+  assert.ok(report.errors.some((item) => item.code === "missing_reviewed_by"))
+  assert.ok(report.errors.some((item) => item.code === "unresolved_review_finding"))
+})
+
+test("buildReviewInputDraftFromTraceability maps accepted QA and review findings into review-input artifacts", () => {
+  const result = buildReviewInputDraftFromTraceability(sampleCatalogWithQaAndReview(), {
+    review: {
+      id: "REVIEW-PAY-001",
+      title: "Payment traceability review",
+      change_type: "feature",
+      purpose: "Check payment status traceability.",
+      base: "main",
+      head: "feature/payment",
+      vcs: "git"
+    }
+  })
+
+  assert.equal(result.status, "ok")
+  assert.deepEqual(result.draft.artifact_candidates.slice(-2), [
+    {
+      kind: "ledgers",
+      path: "docs/qa-payment.xlsx",
+      rows: ["QA-QA001-PAY-0001"]
+    },
+    {
+      kind: "tickets",
+      path: "docs/review-findings.xlsx",
+      rows: ["RV-RV001-PAY-0001"]
+    }
+  ])
+})
+
 function sampleCatalog() {
   return {
     schema_version: 1,
@@ -152,4 +207,49 @@ function sampleCatalog() {
     ],
     decisions: []
   }
+}
+
+function sampleCatalogWithQaAndReview() {
+  const catalog = sampleCatalog()
+  catalog.documents.push(
+    { document_id: "QA001", source_path: "docs/qa-payment.xlsx", id_source: "extracted" },
+    { document_id: "RV001", source_path: "docs/review-findings.xlsx", id_source: "extracted" }
+  )
+  catalog.items.push(
+    {
+      id: "QA-QA001-PAY-0001",
+      proposed_id: "QA-QA001-PAY-0001",
+      type: "qa_item",
+      source_document_id: "QA001",
+      domain: "PAY",
+      sequence: 1,
+      source_path: "docs/qa-payment.xlsx",
+      status: "accepted",
+      qa: {
+        question: "決済ステータスが仕様で定義されているか。",
+        answer: "REQ-RS001-PAY-0001 で定義済み。",
+        status: "closed"
+      }
+    },
+    {
+      id: "RV-RV001-PAY-0001",
+      proposed_id: "RV-RV001-PAY-0001",
+      type: "review_finding",
+      source_document_id: "RV001",
+      domain: "PAY",
+      sequence: 1,
+      source_path: "docs/review-findings.xlsx",
+      status: "accepted",
+      review: {
+        severity: "major",
+        action_plan: "要求IDとの対応を確認した。",
+        status: "closed"
+      }
+    }
+  )
+  catalog.links.push(
+    { from: "QA-QA001-PAY-0001", to: "REQ-RS001-PAY-0001", link_type: "clarifies", status: "accepted" },
+    { from: "REQ-RS001-PAY-0001", to: "RV-RV001-PAY-0001", link_type: "reviewed_by", status: "accepted" }
+  )
+  return catalog
 }

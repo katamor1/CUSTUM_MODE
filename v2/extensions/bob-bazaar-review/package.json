@@ -16,10 +16,6 @@
   "categories": [
     "Other"
   ],
-  "extensionDependencies": [
-    "IBM.bob-code",
-    "local.workflow-register"
-  ],
   "activationEvents": [
     "onStartupFinished",
     "onCommand:bobBazaar.openReviewGui",

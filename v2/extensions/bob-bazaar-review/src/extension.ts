@@ -1,5 +1,7 @@
 import * as vscode from "vscode"
 import { BazaarClient } from "./bazaar"
+import { isBobCodeExtensionAvailable } from "./bobCodeExtension"
+import { addMarkdownPacketToBobContext } from "./bobContext"
 import { configureWorkspaceMcpServer } from "./mcpConfig"
 import { buildReviewPacket } from "./reviewPacket"
 import { initializeProjectRules, loadProjectChecklist, loadProjectChecklistRequired, loadReviewResultSchema, loadReviewResultSchemaRequired } from "./projectRules/io"
@@ -111,6 +113,10 @@ async function getWorkflowRegisterApi(): Promise<WorkflowRegisterApi | undefined
     return undefined
   }
   return api
+}
+
+function isWorkflowRegisterExtensionAvailable(): boolean {
+  return Boolean(vscode.extensions.getExtension(WORKFLOW_REGISTER_EXTENSION_ID))
 }
 
 function firstStringArg(args: unknown): string | undefined {
@@ -409,6 +415,19 @@ async function showAndOfferBobContext(context: vscode.ExtensionContext, packet: 
   })
   const editor = await vscode.window.showTextDocument(document, { preview: false })
 
+  if (!isBobCodeExtensionAvailable()) {
+    await vscode.window.showInformationMessage("IBM Bob 拡張機能が見つからないため、Bazaar Revision Review Request の Markdown を作成しました。Bob チャットへの挿入は行いません。")
+    return
+  }
+
+  if (!isWorkflowRegisterExtensionAvailable()) {
+    const result = await addPacketToBobContext(editor.document.uri, packet)
+    if (result === "added") {
+      await vscode.window.showInformationMessage("workflow-register 未導入のため、Bazaar Revision Review Request を Bob チャットへ挿入しました。")
+    }
+    return
+  }
+
   const action = await vscode.window.showInformationMessage(
     "Bazaar レビュー packet を作成しました。Bob コンテキストへ追加しますか？",
     "Bob コンテキストへ追加",
@@ -417,7 +436,7 @@ async function showAndOfferBobContext(context: vscode.ExtensionContext, packet: 
   )
 
   if (action === "Bob コンテキストへ追加") {
-    await addToBobContext(editor.document.uri, packet)
+    await addPacketToBobContext(editor.document.uri, packet)
   } else if (action === "クリップボードへコピー") {
     await vscode.env.clipboard.writeText(packet)
   } else if (action === "ファイルに保存") {
@@ -432,16 +451,12 @@ async function showAndOfferBobContext(context: vscode.ExtensionContext, packet: 
   }
 }
 
-async function addToBobContext(uri: vscode.Uri, packet: string): Promise<void> {
-  try {
-    const lineCount = packet.split(/\r?\n/).length
-    await vscode.commands.executeCommand("bob-code.addToContext", uri, packet, 1, lineCount)
-  } catch (error: any) {
-    await vscode.env.clipboard.writeText(packet)
-    await vscode.window.showWarningMessage(
-      `Bob コンテキスト追加コマンドを呼び出せませんでした。代わりにレビュー packet をクリップボードへコピーしました。${error?.message ? ` ${error.message}` : ""}`
-    )
-  }
+async function addPacketToBobContext(uri: vscode.Uri, packet: string) {
+  return addMarkdownPacketToBobContext({
+    executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
+    writeClipboard: (text) => vscode.env.clipboard.writeText(text),
+    showWarningMessage: (message) => vscode.window.showWarningMessage(message)
+  }, uri, packet)
 }
 
 async function withProgress<T>(title: string, task: () => Promise<T>): Promise<T> {

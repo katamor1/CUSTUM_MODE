@@ -22,7 +22,7 @@ export type ReviewInputDiscoveryResult = {
 }
 
 const DOCUMENT_EXTENSIONS = new Set([".md", ".markdown", ".docx", ".xlsx"])
-const KNOWN_ID_PATTERN = /\b(?:REQ|BD|DD|TC|ERR|ISSUE|TICKET|LEDGER)(?:[-_][A-Za-z0-9]+)+\b/g
+const KNOWN_ID_PATTERN = /\b(?:REQ|BD|DD|TC|QA|RV|ERR|ISSUE|TICKET|LEDGER)(?:[-_][A-Za-z0-9]+)+\b/g
 
 export async function discoverReviewInputCandidates(workspaceRoot: string, options: ReviewInputDiscoveryOptions = {}): Promise<ReviewInputDiscoveryResult> {
   const warnings: string[] = []
@@ -126,6 +126,8 @@ function inferArtifactKind(relativePath: string): ArtifactKind {
   if (/basic|bd|基本/.test(lower)) return "basic_design"
   if (/detail|detailed|dd|詳細/.test(lower)) return "detailed_design"
   if (/test|tc|試験|テスト/.test(lower)) return "test_spec"
+  if (/qa|q-a|質問|回答|qa表/.test(lower)) return "ledgers"
+  if (/review|rv|レビュー|指摘/.test(lower)) return "tickets"
   if (/ledger|table|error|err|台帳/.test(lower)) return "ledgers"
   if (/ticket|issue|bug|redmine/.test(lower)) return "tickets"
   return "requirements"

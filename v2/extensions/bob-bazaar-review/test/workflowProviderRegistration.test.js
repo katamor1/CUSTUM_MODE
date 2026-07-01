@@ -5,11 +5,13 @@ const { test } = require("node:test")
 
 const extensionRoot = path.resolve(__dirname, "..")
 
-test("Bazaar companion extension registers workflow providers with workflow-register", () => {
+test("Bazaar companion extension has no required companion extension dependency", () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(extensionRoot, "package.json"), "utf8"))
   const source = fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8")
+  const extensionDependencies = packageJson.extensionDependencies ?? []
 
-  assert.ok(packageJson.extensionDependencies.includes("local.workflow-register"))
+  assert.ok(!extensionDependencies.includes("IBM.bob-code"))
+  assert.ok(!extensionDependencies.includes("local.workflow-register"))
   assert.ok(packageJson.activationEvents.includes("onStartupFinished"))
   assert.match(source, /const WORKFLOW_REGISTER_EXTENSION_ID = "local\.workflow-register"/)
   assert.match(source, /registerWorkflowProviders\(context\)\.catch/)
@@ -20,6 +22,22 @@ test("Bazaar companion extension registers workflow providers with workflow-regi
   assert.match(source, /execute: \(input\) => loadReviewRules\(input\)/)
   assert.match(source, /id: "bobBazaar\.captureReviewResult"/)
   assert.match(source, /execute: \(input\) => captureReviewResult\(firstStringArg\(input\.args\), \{[\s\S]*expectedChecklistItems: expectedChecklistItemsFromState\(input\.state\),[\s\S]*workspaceRoot: stringInput\(input\.workflowRoot\),[\s\S]*workflowState: input\.state[\s\S]*\}\)/)
+})
+
+test("Bazaar review commands stop after creating markdown when IBM Bob is absent", () => {
+  const source = fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8")
+
+  assert.match(source, /import \{ isBobCodeExtensionAvailable \} from "\.\/bobCodeExtension"/)
+  assert.match(source, /if \(!isBobCodeExtensionAvailable\(\)\) \{[\s\S]*IBM Bob 拡張機能が見つからないため[\s\S]*return[\s\S]*\}/)
+  assert.match(source, /Markdown を作成しました/)
+})
+
+test("Bazaar review commands auto-add the generated packet to Bob when workflow-register is absent", () => {
+  const source = fs.readFileSync(path.join(extensionRoot, "src", "extension.ts"), "utf8")
+
+  assert.match(source, /function isWorkflowRegisterExtensionAvailable\(\): boolean/)
+  assert.match(source, /if \(!isWorkflowRegisterExtensionAvailable\(\)\) \{[\s\S]*await addPacketToBobContext\(editor\.document\.uri, packet\)[\s\S]*workflow-register 未導入/)
+  assert.match(source, /Bob チャットへ挿入しました/)
 })
 
 test("Bazaar capture command accepts workflow context appended by result sinks", () => {
