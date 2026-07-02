@@ -3,9 +3,7 @@ import { ActionRegistry } from "./actionRegistry"
 import {
   createDefaultPreflightChecks,
   evaluatePreflight,
-  exists,
-  WorkflowPreflightCheckInput,
-  WorkflowPreflightCheckResult
+  exists
 } from "./engine/preflight"
 import {
   archiveAttempt,
@@ -35,83 +33,31 @@ import {
   ResultSourceDefinition,
   WorkflowRunState
 } from "./model"
+import type {
+  ResumeRunOptions,
+  RunWorkflowOptions,
+  WorkflowEngineEventInput,
+  WorkflowEngineOptions,
+  WorkflowExecutionHooks,
+  WorkflowExecutionMode
+} from "./engineTypes"
 import { reportedActionError } from "./reportedActionError"
 import { ResultSinkRegistry } from "./resultSinkRegistry"
-import { FileRunControlStore, RunControlState, RunControlStore } from "./runControlStore"
+import { FileRunControlStore, RunControlStore } from "./runControlStore"
 import { RunStateStore } from "./runStateStore"
 
 export type { WorkflowPreflightCheckInput, WorkflowPreflightCheckResult } from "./engine/preflight"
-
-export type WorkflowExecutionMode = "full" | "singleStep"
-
-export interface RunWorkflowOptions {
-  executionMode?: WorkflowExecutionMode
-  stepId?: string
-  allowOutOfOrder?: boolean
-}
-
-export interface WorkflowEngineEventInput {
-  workflow: CoreWorkflowDefinition
-  run: WorkflowRunState
-  step?: EngineStep
-  agentText?: string
-  commandValue?: unknown
-  error?: string
-  pause?: RunControlState
-}
-
-export interface WorkflowExecutionHooks {
-  onWorkflowStart?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onStepStart?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onCommandResult?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onAgentOutput?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onHandoffFailed?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onStepHeld?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onStepFailed?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onStepCompleted?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onStepReviewRequired?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onRunPaused?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onWorkflowCompleted?: (input: WorkflowEngineEventInput) => Promise<void> | void
-  onWorkflowFailed?: (input: WorkflowEngineEventInput) => Promise<void> | void
-}
-
-export interface ManualCompletionInput {
-  workflow: CoreWorkflowDefinition
-  run: WorkflowRunState
-  step: EngineStep
-}
-
-export interface ManualCompletionResult {
-  completed: boolean
-  error?: string
-}
-
-export interface RecoverResultTextInput {
-  workflow: CoreWorkflowDefinition
-  run: WorkflowRunState
-  step: EngineStep
-  reason: "retry-agent-result" | "missing-result-text"
-}
-
-export interface WorkflowEngineOptions {
-  actions: ActionRegistry
-  resultSinks: ResultSinkRegistry
-  runStore: RunStateStore
-  runControlStore?: RunControlStore
-  agentProvider?: AgentProvider
-  workspaceAvailable?: () => Promise<boolean> | boolean
-  fileExists?: (relativePath: string) => Promise<boolean> | boolean
-  preflightChecks?: Record<string, (input: WorkflowPreflightCheckInput) => Promise<WorkflowPreflightCheckResult> | WorkflowPreflightCheckResult>
-  strictPreflightChecks?: boolean
-  hooks?: WorkflowExecutionHooks
-  manualCompletion?: (input: ManualCompletionInput) => Promise<ManualCompletionResult> | ManualCompletionResult
-  recoverResultText?: (input: RecoverResultTextInput) => Promise<string | undefined> | string | undefined
-}
-
-export interface ResumeRunOptions {
-  workflow: CoreWorkflowDefinition
-  completeHeldStep?: boolean
-}
+export type {
+  ManualCompletionInput,
+  ManualCompletionResult,
+  RecoverResultTextInput,
+  ResumeRunOptions,
+  RunWorkflowOptions,
+  WorkflowEngineEventInput,
+  WorkflowEngineOptions,
+  WorkflowExecutionHooks,
+  WorkflowExecutionMode
+} from "./engineTypes"
 
 export class WorkflowEngine {
   private readonly actions: ActionRegistry
@@ -252,7 +198,12 @@ export class WorkflowEngine {
     return this.continueRun(workflow, run, index, "full")
   }
 
-  private async continueRun(workflow: CoreWorkflowDefinition, run: WorkflowRunState, startIndex: number, mode: WorkflowExecutionMode): Promise<WorkflowRunState> {
+  private async continueRun(
+    workflow: CoreWorkflowDefinition,
+    run: WorkflowRunState,
+    startIndex: number,
+    mode: WorkflowExecutionMode
+  ): Promise<WorkflowRunState> {
     const endIndex = mode === "singleStep" ? Math.min(startIndex + 1, workflow.engineSteps.length) : workflow.engineSteps.length
     for (let index = startIndex; index < endIndex; index += 1) {
       const step = workflow.engineSteps[index]
@@ -349,7 +300,12 @@ export class WorkflowEngine {
     return run
   }
 
-  private async executeStep(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep, stepIndex: number): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
+  private async executeStep(
+    workflow: CoreWorkflowDefinition,
+    run: WorkflowRunState,
+    step: EngineStep,
+    stepIndex: number
+  ): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
     if (step.type === "manual") return this.waitForManualCompletion(workflow, run, step)
     if (step.type === "agent") {
       try {
@@ -405,7 +361,13 @@ export class WorkflowEngine {
     return this.writeResultSinks(workflow, run, step, step.result)
   }
 
-  private async writeResultSinks(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep, result: ResultSourceDefinition, agentText?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  private async writeResultSinks(
+    workflow: CoreWorkflowDefinition,
+    run: WorkflowRunState,
+    step: EngineStep,
+    result: ResultSourceDefinition,
+    agentText?: string
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
       const text = await this.resultText(workflow, run, step, result, agentText)
       for (const sink of result.sinks) {
@@ -437,7 +399,13 @@ export class WorkflowEngine {
     return { ok: true }
   }
 
-  private async resultText(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep, result: ResultSourceDefinition, agentText?: string): Promise<string> {
+  private async resultText(
+    workflow: CoreWorkflowDefinition,
+    run: WorkflowRunState,
+    step: EngineStep,
+    result: ResultSourceDefinition,
+    agentText?: string
+  ): Promise<string> {
     if (result.source === "literal") return result.text
     if (result.source === "agent") {
       const recovered = agentText ?? await this.recoverResultText?.({ workflow, run, step, reason: "missing-result-text" })
@@ -449,13 +417,21 @@ export class WorkflowEngine {
     return value
   }
 
-  private async completeStepIfManual(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
+  private async completeStepIfManual(
+    workflow: CoreWorkflowDefinition,
+    run: WorkflowRunState,
+    step: EngineStep
+  ): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
     if (workflowStepReview(workflow).enabled) return { ok: true }
     if (step.type === "agent" || step.type === "manual" || step.completeOnSuccess || workflow.stepCompletion !== "manual") return { ok: true }
     return this.waitForManualCompletion(workflow, run, step)
   }
 
-  private async waitForManualCompletion(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
+  private async waitForManualCompletion(
+    workflow: CoreWorkflowDefinition,
+    run: WorkflowRunState,
+    step: EngineStep
+  ): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
     if (!this.manualCompletion) return { ok: false, held: true, error: "Manual workflow step is waiting for completion." }
     try {
       const result = await Promise.resolve(this.manualCompletion({ workflow, run, step }))
@@ -465,7 +441,12 @@ export class WorkflowEngine {
     }
   }
 
-  private async pauseIfRequested(workflow: CoreWorkflowDefinition, run: WorkflowRunState, nextStep: EngineStep | undefined, checkpoint: string): Promise<boolean> {
+  private async pauseIfRequested(
+    workflow: CoreWorkflowDefinition,
+    run: WorkflowRunState,
+    nextStep: EngineStep | undefined,
+    checkpoint: string
+  ): Promise<boolean> {
     const control = await this.runControlStore?.loadControl(run.runId)
     if (!control?.pauseRequestedAt || control.clearedAt) return false
     run.status = "paused"
@@ -493,7 +474,11 @@ export class WorkflowEngine {
     }
   }
 
-  private async writeProducedArtifacts(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep): Promise<{ ok: true } | { ok: false; error: string }> {
+  private async writeProducedArtifacts(
+    workflow: CoreWorkflowDefinition,
+    run: WorkflowRunState,
+    step: EngineStep
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
     const artifacts = workflow.artifacts ?? []
     for (const artifact of artifacts.filter((item) => item.producedBy === step.id)) {
       const value = run.state[artifact.id]

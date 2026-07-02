@@ -57,7 +57,12 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
       "workflowRegister.runWorkflow",
       (workflowId?: string, inputs?: Record<string, unknown>) => service.runWorkflow(workflowId, inputs)
     ),
-    vscode.commands.registerCommand("workflowRegister.runWorkflowStep", (workflowId?: string, stepId?: string, inputs?: Record<string, unknown>) => service.runWorkflowStep(workflowId, stepId, inputs)),
+    vscode.commands.registerCommand(
+      "workflowRegister.runWorkflowStep",
+      (workflowId?: string, stepId?: string, inputs?: Record<string, unknown>) => {
+        return service.runWorkflowStep(workflowId, stepId, inputs)
+      }
+    ),
     vscode.commands.registerCommand("workflowRegister.runNextStep", (runId?: string) => service.runNextStep(runId)),
     vscode.commands.registerCommand("workflowRegister.inspectRuns", () => service.inspectRuns()),
     vscode.commands.registerCommand("workflowRegister.resumeRun", (runId?: string) => service.resumeRun(runId)),
