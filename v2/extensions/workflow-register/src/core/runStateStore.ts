@@ -2,7 +2,7 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import { CoreWorkflowDefinition, WorkflowRunState } from "./model"
 
-const RECOVERABLE_RUN_STATUSES = new Set(["running", "held"])
+const RECOVERABLE_RUN_STATUSES = new Set(["running", "reviewing", "held"])
 
 export interface RecoverableRunLookupOptions {
   executionMode?: "full" | "singleStep"

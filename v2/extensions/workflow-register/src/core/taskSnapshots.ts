@@ -9,6 +9,7 @@ export type TaskSnapshotReason =
   | "handoff-failed"
   | "held"
   | "failed"
+  | "review-required"
   | "completed"
 
 export interface TaskSnapshotHandoff {
@@ -263,20 +264,47 @@ async function atomicWriteFile(file: string, content: string): Promise<void> {
 }
 
 function snapshotFileName(snapshot: TaskSnapshotPayload): string {
-  const stamp = snapshot.createdAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "000Z").replace(/[^\dTZ]/g, "")
-  const parts = [stamp, snapshot.stepId === "workflow" ? undefined : safeFilePart(snapshot.stepId), safeFilePart(snapshot.reason)].filter(Boolean)
-  return `${parts.join("-")}.json`
+  const stamp = snapshot.createdAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z").replace(/[^\dTZ]/g, "")
+  const reason = safeSegment(snapshot.reason, "reason")
+  const step = safeSegment(snapshot.stepId, "step")
+  return `${stamp}-${reason}-${step}.json`
 }
 
-function safeSegment(value: string, label: string): string {
-  if (!value || value.includes("/") || value.includes("\\") || value.split(path.sep).includes("..")) {
-    throw new Error(`Invalid task snapshot ${label}: ${value}`)
+function extractLastAssistantText(messages: unknown[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = recordValue(messages[index])
+    const role = String(message.role ?? message.type ?? "").toLowerCase()
+    if (role && role !== "assistant" && role !== "ai") continue
+    const content = textFromMessage(message)
+    if (content.trim()) return content
   }
-  return value
+  return undefined
 }
 
-function safeFilePart(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "snapshot"
+function textFromMessage(message: Record<string, unknown>): string {
+  const candidates = [message.text, message.content, message.message]
+  for (const candidate of candidates) {
+    const text = textValue(candidate)
+    if (text.trim()) return text
+  }
+  return ""
+}
+
+function textValue(value: unknown): string {
+  if (typeof value === "string") return value
+  if (Array.isArray(value)) return value.map(textValue).filter(Boolean).join("\n")
+  const record = recordValue(value)
+  if (typeof record.text === "string") return record.text
+  if (typeof record.content === "string") return record.content
+  return ""
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function safeCall<T>(run: () => T): T | undefined {
+  try { return run() } catch { return undefined }
 }
 
 function byteLength(value: unknown): number {
@@ -286,28 +314,10 @@ function byteLength(value: unknown): number {
 function truncateUtf8(value: string, maxBytes: number): string {
   if (Buffer.byteLength(value, "utf8") <= maxBytes) return value
   let output = value
-  while (Buffer.byteLength(output, "utf8") > maxBytes && output.length > 0) output = output.slice(0, Math.max(0, output.length - 128))
+  while (Buffer.byteLength(output, "utf8") > maxBytes && output.length > 0) output = output.slice(0, Math.max(0, output.length - 512))
   return `${output}\n... [truncated to ${maxBytes} bytes]`
 }
 
-function extractLastAssistantText(messages: unknown[]): string | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = recordValue(messages[index])
-    if (message.role !== "assistant") continue
-    const content = message.content
-    if (typeof content === "string" && content.trim()) return content.trim()
-  }
-  return undefined
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
-function safeCall(run: () => unknown): unknown {
-  try {
-    return run()
-  } catch {
-    return undefined
-  }
+function safeSegment(value: string, fallback: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || fallback
 }

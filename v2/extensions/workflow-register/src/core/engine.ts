@@ -1,6 +1,30 @@
-import * as fs from "fs/promises"
 import * as path from "path"
 import { ActionRegistry } from "./actionRegistry"
+import {
+  createDefaultPreflightChecks,
+  evaluatePreflight,
+  exists,
+  WorkflowPreflightCheckInput,
+  WorkflowPreflightCheckResult
+} from "./engine/preflight"
+import {
+  archiveAttempt,
+  missingRequiredState,
+  nextPendingIndex,
+  noteDefinitionMismatch,
+  shouldPauseForStepReview,
+  startIndexForRun,
+  validateRetryCompatibility,
+  validateRunStepCompatibility,
+  workflowStepReview
+} from "./engine/runState"
+import {
+  formatStateValue,
+  renderArtifactPath,
+  renderTemplate,
+  renderValue,
+  replacementResultText
+} from "./engine/templateRenderer"
 import { validateCommandGuardrails } from "./guardrails"
 import { validateWorkflowInputs } from "./inputResolver"
 import {
@@ -8,21 +32,13 @@ import {
   CoreWorkflowDefinition,
   EngineStep,
   ResultSourceDefinition,
-  WorkflowArtifactDefinition,
-  WorkflowPreflightDefinition,
   WorkflowRunState
 } from "./model"
 import { reportedActionError } from "./reportedActionError"
 import { ResultSinkRegistry } from "./resultSinkRegistry"
 import { RunStateStore } from "./runStateStore"
 
-export interface WorkflowPreflightCheckInput {
-  workflow: CoreWorkflowDefinition
-  run: WorkflowRunState
-  checkId: string
-}
-
-export type WorkflowPreflightCheckResult = boolean | string | { ok: boolean; error?: string }
+export type { WorkflowPreflightCheckInput, WorkflowPreflightCheckResult } from "./engine/preflight"
 
 export type WorkflowExecutionMode = "full" | "singleStep"
 
@@ -49,6 +65,7 @@ export interface WorkflowExecutionHooks {
   onStepHeld?: (input: WorkflowEngineEventInput) => Promise<void> | void
   onStepFailed?: (input: WorkflowEngineEventInput) => Promise<void> | void
   onStepCompleted?: (input: WorkflowEngineEventInput) => Promise<void> | void
+  onStepReviewRequired?: (input: WorkflowEngineEventInput) => Promise<void> | void
   onWorkflowCompleted?: (input: WorkflowEngineEventInput) => Promise<void> | void
   onWorkflowFailed?: (input: WorkflowEngineEventInput) => Promise<void> | void
 }
@@ -126,6 +143,7 @@ export class WorkflowEngine {
     const run = recoveredRun ?? await this.runStore.createRun(workflow, inputs)
     await this.runStore.saveRun(run)
     if (!recoveredRun) await this.emit(this.hooks.onWorkflowStart, { workflow, run })
+    if (run.status === "reviewing") return run
     const inputProblems = validateWorkflowInputs(workflow.inputs ?? {}, run.inputs)
     if (inputProblems.length > 0) {
       run.status = "failed"
@@ -135,7 +153,14 @@ export class WorkflowEngine {
       return run
     }
 
-    const preflight = await this.evaluatePreflight(workflow, run)
+    const preflight = await evaluatePreflight({
+      workflow,
+      run,
+      workspaceAvailable: this.workspaceAvailable,
+      fileExists: this.fileExists,
+      preflightChecks: this.preflightChecks,
+      strictPreflightChecks: this.strictPreflightChecks
+    })
     if (preflight.warnings.length > 0) run.state["workflow.preflightWarnings"] = JSON.stringify(preflight.warnings)
     if (preflight.errors.length > 0) {
       run.status = "failed"
@@ -146,6 +171,7 @@ export class WorkflowEngine {
     }
 
     const startIndex = startIndexForRun(workflow, run, options)
+    noteDefinitionMismatch(run, workflow)
     run.status = "running"
     run.error = undefined
     await this.runStore.saveRun(run)
@@ -155,8 +181,11 @@ export class WorkflowEngine {
   async resumeRun(runId: string, options: ResumeRunOptions): Promise<WorkflowRunState> {
     const run = await this.runStore.loadRun(runId)
     if (!run) throw new Error(`Workflow run not found: ${runId}`)
+    if (run.status === "reviewing") throw new Error("Workflow run is waiting for step review. Accept the current step or retry it before resuming.")
     let startIndex = options.workflow.engineSteps.findIndex((step) => step.id === run.currentStep)
     if (startIndex < 0) startIndex = nextPendingIndex(run)
+    validateRunStepCompatibility(run, options.workflow, startIndex)
+    noteDefinitionMismatch(run, options.workflow)
     if (run.status === "held" && options.completeHeldStep && startIndex >= 0) {
       const held = run.steps[startIndex]
       held.status = "completed"
@@ -171,12 +200,25 @@ export class WorkflowEngine {
   async retryCurrentStep(runId: string, workflow: CoreWorkflowDefinition): Promise<WorkflowRunState> {
     const run = await this.runStore.loadRun(runId)
     if (!run) throw new Error(`Workflow run not found: ${runId}`)
+    const review = workflowStepReview(workflow)
+    if (!review.allowRetry) throw new Error("This workflow does not allow step retry.")
     const index = workflow.engineSteps.findIndex((step) => step.id === run.currentStep)
     if (index < 0) throw new Error(`Current step is not part of workflow ${workflow.id}: ${run.currentStep ?? "none"}`)
+    validateRetryCompatibility(run, workflow, index)
+    const step = workflow.engineSteps[index]
+    const stepState = run.steps[index]
+    if (review.preserveAttempts) archiveAttempt(stepState, run.state)
     run.status = "running"
     run.error = undefined
-    run.steps[index].status = "pending"
-    run.steps[index].error = undefined
+    stepState.status = "pending"
+    stepState.error = undefined
+    stepState.startedAt = undefined
+    stepState.completedAt = undefined
+    stepState.reviewStartedAt = undefined
+    stepState.acceptedAt = undefined
+    stepState.attempt = (stepState.attempts?.length ?? 0) + 1
+    if ("resultKey" in step && step.resultKey) delete run.state[step.resultKey]
+    noteDefinitionMismatch(run, workflow)
     await this.runStore.saveRun(run)
     return this.continueRun(workflow, run, index, "full")
   }
@@ -200,11 +242,12 @@ export class WorkflowEngine {
       }
       run.status = "running"
       stepState.status = "running"
-      stepState.startedAt = stepState.startedAt ?? new Date().toISOString()
+      stepState.attempt = stepState.attempt ?? ((stepState.attempts?.length ?? 0) + 1)
+      stepState.startedAt = new Date().toISOString()
       await this.runStore.saveRun(run)
       await this.emit(this.hooks.onStepStart, { workflow, run, step })
 
-      const stepResult = await this.executeStep(workflow, run, step)
+      const stepResult = await this.executeStep(workflow, run, step, index)
       if (!stepResult.ok) {
         stepState.status = stepResult.held ? "held" : "failed"
         stepState.error = stepResult.error
@@ -240,6 +283,18 @@ export class WorkflowEngine {
         return run
       }
 
+      if (shouldPauseForStepReview(workflow, step, mode)) {
+        stepState.status = "reviewing"
+        stepState.reviewStartedAt = new Date().toISOString()
+        stepState.error = undefined
+        run.status = "reviewing"
+        run.currentStep = step.id
+        run.error = undefined
+        await this.runStore.saveRun(run)
+        await this.emit(this.hooks.onStepReviewRequired, { workflow, run, step })
+        return run
+      }
+
       stepState.status = "completed"
       stepState.completedAt = new Date().toISOString()
       stepState.error = undefined
@@ -262,7 +317,7 @@ export class WorkflowEngine {
     return run
   }
 
-  private async executeStep(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
+  private async executeStep(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep, stepIndex: number): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
     if (step.type === "manual") return this.waitForManualCompletion(workflow, run, step)
     if (step.type === "agent") {
       try {
@@ -363,6 +418,7 @@ export class WorkflowEngine {
   }
 
   private async completeStepIfManual(workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
+    if (workflowStepReview(workflow).enabled) return { ok: true }
     if (step.type === "agent" || step.type === "manual" || step.completeOnSuccess || workflow.stepCompletion !== "manual") return { ok: true }
     return this.waitForManualCompletion(workflow, run, step)
   }
@@ -409,171 +465,4 @@ export class WorkflowEngine {
     }
     return { ok: true }
   }
-
-  private async evaluatePreflight(workflow: CoreWorkflowDefinition, run: WorkflowRunState): Promise<{ errors: string[]; warnings: string[] }> {
-    const errors: string[] = []
-    const warnings: string[] = []
-    if (workflow.requires?.workspace && this.workspaceAvailable) {
-      const available = await Promise.resolve(this.workspaceAvailable())
-      if (!available) errors.push("Workspace is required but not available.")
-    }
-    for (const file of workflow.requires?.files ?? []) await this.checkFile(file, errors, warnings, true)
-    for (const preflight of workflow.preflight ?? []) await this.evaluatePreflightEntry(workflow, run, preflight, errors, warnings)
-    return { errors, warnings }
-  }
-
-  private async evaluatePreflightEntry(workflow: CoreWorkflowDefinition, run: WorkflowRunState, preflight: WorkflowPreflightDefinition, errors: string[], warnings: string[]): Promise<void> {
-    const policy = preflight.failurePolicy ?? "stop"
-    const required = preflight.required !== false
-    const fail = (message: string) => {
-      if (required && policy === "stop") errors.push(`${preflight.id}: ${message}`)
-      else warnings.push(`${preflight.id}: ${message}`)
-    }
-    for (const file of preflight.files ?? []) await this.checkFile(file, errors, warnings, required && policy === "stop", preflight.id)
-    for (const checkId of preflight.checks ?? []) {
-      const check = this.preflightChecks[checkId]
-      if (!check) {
-        if (this.strictPreflightChecks) fail(`Unsupported preflight check: ${checkId}`)
-        else warnings.push(`${preflight.id}: skipped unsupported preflight check: ${checkId}`)
-        continue
-      }
-      const result = await Promise.resolve(check({ workflow, run, checkId }))
-      const error = formatPreflightCheckFailure(result)
-      if (error) fail(`${checkId}: ${error}`)
-    }
-  }
-
-  private async checkFile(relativePath: string, errors: string[], warnings: string[], required: boolean, prefix?: string): Promise<void> {
-    if (!this.fileExists) return
-    const exists = await Promise.resolve(this.fileExists(relativePath))
-    if (exists) return
-    const message = `${prefix ? `${prefix}: ` : ""}Required workflow file is missing: ${relativePath}`
-    if (required) errors.push(message)
-    else warnings.push(message)
-  }
-}
-
-function createDefaultPreflightChecks(workspaceRoot: string | undefined): NonNullable<WorkflowEngineOptions["preflightChecks"]> {
-  if (!workspaceRoot) return {}
-  return {
-    workspaceOpen: () => true,
-    bobWorkspaceInitialized: () => exists(path.join(workspaceRoot, ".bob")),
-    bazaarRepository: () => exists(path.join(workspaceRoot, ".bzr"))
-  }
-}
-
-async function exists(file: string): Promise<boolean> {
-  try {
-    await fs.access(file)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function formatStateValue(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value)
-}
-
-function formatPreflightCheckFailure(result: WorkflowPreflightCheckResult): string | undefined {
-  if (result === true) return undefined
-  if (result === false) return "check returned false"
-  if (typeof result === "string") return result
-  return result.ok ? undefined : result.error ?? "check failed"
-}
-
-function nextPendingIndex(run: WorkflowRunState): number {
-  return run.steps.findIndex((step) => step.status === "pending" || step.status === "held" || step.status === "failed")
-}
-
-function recoverStartIndex(workflow: CoreWorkflowDefinition, run: WorkflowRunState): number {
-  const currentIndex = run.currentStep ? workflow.engineSteps.findIndex((step) => step.id === run.currentStep) : -1
-  if (currentIndex >= 0) return run.steps[currentIndex]?.status === "completed" ? currentIndex + 1 : currentIndex
-  const pending = nextPendingIndex(run)
-  return pending >= 0 ? pending : workflow.engineSteps.length
-}
-
-function startIndexForRun(workflow: CoreWorkflowDefinition, run: WorkflowRunState, options: RunWorkflowOptions): number {
-  if (options.executionMode === "singleStep" && options.stepId) {
-    const index = workflow.engineSteps.findIndex((step) => step.id === options.stepId)
-    if (index < 0) throw new Error(`Step is not part of workflow ${workflow.id}: ${options.stepId}`)
-    return index
-  }
-  return recoverStartIndex(workflow, run)
-}
-
-function missingRequiredState(step: EngineStep, state: Record<string, string>): string[] {
-  if (!step.stateRequired) return []
-  return (step.includeState ?? []).filter((key) => {
-    const value = state[key]
-    return value === undefined || value.trim().length === 0
-  })
-}
-
-function renderArtifactPath(artifact: WorkflowArtifactDefinition, context: { inputs: Record<string, unknown>; state: Record<string, string>; run: WorkflowRunState; workflow: CoreWorkflowDefinition; step: EngineStep }): string {
-  return renderTemplate(artifact.path, context)
-}
-
-function renderValue(value: unknown, context: { inputs: Record<string, unknown>; state: Record<string, string>; run: WorkflowRunState; workflow: CoreWorkflowDefinition; step: EngineStep }): unknown {
-  if (typeof value === "string") return renderTemplate(value, context)
-  if (Array.isArray(value)) return value.map((item) => renderValue(item, context))
-  if (value && typeof value === "object") {
-    const output: Record<string, unknown> = {}
-    for (const [key, item] of Object.entries(value)) output[key] = renderValue(item, context)
-    return output
-  }
-  return value
-}
-
-function renderTemplate(value: string, context: { inputs: Record<string, unknown>; state: Record<string, string>; run: WorkflowRunState; workflow: CoreWorkflowDefinition; step: EngineStep }): string {
-  return value
-    .replace(/\{\{\s*inputs\.([A-Za-z0-9_.-]+)\s*\}\}/g, (_match, key) => String(context.inputs[key] ?? ""))
-    .replace(/\{\{\s*state\.([A-Za-z0-9_.-]+)\s*\}\}/g, (_match, key) => String(context.state[key] ?? ""))
-    .replace(/\{\{\s*run\.id\s*\}\}/g, context.run.runId)
-    .replace(/\{\{\s*workflow\.id\s*\}\}/g, context.workflow.id)
-    .replace(/\{\{\s*step\.id\s*\}\}/g, context.step.id)
-    .replace(/\{\{\s*([A-Za-z0-9_-]+)\s*\}\}/g, (match, key) => placeholderValue(key, context) ?? match)
-}
-
-function placeholderValue(key: string, context: { inputs: Record<string, unknown>; state: Record<string, string> }): string | undefined {
-  if (Object.prototype.hasOwnProperty.call(context.inputs, key)) return formatTemplateValue(context.inputs[key])
-  if (Object.prototype.hasOwnProperty.call(context.state, key)) return context.state[key]
-  for (const value of Object.values(context.state)) {
-    const parsed = parseJsonObjectFromText(value)
-    if (!parsed || !Object.prototype.hasOwnProperty.call(parsed, key)) continue
-    return formatTemplateValue(parsed[key])
-  }
-  return undefined
-}
-
-function parseJsonObjectFromText(value: string): Record<string, unknown> | undefined {
-  const parsed = parseJsonObject(value)
-  if (parsed) return parsed
-  const fenced = value.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  return fenced ? parseJsonObject(fenced[1]) : undefined
-}
-
-function parseJsonObject(value: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(value)
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function formatTemplateValue(value: unknown): string | undefined {
-  if (value === undefined || value === null) return undefined
-  if (typeof value === "string") return value
-  if (typeof value === "number" || typeof value === "boolean") return String(value)
-  return JSON.stringify(value)
-}
-
-function replacementResultText(value: unknown): string | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  const record = value as Record<string, unknown>
-  for (const key of ["jsonText", "artifactText", "resultText"]) {
-    if (typeof record[key] === "string") return record[key] as string
-  }
-  return undefined
 }

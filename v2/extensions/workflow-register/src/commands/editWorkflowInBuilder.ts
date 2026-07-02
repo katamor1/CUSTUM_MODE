@@ -8,7 +8,14 @@ export interface EditWorkflowInBuilderOptions {
   sourceId: string
 }
 
-export async function editWorkflowInBuilder(options: EditWorkflowInBuilderOptions, uri?: vscode.Uri): Promise<void> {
+export interface EditWorkflowInBuilderRequest {
+  uri?: vscode.Uri
+  focusStepId?: string
+}
+
+export async function editWorkflowInBuilder(options: EditWorkflowInBuilderOptions, request?: vscode.Uri | EditWorkflowInBuilderRequest): Promise<void> {
+  const uri = request instanceof vscode.Uri ? request : request?.uri
+  const focusStepId = request instanceof vscode.Uri ? undefined : request?.focusStepId
   const targetUri = uri ?? vscode.window.activeTextEditor?.document.uri ?? await pickWorkflowFile()
   if (!targetUri) {
     await vscode.window.showErrorMessage("Open or select a WORKFLOW.md file to edit in the GUI builder.")
@@ -34,7 +41,8 @@ export async function editWorkflowInBuilder(options: EditWorkflowInBuilderOption
       mode: "edit",
       editingFilePath: targetUri.fsPath,
       originalText: loaded.originalText,
-      initialModel: loaded.model
+      initialModel: loaded.model,
+      focusStepId
     })
   } catch (error) {
     await vscode.window.showErrorMessage(`Cannot edit workflow in GUI: ${error instanceof Error ? error.message : String(error)}`)

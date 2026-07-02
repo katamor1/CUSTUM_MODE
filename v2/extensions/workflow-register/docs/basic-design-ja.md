@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-`workflow-register` は、VS Code / IBM Bob 環境で `.bob/workflows/*/WORKFLOW.md` に定義されたワークフローを検出し、IBM Bob の Workflow UI へ登録し、UI 実行または単独実行できるようにする VS Code 拡張機能である。
+`workflow-register` は、VS Code / IBM Bob 環境で `.bob/workflows/*/WORKFLOW.md` に定義されたワークフローを検出し、IBM Bob の Workflow UI へ登録し、UI 実行または standalone 実行できるようにする VS Code 拡張機能である。
 
 本拡張は、個別拡張が持つ前処理、レビュー、結果保存、成果物生成などを、共通の workflow 定義と実行状態管理に接続する基盤を提供する。
 
@@ -18,7 +18,7 @@ Bob 上でレビューや設計作業を定型化する場合、次の課題が�
 - GUI Builder、AI 補助、Diagnostics、Help を main の一体機能として運用したい。
 - 他拡張が action provider / agent provider / result sink を後付けできるようにしたい。
 
-`workflow-register` はこれらを解決するため、workflow 定義、Bob 登録、UI 実行 adapter、単独実行 engine、run state、task snapshot、検証、診断、GUI Builder、AI 補助をまとめて提供する。
+`workflow-register` はこれらを解決するため、workflow 定義、Bob 登録、UI 実行 adapter、standalone 実行 engine、run state、task snapshot、検証、診断、GUI Builder、AI 補助をまとめて提供する。
 
 ## 3. スコープ
 
@@ -31,6 +31,7 @@ Bob 上でレビューや設計作業を定型化する場合、次の課題が�
 - Bob UI からの full 実行および Todo step 単位の `singleStep` 実行。
 - Command Palette / API からの standalone 実行。
 - `command` / `agent` / `manual` / `result` step の実行。
+- `stepReview` による step 後レビュー、承認、再試行、attempt 保存。
 - `run.json` による run state 永続化と recoverable run 再利用。
 - Bob task snapshot による chat 文脈、last assistant text、metadata の補助保存。
 - `resumeRun` / `retryCurrentStep` による再開と再試行。
@@ -71,10 +72,14 @@ flowchart TD
   Register[WorkflowRegisterService]
   Authoring[extensionWithAuthoring]
   Parser[Parser / Schema / Validator]
+  Factory[BobWorkflowFactory]
+  Messages[BobWorkflowMessages]
+  Inputs[BobTaskInputs]
   BobAdapter[BobWorkflowEngineRunner]
   Engine[WorkflowEngine]
   RunStore[FileRunStateStore]
   Snapshot[FileTaskSnapshotStore]
+  Recovery[TaskSnapshotRecovery]
   Action[ActionRegistry]
   Agent[AgentProvider]
   Sink[ResultSinkRegistry]
@@ -90,10 +95,15 @@ flowchart TD
   Register --> Files
   Register --> Parser
   Register --> Bob
+  Register --> Factory
+  Factory --> Bob
   Bob --> BobAdapter
+  BobAdapter --> Inputs
+  BobAdapter --> Messages
   BobAdapter --> Engine
   BobAdapter --> StepRuntime
   BobAdapter --> Snapshot
+  BobAdapter --> Recovery
   Register --> Engine
   Engine --> RunStore
   Engine --> Action
@@ -117,13 +127,19 @@ flowchart TD
 | --- | --- | --- |
 | Extension Entry | VS Code command 登録、Bob 連携、公開 API | `src/extension.ts` |
 | Authoring Entry | core activation に検証、AI 補助、GUI Builder を追加 | `src/extensionWithAuthoring.ts` |
+| Bob API helper | Bob 拡張の取得、activation error 記録、source-like 変換 | `src/bobApi.ts` |
+| Report helper | attempt 実行、戻り値説明、Markdown report 表示 | `src/reports.ts` |
 | WorkflowRegisterService | workflow 探索、Bob source 登録、run 操作、provider 管理 | `src/extension.ts` |
-| BobWorkflowEngineRunner | Bob task を `WorkflowEngine` へ接続する UI 実行 adapter | `src/extension.ts` |
-| StepRuntime | Bob UI の手動完了待ち active step だけをメモリ保持 | `src/extension.ts` |
-| WorkflowEngine | step 実行、singleStep/full、hook、manual completion、復帰候補利用 | `src/core/engine.ts` |
+| BobWorkflowFactory | Bob workflow object / step array の構築 | `src/bobWorkflowFactory.ts` |
+| BobWorkflowEngineRunner | Bob task を `WorkflowEngine` へ接続する UI 実行 adapter | `src/bobWorkflowRunner.ts` |
+| BobWorkflowMessages | workflow 開始、step 継続、command result、state block の message 生成 | `src/bobWorkflowMessages.ts`, `src/workflowPromptContext.ts` |
+| BobTaskInputs | Bob task metadata / message から workflow input を抽出 | `src/bobTaskInputs.ts` |
+| StepRuntime | Bob UI の手動完了待ち active step だけをメモリ保持 | `src/bobWorkflowRunner.ts` |
+| TaskSnapshotRecovery | task snapshot から `lastAssistantText` を復帰候補として取得 | `src/taskSnapshotRecovery.ts` |
+| WorkflowEngine | step 実行、singleStep/full、hook、manual completion、復帰候補利用 | `src/core/engine.ts`, `src/core/engine/*` |
 | Run State Store | `run.json` の作成、atomic 保存、recoverable run 探索 | `src/core/runStateStore.ts` |
 | Task Snapshot Store | Bob task snapshot の保存、latest、pruning、検索 | `src/core/taskSnapshots.ts` |
-| Parser / Schema / Validator | `WORKFLOW.md` の解析、AJV schema、参照検証 | `src/core/parser.ts`, `src/core/workflowSchema.ts`, `src/core/workflowValidator.ts` |
+| Parser / Schema / Validator | `WORKFLOW.md` の解析、AJV schema、参照検証 | `src/core/parser.ts`, `src/core/parser/*`, `src/core/workflowSchema.ts`, `src/core/workflowValidator.ts` |
 | Action Registry | command step の provider 登録と実行 | `src/core/actionRegistry.ts` |
 | Agent Provider | standalone agent 実行、Bob subagent 接続 | `src/core/agentProvider.ts`, `src/agentStep.ts` |
 | Result Sink Registry | file / command sink、artifact 出力 | `src/core/resultSinkRegistry.ts` |
@@ -148,10 +164,11 @@ workflow は `WORKFLOW.md` の YAML front matter と Markdown body で定義す�
 | `title` / `label` / `menuLabel` | UI 表示名。 |
 | `mode` | Bob 実行モード。 |
 | `workspaceRequired` | Bob UI 上で workspace env を要求するか。 |
-| `inputs` | 実行前入力定義。 |
+| `inputs` | 実行前入力定義。`prompt: true` を指定できる。 |
 | `requires` | workspace、Bob、必須ファイルなどの実行条件。 |
 | `preflight` | 実行前チェック。 |
 | `guardrails` | command 実行の許可・禁止・承認ルール。 |
+| `stepReview` | full 実行時の step 後レビュー、承認、retry、attempt 保存制御。 |
 | `artifacts` | step 結果から保存する成果物。 |
 | `completion` | 完了時の summary / artifacts / visualization。 |
 | `steps` | 実行 step の列。 |
@@ -316,6 +333,11 @@ Help / README / authoring guide / 設計書は、GUI Builder とワークフロ�
 - `workflowRegister.inspectRuns`
 - `workflowRegister.resumeRun`
 - `workflowRegister.retryCurrentStep`
+- `workflowRegister.acceptCurrentStep`
+- `workflowRegister.runNextStep`
+- `workflowRegister.acceptAndRunNextStep`
+- `workflowRegister.inspectCurrentStep`
+- `workflowRegister.openCurrentStepInBuilder`
 - `workflowRegister.inspectRunDiagnostics`
 - `workflowRegister.inspectActiveSteps`
 - `workflowRegister.completeCurrentStep`
@@ -338,6 +360,7 @@ Help / README / authoring guide / 設計書は、GUI Builder とワークフロ�
 - parser の v1 / legacy 解析を検証する。
 - schema validation を検証する。
 - workflow engine の full / singleStep / resume / retry を検証する。
+- stepReview の停止、承認、再試行、attempt 保存を検証する。
 - recoverable run の一致条件を検証する。
 - result handoff の assistant 成果物渡しを検証する。
 - task snapshot の保存、latest、pruning、診断表示、復帰候補利用を検証する。
@@ -348,6 +371,7 @@ Help / README / authoring guide / 設計書は、GUI Builder とワークフロ�
 
 ## 18. 今後の拡張方針
 
+- `StepRuntime` の `src/bobStepRuntime.ts` への分離。
 - Bob UI 実行と standalone 実行の UX 改善。
 - active step の再接続 UI。
 - result handoff の再試行 UI 強化。

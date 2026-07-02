@@ -13,7 +13,10 @@
 - AI には最終 YAML を書かせず、候補文書・diff summary・診断を渡して `ReviewInputDraft` JSON だけを返させる。
 - `docs/**/*.md|docx|xlsx` から関連文書候補と `REQ-*`、`BD-*`、`DD-*`、`TC-*`、`TICKET-*` などの ID 候補を抽出する。
 - Git / Bazaar、base / head、変更種別、関連文書、レビュー観点を対話式に選択して `review-input.yaml` を作成する。
-- Git 差分から変更ファイル、変更行、C / C++ の変更関数候補を抽出する。
+- 元文書を変更せず、`.bob-trace/traceability-catalog.json` に traceability 候補と承認状態を保持する。
+- Traceability Prep Webview で人間が `proposed` 候補を `accepted` / `rejected` / `deprecated` に分類する。
+- accepted traceability item から `review-input.yaml` を生成する。
+- Git / Bazaar 差分から変更ファイル、変更行、C / C++ の変更関数候補を抽出する。
 - Markdown、Word `.docx`、Excel `.xlsx` から、要求・設計・テスト仕様・台帳などの根拠抜粋を作る。
 - 変更コードと文書抜粋を `evidence_id` 付きで `review-package` に整理する。
 - Bob 投入用の `bob-input.md` と prompt template 一式を生成する。
@@ -40,31 +43,37 @@
 ## 代表的な利用フロー
 
 1. Bob IDE / VS Code で対象ワークスペースを開く。
-2. `Bob コード整合: コード整合レビュー: .bob ワークフロー定義と review-input 雛形を初期化` を実行し、`.bob/workflows/.../WORKFLOW.md` と `review-input.yaml` の雛形を作成する。
-3. 手書きする代わりに `Bob コード整合: コード整合レビュー: 対話式に review-input.yaml を作成` で、短いドラフトと候補選択から `review-input.yaml` を生成する。
-4. AI を使う場合は `Bob コード整合: コード整合レビュー: AI draft 用プロンプトを作成` でプロンプトを作り、AI の JSON 応答を `Bob コード整合: コード整合レビュー: AI draft JSON から review-input.yaml を生成` で取り込む。
-5. `review-input.yaml` の `review`、`artifacts`、`review_focus` を必要に応じて確認する。
-6. `Bob Code Consistency: Preprocess Code Consistency Review` を実行する。
-7. 生成された `.bob-review/review-package/bob-input.md` を Bob に渡し、整合プレレビューを実行する。
-8. Bob の YAML 出力をコピーし、`Bob Code Consistency: Capture Code Consistency Bob Output` で保存する。
-9. `Bob Code Consistency: Validate Code Consistency Bob Output` で schema と evidence 参照を検証する。
-10. `Bob Code Consistency: Generate Code Consistency Human Triage` で人間確認用ファイルを生成する。
-11. 人間が triage 結果を確認し、正式レビューや修正作業へ回す指摘を判断する。
+2. `コード整合レビュー: .bob ワークフロー定義と review-input 雛形を初期化` を実行し、`.bob/workflows/.../WORKFLOW.md` と `review-input.yaml` の雛形を作成する。
+3. 文書 ID や工程間リンクを整理する場合は、traceability 系コマンドで sidecar catalog を作成し、人間が承認する。
+4. 手書きする代わりに `コード整合レビュー: 対話式に review-input.yaml を作成` で、短いドラフトと候補選択から `review-input.yaml` を生成する。
+5. AI を使う場合は `コード整合レビュー: AI draft 用プロンプトを作成` でプロンプトを作り、AI の JSON 応答を `コード整合レビュー: AI draft JSON から review-input.yaml を生成` で取り込む。
+6. `review-input.yaml` の `review`、`artifacts`、`review_focus` を必要に応じて確認する。
+7. `コード整合レビュー: 入力を前処理して Bob 用パッケージを作成` を実行する。
+8. 生成された `.bob-review/review-package/bob-input.md` を Bob に渡し、整合プレレビューを実行する。
+9. Bob の YAML 出力をコピーし、`コード整合レビュー: Bob 出力 YAML を取り込む` で保存する。
+10. `コード整合レビュー: Bob 出力 YAML を検証` で schema と evidence 参照を検証する。
+11. `コード整合レビュー: 人間確認用 triage を生成` で人間確認用ファイルを生成する。
+12. 人間が triage 結果を確認し、正式レビューや修正作業へ回す指摘を判断する。
 
 ## Command Palette のコマンド
 
 | コマンド | 内部 command ID | 用途 |
 | --- | --- | --- |
-| `Bob コード整合: コード整合レビュー: .bob ワークフロー定義と review-input 雛形を初期化` | `bobCodeConsistency.initializeWorkspace` | `.bob/workflows/code-consistency-review/WORKFLOW.md` と `review-input.yaml` の雛形を作成する。既存 `review-input.yaml` は上書きせず、バックアップだけ作成する。 |
-| `Bob コード整合: コード整合レビュー: 対話式に review-input.yaml を作成` | `bobCodeConsistency.createReviewInput` | Git / Bazaar、base / head、変更種別、関連文書候補、レビュー観点を選び、`ReviewInputBuilder` 経由で `review-input.yaml` を生成する。 |
-| `Bob コード整合: コード整合レビュー: AI draft 用プロンプトを作成` | `bobCodeConsistency.prepareAiReviewInputDraft` | diff summary、関連文書候補、schema enum、既存 YAML 診断をまとめた AI draft 用 Markdown を作成し clipboard にコピーする。 |
-| `Bob コード整合: コード整合レビュー: AI draft JSON から review-input.yaml を生成` | `bobCodeConsistency.applyAiReviewInputDraft` | AI が返した `ReviewInputDraft` JSON を clipboard / 引数から読み、`ReviewInputBuilder` と validator を通して `review-input.yaml` に保存する。 |
-| `Bob コード整合: コード整合レビュー: review-input.yaml を自動修復` | `bobCodeConsistency.repairReviewInput` | 古い `review_focus` 名を現行 schema enum へ置換し、バックアップ後に保存する。 |
-| `Bob コード整合: コード整合レビュー: review-input.yaml 診断を説明` | `bobCodeConsistency.explainReviewInputDiagnostics` | `review-input.yaml` の schema / 文書パス診断を表示する。 |
-| `Bob Code Consistency: Preprocess Code Consistency Review` | `bobCodeConsistency.preprocess` | `review-input.yaml`、Git 差分、文書、コード解析結果から `review-package` を生成する。 |
-| `Bob Code Consistency: Capture Code Consistency Bob Output` | `bobCodeConsistency.captureBobOutput` | Bob が出力した YAML を clipboard または引数から抽出し、`bob-output.yaml` として保存する。 |
-| `Bob Code Consistency: Validate Code Consistency Bob Output` | `bobCodeConsistency.validateOutput` | Bob 出力 YAML を schema と evidence index で検証する。 |
-| `Bob Code Consistency: Generate Code Consistency Human Triage` | `bobCodeConsistency.triage` | Bob 出力から人間確認用の triage 成果物を生成する。 |
+| `コード整合レビュー: .bob ワークフロー定義と review-input 雛形を初期化` | `bobCodeConsistency.initializeWorkspace` | `.bob/workflows/code-consistency-review/WORKFLOW.md` と `review-input.yaml` の雛形を作成する。既存 `review-input.yaml` は上書きせず、バックアップだけ作成する。 |
+| `コード整合レビュー: 対話式に review-input.yaml を作成` | `bobCodeConsistency.createReviewInput` | Git / Bazaar、base / head、変更種別、関連文書候補、レビュー観点を選び、`ReviewInputBuilder` 経由で `review-input.yaml` を生成する。 |
+| `コード整合レビュー: AI draft 用プロンプトを作成` | `bobCodeConsistency.prepareAiReviewInputDraft` | diff summary、関連文書候補、schema enum、既存 YAML 診断をまとめた AI draft 用 Markdown を作成し clipboard にコピーする。 |
+| `コード整合レビュー: AI draft JSON から review-input.yaml を生成` | `bobCodeConsistency.applyAiReviewInputDraft` | AI が返した `ReviewInputDraft` JSON を clipboard / 引数から読み、`ReviewInputBuilder` と validator を通して `review-input.yaml` に保存する。 |
+| `コード整合レビュー: traceability AI draft 用プロンプトを作成` | `bobCodeConsistency.prepareAiTraceabilityDraft` | 文書候補、差分、既存 catalog をもとに traceability AI draft 用 prompt を作る。 |
+| `コード整合レビュー: traceability AI draft JSON を catalog に反映` | `bobCodeConsistency.applyAiTraceabilityDraft` | AI が返した proposed-only JSON を `.bob-trace/traceability-catalog.json` に merge し、gate report を更新する。 |
+| `コード整合レビュー: traceability prep を開く` | `bobCodeConsistency.openTraceabilityPrep` | Traceability Prep Webview を開き、人間が proposed item を承認 / 棄却 / 廃止する。 |
+| `コード整合レビュー: traceability catalog を検証` | `bobCodeConsistency.validateTraceabilityCatalog` | catalog の gate 検証を行い、`.bob-trace/gate-report.md` を生成する。 |
+| `コード整合レビュー: traceability catalog から review-input.yaml を生成` | `bobCodeConsistency.createReviewInputFromTraceability` | accepted catalog item と review metadata から `review-input.yaml` を生成する。 |
+| `コード整合レビュー: review-input.yaml を自動修復` | `bobCodeConsistency.repairReviewInput` | 古い `review_focus` 名を現行 schema enum へ置換し、バックアップ後に保存する。 |
+| `コード整合レビュー: review-input.yaml 診断を説明` | `bobCodeConsistency.explainReviewInputDiagnostics` | `review-input.yaml` の schema / 文書パス診断を表示する。 |
+| `コード整合レビュー: 入力を前処理して Bob 用パッケージを作成` | `bobCodeConsistency.preprocess` | `review-input.yaml`、Git / Bazaar 差分、文書、コード解析結果から `review-package` を生成する。 |
+| `コード整合レビュー: Bob 出力 YAML を取り込む` | `bobCodeConsistency.captureBobOutput` | Bob が出力した YAML を clipboard または引数から抽出し、`bob-output.yaml` として保存する。 |
+| `コード整合レビュー: Bob 出力 YAML を検証` | `bobCodeConsistency.validateOutput` | Bob 出力 YAML を schema と evidence index で検証する。 |
+| `コード整合レビュー: 人間確認用 triage を生成` | `bobCodeConsistency.triage` | Bob 出力から人間確認用の triage 成果物を生成する。 |
 
 ## 設定
 
@@ -72,9 +81,12 @@
 | --- | --- | --- |
 | `bobCodeConsistency.reviewInputPath` | `review-input.yaml` | 入力 YAML のワークスペース相対パス。 |
 | `bobCodeConsistency.reviewPackagePath` | `.bob-review/review-package` | 生成する review-package のワークスペース相対パス。 |
+| `bobCodeConsistency.traceabilityCatalogPath` | `.bob-trace/traceability-catalog.json` | 元文書を変更せずに traceability ID、リンク、承認状態を保持する sidecar catalog のパス。 |
+| `bobCodeConsistency.traceabilityGateReportPath` | `.bob-trace/gate-report.md` | traceability catalog の gate 検証結果を書き込む Markdown report のパス。 |
 | `bobCodeConsistency.bobOutputPath` | `.bob-review/bob-output/bob-output.yaml` | 取り込んだ Bob 出力 YAML の保存先。 |
 | `bobCodeConsistency.triagePath` | `.bob-review/human-triage` | 人間 triage ファイルの出力先。 |
-| `bobCodeConsistency.textEncoding` | `auto` | `review-input.yaml`、Markdown 文書、C/C++ ソース、Git/Bazaar 差分 stdout、diff fixture の読み取り文字コード。`auto` / `utf8` / `shift_jis` / `cp932` / `windows-31j` を指定できます。 |
+| `bobCodeConsistency.bzrPath` | `bzr` | `review.vcs` が `bazaar` / `bzr` の場合に使用する Bazaar 実行ファイルのパス。実行時は必ず `--no-aliases` を付与する。 |
+| `bobCodeConsistency.textEncoding` | `auto` | `review-input.yaml`、Markdown 文書、C/C++ ソース、Git/Bazaar 差分 stdout、diff fixture の読み取り文字コード。`auto` / `utf8` / `shift_jis` / `cp932` / `windows-31j` を指定できる。 |
 
 各コマンドは、ワークフローや他拡張からの呼び出し時に同名オプションを受け取れます。たとえば `reviewInputPath`、`reviewPackagePath`、`textEncoding`、`bobOutputPath`、`triagePath` を入力値や `args` で渡すと、設定値より優先されます。
 
@@ -96,6 +108,32 @@ docs/
 - `review-input.yaml` が存在しない場合は、schema に沿った最小雛形を作成します。
 - `review-input.yaml` が既に存在する場合は、実案件の入力を壊さないため上書きしません。代わりに `.bak-<timestamp>` を作成します。
 - 雛形が参照する `docs/review-input-placeholder.md` は仮文書です。実レビューでは実際の要求書・設計書・テスト仕様書に差し替えてください。
+
+## Traceability sidecar catalog
+
+traceability 機能は、元の要求書・設計書・テスト仕様書を書き換えずに、別ファイルへ ID 候補、工程間リンク、承認状態を保持します。
+
+```text
+.bob-trace/
+  traceability-catalog.json
+  gate-report.md
+  ai-traceability-draft/
+    ai-draft-prompt.md
+```
+
+基本の流れは次の通りです。
+
+```text
+prepareAiTraceabilityDraft
+  -> AI に proposed-only JSON を返させる
+  -> applyAiTraceabilityDraft
+  -> Traceability Prep Webview で人間が accepted / rejected / deprecated を判断
+  -> validateTraceabilityCatalog
+  -> createReviewInputFromTraceability
+  -> review-input.yaml
+```
+
+AI が作成できるのは `status: proposed` の候補だけです。`accepted`、`rejected`、`deprecated` への遷移は人間が Traceability Prep Webview で実施します。
 
 ## Draft -> Builder -> Validator
 
@@ -206,10 +244,6 @@ artifacts:
     - path: docs/test-spec-timeout.md
       cases:
         - TC-TIMEOUT-001
-  ledgers:
-    - path: docs/error-ledger.xlsx
-      sheets:
-        - errors
 review_focus:
   - requirement-code-consistency
   - design-code-consistency
@@ -276,7 +310,7 @@ analysis_options:
 | --- | --- |
 | `manifest.yaml` | review-package の作成情報、対象範囲、テンプレート ID、根拠件数を記録する。 |
 | `input-normalized.json` | 検証済み `review-input.yaml` を正規化して保存する。 |
-| `changed-files.json` | Git 差分から得た変更ファイル一覧と warning を保存する。 |
+| `changed-files.json` | Git / Bazaar 差分から得た変更ファイル一覧と warning を保存する。 |
 | `changed-symbols.json` | 変更関数、define、global 候補、call graph、RT 禁止処理候補を保存する。 |
 | `document-index.json` | 抽出対象文書、文書種別、section と evidence の対応を保存する。 |
 | `evidence-index.json` | Bob 出力検証で参照する evidence 一覧を保存する。本文は除外する。 |
@@ -309,3 +343,51 @@ analysis_options:
 | `test_spec` | `test_spec` | `TC` |
 | `ledgers` | `ledger` | `LEDGER` |
 | `tickets` | `ticket` | `TICKET` |
+
+## 現在の実装分割
+
+| ファイル / ディレクトリ | 責務 |
+| --- | --- |
+| `src/extension.ts` | VS Code command 登録、workflow provider handler mapping、review-input 作成・AI draft・診断系 command handler の入口。 |
+| `src/extensionCommandOptions.ts` | notification、workspace root 解決、path helper、string / boolean / array option、VCS / change type / review focus helper。 |
+| `src/reviewInputWizard.ts` | 対話式 `review-input.yaml` 作成 UI、文書候補選択、review metadata 収集。 |
+| `src/workflowProviderRegistration.ts` | `workflow-register` の action provider 登録と action provider から渡される option record の正規化。 |
+| `src/workspaceInitializer.ts` | `.bob/workflows/code-consistency-review/WORKFLOW.md` と `review-input.yaml` 雛形の初期化。 |
+| `src/traceabilityCommands.ts` | traceability AI draft 作成 / 反映、Traceability Prep Webview 起動、catalog gate 検証、accepted item からの `review-input.yaml` 生成。 |
+| `src/reviewExecutionCommands.ts` | preprocess、Bob output capture、Bob output validate、人間 triage 生成。 |
+| `src/core/*` | review-input builder、AI draft provider、traceability catalog、pipeline、Bob output capture / validator。 |
+| `src/webview/traceabilityPrepWebview.ts` | traceability item の人間承認 UI。 |
+| `src/triage/humanTriageHelper.ts` | 人間確認用 triage 成果物生成。 |
+
+次の分割候補は、`extension.ts` に残る `runCreateReviewInput`、`runPrepareAiReviewInputDraft`、`runApplyAiReviewInputDraft`、`runRepairReviewInput`、`runExplainReviewInputDiagnostics` を `reviewInputCommands.ts` へ切り出すことです。Command ID と `package.json` の contributes は互換性に直結するため、分割時も名称は変更しません。
+
+## ビルド
+
+```powershell
+cd extensions\bob-code-consistency-review
+npm install
+npm run compile
+npm run test
+npm run package
+```
+
+## セキュリティと運用上の注意
+
+- AI には最終 YAML、正式承認、採否判断を直接させません。
+- AI draft は JSON object に限定し、builder / validator を必ず通します。
+- `artifact.path` はワークスペース上の実在パスとして検証します。
+- Bazaar 実行時は `--no-aliases` を付けます。
+- Bob 出力は YAML schema と `evidence-index.json` に照らして検証します。
+- human triage は正式レビュー前の人間判断用成果物です。
+
+## 関連ドキュメント
+
+- `docs/README-ja.md`
+- `docs/vcs-bazaar-ja.md`
+- `docs/text-encoding-ja.md`
+- `../../../docs/workflows/code-consistency-review/README.md`
+- `../../../docs/workflows/code-consistency-review/review-input-schema.md`
+- `../../../docs/workflows/code-consistency-review/review-package-spec.md`
+- `../../../docs/workflows/code-consistency-review/bob-output-schema.md`
+- `extensions/workflow-register/README.md`
+- `extensions/README.md`

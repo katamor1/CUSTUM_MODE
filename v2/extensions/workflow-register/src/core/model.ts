@@ -1,10 +1,11 @@
 export type WorkflowSchemaVersion = "legacy" | "workflow-register/v1"
 export type WorkflowStepType = "command" | "agent" | "manual" | "result"
-export type RunStatus = "running" | "held" | "completed" | "failed"
-export type StepRunStatus = "pending" | "running" | "held" | "completed" | "failed"
+export type RunStatus = "running" | "reviewing" | "held" | "completed" | "failed"
+export type StepRunStatus = "pending" | "running" | "reviewing" | "held" | "completed" | "failed"
 export type WorkflowStepCompletionMode = "auto" | "manual"
 export type WorkflowStepMessageMode = "full" | "current" | "silent" | "step"
 export type WorkflowFailurePolicy = "stop" | "continue" | "warn"
+export type WorkflowStepReviewPauseAfter = "everyStep" | "agentAndCommand" | "none"
 
 export interface WorkflowInputDefinition {
   type: "string" | "number" | "boolean" | "select"
@@ -68,6 +69,15 @@ export interface WorkflowCompletionDefinition {
     type?: string
     enabled?: boolean
   }
+}
+
+export interface WorkflowStepReviewDefinition {
+  enabled: boolean
+  pauseAfter: WorkflowStepReviewPauseAfter
+  requireAcceptBeforeNext: boolean
+  allowRetry: boolean
+  allowEditBeforeRetry: boolean
+  preserveAttempts: boolean
 }
 
 export interface WorkflowActionDefinition {
@@ -154,6 +164,7 @@ export interface CoreWorkflowDefinition {
   todoAsSteps: boolean
   stepCompletion: WorkflowStepCompletionMode
   stepMessage: WorkflowStepMessageMode
+  stepReview: WorkflowStepReviewDefinition
   todos: WorkflowTodoDefinition[]
   inputs: Record<string, WorkflowInputDefinition>
   requires: WorkflowRequiresDefinition
@@ -241,13 +252,29 @@ export interface ResultSinkWriteResult {
   error?: string
 }
 
+export interface RunStepAttempt {
+  attempt: number
+  status: StepRunStatus
+  startedAt?: string
+  completedAt?: string
+  reviewStartedAt?: string
+  acceptedAt?: string
+  error?: string
+  stateSnapshot?: Record<string, string>
+  createdAt: string
+}
+
 export interface RunStepState {
   id: string
   title: string
   type: WorkflowStepType
   status: StepRunStatus
+  attempt?: number
+  attempts?: RunStepAttempt[]
   startedAt?: string
   completedAt?: string
+  reviewStartedAt?: string
+  acceptedAt?: string
   error?: string
 }
 

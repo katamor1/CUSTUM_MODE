@@ -16,6 +16,18 @@ export const workflowV1Schema = {
     todoAsSteps: { type: "boolean" },
     stepCompletion: { enum: ["auto", "manual"] },
     stepMessage: { enum: ["full", "current", "silent", "step"] },
+    stepReview: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        pauseAfter: { enum: ["everyStep", "agentAndCommand", "none"] },
+        requireAcceptBeforeNext: { type: "boolean" },
+        allowRetry: { type: "boolean" },
+        allowEditBeforeRetry: { type: "boolean" },
+        preserveAttempts: { type: "boolean" }
+      },
+      additionalProperties: false
+    },
     autoApproval: { type: "boolean" },
     workspaceRequired: { type: "boolean" },
     hidden: { type: "boolean" },

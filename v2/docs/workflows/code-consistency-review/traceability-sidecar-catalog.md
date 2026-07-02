@@ -30,6 +30,8 @@ REQ-<元文書ID>-<領域>-0001
 BD-<元文書ID>-<領域>-0001
 DD-<元文書ID>-<領域>-0001
 TC-<元文書ID>-<領域>-0001
+QA-<元文書ID>-<領域>-0001
+RV-<元文書ID>-<領域>-0001
 ```
 
 例:
@@ -39,6 +41,8 @@ REQ-RS001-PAY-0001
 BD-BD001-PAY-0001
 DD-DD001-PAY-0001
 TC-TS001-PAY-0001
+QA-QA001-PAY-0001
+RV-RV001-PAY-0001
 ```
 
 `<元文書ID>` は文書内の管理番号を優先する。抽出できない場合は sidecar 側で `DOC0001` のように採番し、document registry に `id_source: sidecar-generated` として残す。
@@ -81,6 +85,36 @@ AI は正式 ID を直接確定しない。AI 段階では `proposed_id` を持�
       "document_id": "RS001",
       "source_path": "docs/requirements-payment.md",
       "id_source": "extracted"
+    },
+    {
+      "proposed_id": "QA-QA001-PAY-0001",
+      "id": "QA-QA001-PAY-0001",
+      "type": "qa_item",
+      "source_document_id": "QA001",
+      "domain": "PAY",
+      "sequence": 1,
+      "source_path": "docs/qa-payment.xlsx",
+      "status": "accepted",
+      "qa": {
+        "question": "決済ステータスは要求に定義されているか",
+        "answer": "REQ-RS001-PAY-0001 で定義済み",
+        "status": "closed"
+      }
+    },
+    {
+      "proposed_id": "RV-RV001-PAY-0001",
+      "id": "RV-RV001-PAY-0001",
+      "type": "review_finding",
+      "source_document_id": "RV001",
+      "domain": "PAY",
+      "sequence": 1,
+      "source_path": "docs/review-findings.xlsx",
+      "status": "accepted",
+      "review": {
+        "severity": "major",
+        "action_plan": "要求IDとの対応を確認する",
+        "status": "closed"
+      }
     }
   ],
   "domains": [
@@ -136,6 +170,8 @@ links:
 | `satisfies` | `REQ -> BD` |
 | `elaborates` | `BD -> DD` |
 | `verified_by` | `REQ/DD -> TC` |
+| `clarifies` | `QA -> REQ/BD/DD/TC/RV` |
+| `reviewed_by` | `REQ/BD/DD/TC/QA -> RV` |
 | `references` | 補助参照 |
 
 対応不要な場合は missing を消すのではなく、理由付きの accepted decision として残す。
@@ -160,6 +196,8 @@ error:
 - ID が重複している。
 - source document が document registry に存在しない。
 - accepted link の `from` / `to` が accepted item ではない。
+- accepted QA item に accepted `clarifies` link がない。
+- accepted review finding に accepted `reviewed_by` link がない、または未対応状態のまま。
 
 warning:
 
@@ -167,6 +205,7 @@ warning:
 - AI 候補はあるが未承認。
 - source anchor hash が変わって stale の疑いがある。
 - 既存文書IDを抽出できず `DOC0001` 形式を使っている。
+- QA が回答済みだが close されていない。
 
 ## 8. review-input.yaml 生成との統合
 
@@ -180,22 +219,34 @@ sidecar catalog がある場合、`review-input.yaml` は catalog の accepted i
 | `basic_design` | `artifacts.basic_design[].sections` |
 | `detailed_design` | `artifacts.detailed_design[].sections` |
 | `test_spec` | `artifacts.test_spec[].cases` |
+| `qa_item` | `artifacts.ledgers[].rows` |
+| `review_finding` | `artifacts.tickets[].rows` |
 
 この設計により、人間は `review-input.yaml` を手で組み立てる代わりに、traceability catalog の承認状態を整える。`bob-code-consistency-review` は catalog を下流のレビュー対象へ変換する。
 
-## 9. 初期実装範囲
+## 9. 実装済み command
 
-初期実装では次を行う。
+VS Code 拡張 `local.bob-code-consistency-review` では、次の command を提供する。
 
-- sidecar catalog の TypeScript 型を定義する。
-- ID、domain、document、link、decision、gate 欠落を検証する。
-- gate report Markdown を生成する。
-- accepted catalog item から `ReviewInputDraft` を生成する。
-- 既存の `ReviewInputBuilder` / validator に接続できる API を提供する。
+| command | 用途 |
+|---|---|
+| `bobCodeConsistency.prepareAiTraceabilityDraft` | 仕様書候補、既存catalog、diff summaryからAI draft用promptを作る |
+| `bobCodeConsistency.applyAiTraceabilityDraft` | AI JSONを proposed-only として検証し、sidecar catalogへmergeする |
+| `bobCodeConsistency.openTraceabilityPrep` | Webviewで domain/item/link/decision を承認、棄却、廃止する |
+| `bobCodeConsistency.validateTraceabilityCatalog` | gate report Markdownを生成する |
+| `bobCodeConsistency.createReviewInputFromTraceability` | accepted catalog itemから `review-input.yaml` を生成する |
 
-次段では次を追加する。
+既存の `createReviewInput`、`prepareAiReviewInputDraft`、`applyAiReviewInputDraft` は catalog 未整備案件の fallback として残す。
 
-- catalog をファイルから読み書きする command。
-- AI catalog draft prompt。
-- 人間承認 UI。
-- `review-input.yaml` 生成 command の catalog 入力対応。
+## 10. Webview 承認
+
+`openTraceabilityPrep` は `.bob-trace/traceability-catalog.json` を読み込み、次のタブで候補を確認する。
+
+- Domains
+- Items
+- Links
+- Decisions
+- Gate Report
+- Review Input Preview
+
+承認操作はまず Webview の作業状態へ反映される。`Save` を押すと既存 catalog の backup を作成してから保存し、`.bob-trace/gate-report.md` を再生成する。

@@ -1,14 +1,14 @@
 # extensions ディレクトリ
 
-このディレクトリには、IBM Bob を拡張するためのローカル VS Code 拡張機能を配置します。
+このディレクトリには、IBM Bob / Bob IDE と連携するローカル VS Code 拡張機能を配置します。
 
-## 拡張機能 README 一覧
+現在の主要モジュールは次の 3 つです。
 
 | 拡張機能 | 役割 | README |
 | --- | --- | --- |
-| `workflow-register` | `.bob/workflows/*/WORKFLOW.md` を読み込み、IBM Bob のワークフローソースとして登録する。作成、検証、実行、診断、AI 補助のコマンドも提供する。 | `extensions/workflow-register/README.md` |
-| `bob-bazaar-review` | Bazaar 差分レビュー、プロジェクト規約読み込み、review-result JSON 検証、読み取り専用 Bazaar MCP サーバーを提供する。 | `extensions/bob-bazaar-review/README.md` |
-| `bob-code-consistency-review` | コード変更と要求書・設計書・テスト仕様書の整合プレレビュー用。現時点では `docs/workflows/code-consistency-review/scaffold/` の MVP スケルトンを後続フェーズで拡張機能化する想定。 | `extensions/bob-code-consistency-review/README.md` |
+| `workflow-register` | `.bob/workflows/*/WORKFLOW.md` を読み込み、IBM Bob のワークフローソースとして登録する基盤拡張。作成、検証、実行、再開、診断、AI 補助、GUI Builder も提供する。 | `extensions/workflow-register/README.md` |
+| `bob-bazaar-review` | Bazaar 差分レビュー、プロジェクト規約読み込み、review-result JSON 検証、読み取り専用 Bazaar MCP サーバーを提供する連携拡張。 | `extensions/bob-bazaar-review/README.md` |
+| `bob-code-consistency-review` | コード変更と要求書・設計書・テスト仕様書の整合プレレビュー用パッケージ、traceability sidecar、Bob 出力検証、人間 triage を提供する連携拡張。 | `extensions/bob-code-consistency-review/README.md` |
 
 ## 推奨する読み順
 
@@ -18,7 +18,7 @@
 4. `docs/workflows/code-consistency-review/README.md`
 5. `extensions/bob-code-consistency-review/README.md`
 
-まずワークフロー定義の作り方を確認し、その後で各拡張機能の README を読んでください。`bob-code-consistency-review` は、詳細仕様と scaffold の現在地を確認してから読むと意図を把握しやすくなります。
+まず `workflow-register` でワークフロー定義と実行モデルを確認し、その後に個別連携拡張を読むと全体像を追いやすくなります。
 
 ## 拡張機能の関係
 
@@ -26,16 +26,28 @@
 IBM.bob-code
   └─ workflow-register
        ├─ bob-bazaar-review
-       └─ bob-code-consistency-review（予定）
+       └─ bob-code-consistency-review
 ```
 
-`workflow-register` は、Bob にワークフローを登録する基盤拡張です。
+`workflow-register` は、Bob にワークフローを登録し、`command` / `agent` / `manual` / `result` step を実行する基盤拡張です。
 
-`bob-bazaar-review` は、`workflow-register` から呼び出せる Bazaar レビュー用コマンドや結果取り込み機能を提供する連携拡張です。
+`bob-bazaar-review` は、Bazaar 差分レビュー用の GUI、コマンド、MCP、project rules、review-result 保存を提供します。`workflow-register` が導入されている場合は action provider として同梱ワークフローから呼び出せます。
 
-`bob-code-consistency-review` は、コード差分と要求・設計・テスト仕様の整合プレレビューを支援する連携拡張として整備予定です。現在の MVP 実装スケルトンは `docs/workflows/code-consistency-review/scaffold/` にあります。
+`bob-code-consistency-review` は、コード差分と要求・設計・テスト仕様の整合プレレビューを支援する実行可能な VS Code 拡張です。`review-input.yaml` を直接フル手書きする運用だけでなく、対話式 wizard、AI draft JSON、traceability sidecar catalog から生成する運用を提供します。
 
-## `.bob` ワークスペース構成
+## 現在のリファクタリング状態
+
+3 拡張機能では、AI と人間が安全に保守しやすい単位へ責務分割を進めています。
+
+| 拡張機能 | 現在の分割状態 | まだ残っている主な責務 |
+| --- | --- | --- |
+| `workflow-register` | `bobWorkflowFactory.ts`、`bobWorkflowMessages.ts`、`bobTaskInputs.ts`、`taskSnapshotRecovery.ts`、`bobApi.ts`、`reports.ts` に低リスク helper を分離済み。 | `bobWorkflowRunner.ts` には `BobWorkflowEngineRunner` と `StepRuntime` が残る。次の候補は `StepRuntime` の単独分離。 |
+| `bob-bazaar-review` | `workflowRegisterBridge.ts` に workflow-register API 接続と workflow action input helper、`bazaarReviewCommands.ts` に revision / range review packet command、`reviewResultValidationCommand.ts` に active editor の review-result JSON 検証を分離済み。 | `extension.ts` には command 登録、workflow provider 登録、project rules 読み込み、review packet 検索、MCP 設定、GUI 起動が残る。 |
+| `bob-code-consistency-review` | `extensionCommandOptions.ts`、`reviewInputWizard.ts`、`workflowProviderRegistration.ts`、`workspaceInitializer.ts`、`traceabilityCommands.ts`、`reviewExecutionCommands.ts` に command helper / UI / workflow provider / 初期化 / traceability / 実行系 command を分離済み。 | `extension.ts` には command 登録、handler mapping、review-input 作成・AI draft・診断系 command handler が残る。次の候補は `reviewInputCommands.ts`。 |
+
+詳細な分割方針は `docs/extension-refactor-review-54e1fe58.md` を参照してください。
+
+## `.bob` / `.bob-review` / `.bob-trace` ワークスペース構成
 
 ワークフローとレビュー規約は、利用側ワークスペースの `.bob` に配置します。
 
@@ -62,7 +74,18 @@ IBM.bob-code
 
 `bob-bazaar-review` は Bazaar レビュー向けに `.bob/review`、`.bob/mcp.json`、同梱ワークフロー、Skill、Mode の初期化を支援します。
 
-`bob-code-consistency-review` は、将来的に `.bob-review/review-package` や `.bob-review/human-triage` などの整合プレレビュー成果物を生成する想定です。
+`bob-code-consistency-review` は、整合プレレビューの実行時に次のような成果物を生成します。
+
+```text
+review-input.yaml
+.bob-review/
+  review-package/
+  bob-output/
+  human-triage/
+.bob-trace/
+  traceability-catalog.json
+  gate-report.md
+```
 
 ## 新しい拡張機能を追加するときの README 方針
 
@@ -101,19 +124,18 @@ npm run test
 npm run package
 ```
 
-`bob-code-consistency-review` は、現時点では scaffold を検証します。
-
 ```powershell
-cd docs\workflows\code-consistency-review\scaffold
+cd extensions\bob-code-consistency-review
 npm install
-npm run typecheck
-npm run unit
-npm run smoke
+npm run compile
+npm run test
+npm run package
 ```
 
 ## 関連ドキュメント
 
 - `docs/workflow-authoring-guide-ja.md`
+- `docs/extension-refactor-review-54e1fe58.md`
 - `docs/workflows/code-consistency-review/README.md`
 - `extensions/workflow-register/README.md`
 - `extensions/bob-bazaar-review/README.md`

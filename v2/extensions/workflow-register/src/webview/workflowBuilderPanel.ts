@@ -15,6 +15,7 @@ export interface WorkflowBuilderPanelOptions {
   initialModel?: WorkflowAuthoringModel
   editingFilePath?: string
   originalText?: string
+  focusStepId?: string
 }
 
 type WorkflowBuilderMessage =
@@ -119,7 +120,7 @@ export class WorkflowBuilderPanel {
   }
 
   private postModel(model: WorkflowAuthoringModel): void {
-    void this.panel.webview.postMessage({ type: "model", model, editMode: this.options.mode === "edit", filePath: this.options.editingFilePath ?? "" })
+    void this.panel.webview.postMessage({ type: "model", model, editMode: this.options.mode === "edit", filePath: this.options.editingFilePath ?? "", focusStepId: this.options.focusStepId ?? "" })
   }
 
   private panelTitle(): string {
@@ -142,6 +143,7 @@ export class WorkflowBuilderPanel {
       cspSource: this.panel.webview.cspSource,
       initialModel,
       isEditMode,
+      focusStepId: this.options.focusStepId,
       modeNote: isEditMode
         ? "既存の <code>WORKFLOW.md</code> を読み込んで編集します。保存時は backup を作成してから上書きします。"
         : "フォームで新しい <code>.bob/workflows/&lt;name&gt;/WORKFLOW.md</code> を作成します。参照関係は編集中に検出し、保存前にも既存 validator で確認します。",

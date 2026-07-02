@@ -2,7 +2,7 @@
 
 ## 1. 文書の位置づけ
 
-本書は `extensions/workflow-register` 拡張機能の詳細設計を定義する。現在の main 実装に合わせ、UI 実行系、standalone 実行系、中断・復帰、task snapshot、GUI Builder、AI 補助、Help / docs 統合の責務を整理する。
+本書は `extensions/workflow-register` 拡張機能の詳細設計を定義する。現在の main 実装に合わせ、UI 実行系、standalone 実行系、中断・復帰、step review、task snapshot、GUI Builder、AI 補助、Help / docs 統合の責務を整理する。
 
 ## 2. 実装構成
 
@@ -19,7 +19,16 @@ extensions/workflow-register/
     extensionWithAuthoring.ts
     extension.ts
     agentStep.ts
+    bobApi.ts
+    bobTaskInputs.ts
+    bobWorkflowFactory.ts
+    bobWorkflowMessages.ts
+    bobWorkflowRunner.ts
+    bobWorkflowTypes.ts
+    reports.ts
     resultHandoff.ts
+    taskSnapshotRecovery.ts
+    workflowPromptContext.ts
     commands/
       createWorkflow.ts
       designWorkflowWithAi.ts
@@ -34,11 +43,17 @@ extensions/workflow-register/
       actionRegistry.ts
       agentProvider.ts
       engine.ts
+      engine/
+        preflight.ts
+        runState.ts
+        templateRenderer.ts
       guardrails.ts
       inputCollector.ts
       inputResolver.ts
       model.ts
       parser.ts
+      parser/
+        ...
       reportedActionError.ts
       resultSinkRegistry.ts
       runStateStore.ts
@@ -66,6 +81,8 @@ extensions/workflow-register/
     *.test.js
 ```
 
+`bobWorkflowRunner.ts` から低リスク helper は分離済みである。現在同ファイルに残る主責務は `BobWorkflowEngineRunner` と `StepRuntime` である。
+
 ## 3. 起動設計
 
 ### 3.1 VS Code activation
@@ -92,6 +109,11 @@ extensions/workflow-register/
 | `workflowRegister.inspectRuns` | 保存済み run state を一覧表示する。 |
 | `workflowRegister.resumeRun` | held / running run を再開する。 |
 | `workflowRegister.retryCurrentStep` | current step を再試行する。 |
+| `workflowRegister.acceptCurrentStep` | step review 中の current step を承認する。 |
+| `workflowRegister.runNextStep` | step review 中の次 step を実行する。 |
+| `workflowRegister.acceptAndRunNextStep` | current step を承認して次 step を実行する。 |
+| `workflowRegister.inspectCurrentStep` | current step の状態を表示する。 |
+| `workflowRegister.openCurrentStepInBuilder` | current step の workflow 定義を GUI Builder で開く。 |
 | `workflowRegister.inspectRunDiagnostics` | run state と task snapshot の診断を表示する。 |
 | `workflowRegister.inspectActiveSteps` | Bob UI の手動完了待ち active step を表示する。 |
 | `workflowRegister.completeCurrentStep` | Bob UI 経由の current manual step を完了する。 |
@@ -155,6 +177,7 @@ sequenceDiagram
   participant W as workspaceRoots
   participant FS as VS Code FS
   participant P as parser
+  participant F as bobWorkflowFactory
   participant B as IBM Bob
 
   S->>W: findWorkflowRootCandidates(folders)
@@ -169,7 +192,9 @@ sequenceDiagram
   end
   S->>S: qualifyDuplicateWorkflowIds
   S->>B: registerSource(sourceId, sourceName)
-  S->>B: source.registerWorkflow(createBobWorkflow(...))
+  S->>F: createBobWorkflow(definition, runner)
+  F-->>S: BobWorkflow
+  S->>B: source.registerWorkflow(workflow)
 ```
 
 読み込み結果は2種類の model に保持する。
@@ -195,7 +220,9 @@ v1 では `workflowV1Schema` を AJV で検証し、`CoreWorkflowDefinition` へ
 - `name` は英数字で始まり、英数字、`.`、`_`、`-` のみを許可する。
 - `stepCompletion` は `auto` または `manual`。
 - `stepMessage` は `full` / `current` / `silent` / `step`。
+- `stepReview.pauseAfter` は `everyStep` / `agentAndCommand` / `none`。
 - input `type` は `string` / `number` / `boolean` / `select`。
+- input は `prompt` boolean を持てる。
 - step `type` は `command` / `agent` / `manual` / `result`。
 - `command` step では `action` を必須とする。
 - `result` step では `result` を必須とする。
@@ -222,7 +249,7 @@ v1 では `workflowV1Schema` を AJV で検証し、`CoreWorkflowDefinition` へ
 
 `adaptCoreWorkflowForBob()` は `CoreWorkflowDefinition` を Bob adapter 用の `WorkflowDefinition` へ変換する。
 
-`buildWorkflowSteps()` は次の方針で Bob step を生成する。
+`bobWorkflowFactory.ts` の `buildWorkflowSteps()` は次の方針で Bob step を生成する。
 
 | 条件 | Bob step |
 | --- | --- |
@@ -249,7 +276,17 @@ Bob UI 実行系だけが扱うものは次の通り。
 - `StepRuntime.activeSteps`
 - task snapshot
 
-### 9.2 full 実行と singleStep 実行
+### 9.2 分離済み helper
+
+| helper | 用途 |
+| --- | --- |
+| `bobTaskInputs.ts` | Bob task metadata / message から workflow input を抽出する。 |
+| `bobWorkflowMessages.ts` | Bob chat に送る workflow / step / command result message を生成する。 |
+| `workflowPromptContext.ts` | workflow root / file / folder / state を prompt context に追加する。 |
+| `taskSnapshotRecovery.ts` | snapshot から復帰用 `lastAssistantText` を取得する。 |
+| `bobWorkflowFactory.ts` | Bob workflow object と step array を作る。 |
+
+### 9.3 full 実行と singleStep 実行
 
 | Bob entry | Engine request | 戻り値の扱い |
 | --- | --- | --- |
@@ -258,38 +295,7 @@ Bob UI 実行系だけが扱うものは次の通り。
 
 `singleStep` では指定 step だけを実行する。後続 step が残る場合、run は `running` のまま保存され、次の Bob step が同じ inputs と workflow hash で recoverable run を取得して継続する。
 
-### 9.3 input 収集
-
-Bob UI 実行では、まず Bob task から既知 input を抽出する。
-
-抽出元は次の通り。
-
-- `task.getAllMetadata()`
-- `metadata.inputs`
-- `metadata.workflowInputs`
-- `metadata.meta`
-- `metadata.workflow.meta`
-- message `_meta.workflow.meta`
-- message `_meta.workflow.inputs`
-
-不足分だけ `collectWorkflowInputsWithResolver()` により VS Code prompt で入力を求める。解決済み inputs は task object が object の場合、`WeakMap` に task 単位で cache する。
-
-### 9.4 Bob task adapter
-
-`BobWorkflowEngineRunner` は `WorkflowEngine` に次を渡す。
-
-| Engine option | Bob UI 実行での接続 |
-| --- | --- |
-| `actions` | 共有 `ActionRegistry`。 |
-| `resultSinks` | workflow root ごとの `ResultSinkRegistry`。 |
-| `runStore` | workflow root ごとの `FileRunStateStore`。 |
-| `agentProvider` | `task.startSubagent()` を呼ぶ `AgentProvider`。未使用時は fallback provider。 |
-| `preflightChecks` | workflow root ごとの preflight checks。 |
-| `hooks` | Bob chat 同期、snapshot 保存、step complete 同期。 |
-| `manualCompletion` | `StepRuntime.hold()` による手動完了待ち。 |
-| `recoverResultText` | 現在 task の latest assistant text、snapshot の順で復帰候補を返す。 |
-
-### 9.5 Hook 処理
+### 9.4 Hook 処理
 
 `WorkflowExecutionHooks` は Engine event から Bob UI 側の副作用を実行する。
 
@@ -330,8 +336,6 @@ Standalone 実行系では、agent step は登録済み `AgentProvider` また�
 
 ## 11. WorkflowEngine 詳細設計
 
-### 11.1 Engine options
-
 `WorkflowEngineOptions` は次を持つ。
 
 | Option | 用途 |
@@ -348,62 +352,9 @@ Standalone 実行系では、agent step は登録済み `AgentProvider` また�
 | `manualCompletion` | manual step / manual completion workflow の待機。 |
 | `recoverResultText` | retry / missing result text の復帰候補取得。 |
 
-### 11.2 実行開始
+`runWorkflow(workflow, inputs, options)` は、recoverable run の検索、run 作成、input 検証、preflight、開始 step 決定、step 実行を順に行う。
 
-`runWorkflow(workflow, inputs, options)` は次の処理を行う。
-
-1. `findRecoverableRun()` で同じ workflow / inputs の `running` / `held` run を探す。
-2. 見つからなければ `createRun()` で run を作る。
-3. `run.json` を保存する。
-4. 新規 run の場合は `onWorkflowStart` hook を呼ぶ。
-5. inputs を検証する。
-6. preflight を実行する。
-7. `startIndexForRun()` で開始 step を決める。
-8. `continueRun()` で full または singleStep 実行へ進む。
-
-### 11.3 Step 実行
-
-```mermaid
-flowchart TD
-  A[start step] --> B[run.currentStep 更新]
-  B --> C[run 保存]
-  C --> D[onStepStart hook]
-  D --> E[executeStep]
-  E -->|ok| F[writeProducedArtifacts]
-  E -->|held| H[step held / run held]
-  E -->|failed| X[step failed / run failed]
-  F -->|ok| G[completeStepIfManual]
-  F -->|failed| X
-  G -->|ok| I[step completed]
-  G -->|held| H
-  G -->|failed| X
-  I --> J[next step / singleStep return / completed]
-```
-
-`executionMode=singleStep` の場合は、指定 step だけを処理する。後続 step が残る場合、workflow は `completed` ではなく `running` のまま戻る。
-
-### 11.4 Step 種別ごとの実行
-
-| Step type | 実行内容 |
-| --- | --- |
-| `manual` | `manualCompletion` があれば待機し、なければ held を返す。 |
-| `agent` | state / snapshot / agent provider の順で agent text を確保し、`resultKey` へ保存する。 |
-| `command` | guardrails 検査後、`ActionRegistry.execute()` を呼び、structured error を failed 扱いにする。 |
-| `result` | `ResultSinkRegistry.write()` を呼ぶ。 |
-
-agent step は、すでに `resultKey` に値がある場合、または `recoverResultText` が値を返した場合、agent provider の再実行を避ける。
-
-### 11.5 Result text と handoff
-
-`result.source` は次の通り扱う。
-
-| source | text の取得元 |
-| --- | --- |
-| `literal` | `result.text`。 |
-| `state` | `run.state[result.stateKey]`。 |
-| `agent` | agent step 出力、または `recoverResultText` の復帰候補。 |
-
-result sink が失敗した場合は `onHandoffFailed` hook を呼び、step を failed にする。sink が replacement text を返す場合、step に `resultKey` があれば state を置き換える。
+`stepReview` が有効な場合は、full 実行中に対象 step 後で `reviewing` 状態へ移行し、人間が承認または retry できる。
 
 ## 12. Run State 詳細設計
 
@@ -443,49 +394,13 @@ result sink が失敗した場合は `onHandoffFailed` hook を呼び、step を
 
 ## 13. Task Snapshot 詳細設計
 
-### 13.1 保存場所
+保存場所:
 
 ```text
 <workflowRoot>/.bob/workflows/runs/<runId>/task-snapshots/
 ```
 
 各 snapshot は時刻、stepId、reason を含むファイル名で保存される。最新 snapshot は `latest.json` にも保存する。
-
-### 13.2 Snapshot payload
-
-`TaskSnapshotPayload` は次を持つ。
-
-| Field | 用途 |
-| --- | --- |
-| `schemaVersion` | `workflow-register/task-snapshot/v1`。 |
-| `createdAt` | 作成時刻。 |
-| `reason` | 保存理由。 |
-| `runId` | 対象 run。 |
-| `workflowId` | workflow ID。 |
-| `logicalWorkflowId` | logical workflow ID。 |
-| `workflowDefinitionHash` | workflow 定義 hash。 |
-| `stepId` | 対象 step。 |
-| `runStatus` | run status。 |
-| `runCurrentStep` | current step。 |
-| `taskMetadata` | Bob task metadata。 |
-| `messages` | Bob chat messages。設定により省略可。 |
-| `messageCount` / `omittedMessageCount` | message 数と省略数。 |
-| `truncated` | 最大サイズ超過などによる切り詰め有無。 |
-| `taskExport` | `task.toSerializable()` の結果。 |
-| `lastAssistantText` | 直近 assistant 出力。 |
-| `handoff` | result command と error。 |
-
-### 13.3 サイズ制御と pruning
-
-`FileTaskSnapshotStore` は保存前に `prepareSnapshot()` を通し、設定に従って次を行う。
-
-- `includeMessages=false` の場合は `messages` を省略する。
-- `maxBytes` を超える場合、古い messages から削る。
-- それでも超える場合、`lastAssistantText` を切り詰める。
-- さらに超える場合、`taskExport`、`taskMetadata` を省略する。
-- `maxPerRun` を超える古い snapshot を削除する。
-
-### 13.4 復帰候補としての利用
 
 `recoverResultTextFromSnapshots()` は次の順で `lastAssistantText` を探す。
 
@@ -518,6 +433,8 @@ Bob UI 実行では、これより前に現在 task の latest assistant message
 
 `completeCurrentStep()` は active step を選択し、必要なら `captureHeldStepResult()` で Bob chat の latest assistant text を result command へ handoff した後、`task.setStepComplete()` と Promise resolve を行う。
 
+現時点では `StepRuntime` は `bobWorkflowRunner.ts` 内に残している。次の低リスク分割候補は `src/bobStepRuntime.ts` である。
+
 ## 15. Result Handoff / Sink 詳細
 
 agent step が JSON や Markdown などの成果物を chat に出力したあと、その成果物を action provider または VS Code command に渡して保存・検証・変換できる。
@@ -539,8 +456,6 @@ agent step が JSON や Markdown などの成果物を chat に出力したあ�
 
 ## 17. GUI Builder 詳細設計
 
-### 17.1 Authoring model
-
 `WorkflowAuthoringModel` は GUI 編集用の中間 model である。実行用の `CoreWorkflowDefinition` とは異なり、GUI で編集しやすい配列形式の `inputs`、`steps`、`artifacts` と、Markdown body、`unknownFrontMatter` を保持する。
 
 ```text
@@ -553,20 +468,7 @@ WORKFLOW.md
   -> Preview / Diff / Save
 ```
 
-### 17.2 新規作成
-
-`openWorkflowBuilder.ts` は Webview を開き、template から初期 model を生成する。対応 template は `simple-agent`、`command-then-agent`、`manual-checklist`、`input-driven-agent`、`preflight-files`、`artifact-output`、`guarded-command`、`review-workflow` である。
-
-### 17.3 既存編集
-
-`editWorkflowInBuilder.ts` は active editor または file picker で `WORKFLOW.md` を選び、`loadAuthoringModelFromMarkdown()` で GUI model を作る。
-
-- 対象は `schemaVersion: workflow-register/v1` のみ。
-- legacy workflow は GUI 編集対象外。
-- GUI 管理外 front matter は `unknownFrontMatter` として保持する。
-- Markdown body は `model.body` として保持する。
-
-### 17.4 Webview modules
+Webview modules は次の通り。
 
 | file | role |
 | --- | --- |
@@ -576,10 +478,6 @@ WORKFLOW.md
 | `workflowBuilderClientScript.ts` | form state、tab、step 操作、reference warning、details section 編集。 |
 | `workflowBuilderBodyScript.ts` | `Markdown Body` タブを追加し、`model.body` を編集する補助 script。 |
 
-### 17.5 Preview / Diff / Save
-
-Webview client は `preview` / `diff` / `save` / `resetTemplate` message を extension host へ送る。
-
 保存時は次の順で処理する。
 
 1. `serializeAuthoringModelToMarkdown()` で Markdown を生成する。
@@ -588,10 +486,6 @@ Webview client は `preview` / `diff` / `save` / `resetTemplate` message を ext
 4. 既存ファイルがある場合は `WORKFLOW.backup-<timestamp>.md` を作る。
 5. `WORKFLOW.md` を書き込む。
 6. `workflowRegister.reload` を実行する。
-
-### 17.6 YAML 表記安定化
-
-`workflowAuthoringSerializer.ts` は `js-yaml.dump()` 後に `requires.bob.minVersion` と `guardrails.requireApproval[].when` をダブルクォート付きに正規化する。これは YAML の意味を変えるためではなく、既存運用ファイルとの差分ノイズを減らすためである。
 
 ## 18. AI Authoring / Help 詳細設計
 
@@ -605,7 +499,7 @@ AI provider は `workflowRegister.aiProviderCommand` で指定する。未設定
 
 `improveWorkflowWithAi` は候補 Markdown を `.bob/workflows/.previews/...` に保存し、diff を表示し、明示確認後に backup を作成して適用する。
 
-Help / docs は、README、authoring guide、basic design、detailed design、task export recovery plan として main に統合する。GUI Builder や command palette の説明と矛盾しないよう、schema / command / 実行方式の変更時に更新する。
+Help / docs は、README、authoring guide、basic design、detailed design、task export recovery plan として main に統合する。schema / command / 実行方式の変更時に更新する。
 
 ## 19. Diagnostics 詳細設計
 
@@ -624,6 +518,7 @@ VS Code Diagnostics には error / warning を表示し、Markdown report には
 - run ID、status、current step。
 - workflow ID、definition hash。
 - step 状態一覧。
+- archived attempt 件数。
 - snapshot 件数。
 - latest snapshot。
 - snapshot ごとの reason、stepId、lastAssistantText 有無、handoff error、truncated。
@@ -659,14 +554,18 @@ workflow-register は `.bob` を持つ root を workflow root として扱う。
 | 対象 | 観点 |
 | --- | --- |
 | parser | v1 / legacy parse、diagnostics、unknown field。 |
-| schema | 必須項目、step type、input type、guardrails。 |
-| engine | full / singleStep、preflight、command、agent、manual、result。 |
+| schema | 必須項目、step type、input type、stepReview、guardrails。 |
+| engine | full / singleStep、preflight、command、agent、manual、result、stepReview。 |
 | runStateStore | runId 採番、atomic save、load、list、recoverable run。 |
 | taskSnapshots | save、latest、size truncation、includeMessages、prune、findLatest。 |
+| taskSnapshotRecovery | snapshot からの latest assistant text 復旧。 |
 | resultHandoff | latest assistant text、args 互換、validation failure。 |
 | workflowValidator | state 参照、artifact 参照、guardrail 衝突。 |
 | workspaceRoots | direct / child / fallback candidate。 |
 | extension registration | Bob API 登録、workflow id 修飾、provider 呼び出し。 |
+| BobWorkflowFactory | Bob workflow object と step array の構築。 |
+| BobWorkflowMessages | step message、command result、state block の生成。 |
+| BobTaskInputs | metadata / message からの input 抽出。 |
 | BobWorkflowEngineRunner | full / singleStep、task input 抽出、hooks、manual completion。 |
 | authoring serializer | YAML / Markdown 出力、quote 安定化、body 保持。 |
 | authoring loader | 既存 v1 workflow の GUI model 変換、unknownFrontMatter 保持。 |
@@ -684,6 +583,5 @@ workflow-register は `.bob` を持つ root を workflow root として扱う。
 - `TaskSnapshotPayload` を変更した場合は、run diagnostics、snapshot pruning、復帰候補利用を更新する。
 - `workspaceRequired` の扱いは Bob UI のフォルダ選択挙動へ影響するため、multi-root で確認する。
 - `ResultSinkRegistry` の command 許可リストを拡張する場合は、guardrails とセキュリティ観点を確認する。
-- active step の永続化を検討する場合も、Bob task object や Promise を直接保存しない。
-- GUI Builder の client script を変更する場合は、preview / save / diff / reference warning の回帰を確認する。
-- serializer の YAML 表記安定化を変更する場合は、既存運用 workflow との差分を確認する。
+- active step の永続化を検討する場合も、Bob task object や Promise は保存しない。
+- `bobWorkflowRunner.ts` の分割では、Bob task と `WorkflowEngine` の接続挙動を変えず、関数移動と import 変更に限定する。

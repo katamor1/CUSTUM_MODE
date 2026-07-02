@@ -131,7 +131,7 @@ test("workflow run diagnostics include failed step and suggested fix", () => {
 
   assert.match(workflowRunFailureHint(run.error), /Register an ActionProvider/)
   assert.ok(formatWorkflowRunDiagnostics(run).some((line) => line.includes("suggested fix")))
-  assert.equal(buildWorkflowRunDiagnosticReport([run]).summary, "1 run(s); 1 failed; 0 held.")
+  assert.equal(buildWorkflowRunDiagnosticReport([run]).summary, "1 run(s); 1 failed; 0 reviewing; 0 held; 0 archived attempt(s).")
 })
 
 test("workflow run diagnostics include task snapshot evidence and mismatch warnings", () => {
