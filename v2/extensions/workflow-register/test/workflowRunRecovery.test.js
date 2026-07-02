@@ -229,7 +229,7 @@ test("single-step later step without recoverable state fails before running the 
   assert.equal(run.currentStep, "output-result")
   assert.equal(run.steps[0].status, "pending")
   assert.equal(run.steps[1].status, "failed")
-  assert.match(run.error, /Workflow state is missing for step output-result: reviewContext/)
+  assert.match(run.error, /cannot run before previous step 'collect-context' is completed/)
   assert.equal(agentCalls, 0)
 })
 

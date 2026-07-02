@@ -4,6 +4,8 @@ import {
   ResultSourceDefinition,
   WorkflowInputDefinition,
   WorkflowStepCompletionMode,
+  WorkflowStepExecutionDefinition,
+  WorkflowStepExecutionMode,
   WorkflowStepMessageMode,
   WorkflowStepReviewDefinition,
   WorkflowStepReviewPauseAfter
@@ -18,6 +20,20 @@ export function stepCompletion(fields: Record<string, unknown>, fallback: Workfl
 export function stepMessage(fields: Record<string, unknown>, fallback: WorkflowStepMessageMode): WorkflowStepMessageMode {
   const value = optionalString(fields, "stepMessage")
   return value === "full" || value === "current" || value === "silent" || value === "step" ? value : fallback
+}
+
+export function normalizeStepExecution(value: unknown, fallbackMode: WorkflowStepExecutionMode): WorkflowStepExecutionDefinition {
+  const record = asRecord(value)
+  const mode = stepExecutionMode(optionalString(record, "mode"), fallbackMode)
+  return {
+    mode,
+    allowOutOfOrder: optionalBoolean(record, "allowOutOfOrder") ?? false,
+    showInBob: optionalBoolean(record, "showInBob") ?? true
+  }
+}
+
+function stepExecutionMode(value: string | undefined, fallback: WorkflowStepExecutionMode): WorkflowStepExecutionMode {
+  return value === "full" || value === "todo" || value === "engineSteps" ? value : fallback
 }
 
 export function normalizeStepReview(value: unknown, stepCompletionValue: WorkflowStepCompletionMode): WorkflowStepReviewDefinition {

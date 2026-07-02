@@ -3,7 +3,8 @@ import type { ActionRegistry } from "./core/actionRegistry"
 import type {
   CoreWorkflowDefinition,
   WorkflowGuardrailsDefinition,
-  WorkflowInputDefinition
+  WorkflowInputDefinition,
+  WorkflowStepExecutionDefinition
 } from "./core/model"
 import type { ResultSource } from "./resultHandoff"
 
@@ -101,6 +102,7 @@ export interface WorkflowDefinition {
   todoAsSteps: boolean
   stepCompletion: StepCompletionMode
   stepMessage: StepMessageMode
+  stepExecution: WorkflowStepExecutionDefinition
   stepsById: Record<string, WorkflowStepDefinition>
   todos: WorkflowTodoItem[]
   inputs: Record<string, WorkflowInputDefinition>

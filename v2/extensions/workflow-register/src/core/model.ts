@@ -1,9 +1,10 @@
 export type WorkflowSchemaVersion = "legacy" | "workflow-register/v1"
 export type WorkflowStepType = "command" | "agent" | "manual" | "result"
-export type RunStatus = "running" | "reviewing" | "held" | "completed" | "failed"
+export type RunStatus = "running" | "paused" | "reviewing" | "held" | "completed" | "failed"
 export type StepRunStatus = "pending" | "running" | "reviewing" | "held" | "completed" | "failed"
 export type WorkflowStepCompletionMode = "auto" | "manual"
 export type WorkflowStepMessageMode = "full" | "current" | "silent" | "step"
+export type WorkflowStepExecutionMode = "full" | "todo" | "engineSteps"
 export type WorkflowFailurePolicy = "stop" | "continue" | "warn"
 export type WorkflowStepReviewPauseAfter = "everyStep" | "agentAndCommand" | "none"
 
@@ -78,6 +79,12 @@ export interface WorkflowStepReviewDefinition {
   allowRetry: boolean
   allowEditBeforeRetry: boolean
   preserveAttempts: boolean
+}
+
+export interface WorkflowStepExecutionDefinition {
+  mode: WorkflowStepExecutionMode
+  allowOutOfOrder: boolean
+  showInBob: boolean
 }
 
 export interface WorkflowActionDefinition {
@@ -164,6 +171,7 @@ export interface CoreWorkflowDefinition {
   todoAsSteps: boolean
   stepCompletion: WorkflowStepCompletionMode
   stepMessage: WorkflowStepMessageMode
+  stepExecution: WorkflowStepExecutionDefinition
   stepReview: WorkflowStepReviewDefinition
   todos: WorkflowTodoDefinition[]
   inputs: Record<string, WorkflowInputDefinition>
@@ -259,6 +267,8 @@ export interface RunStepAttempt {
   completedAt?: string
   reviewStartedAt?: string
   acceptedAt?: string
+  reviewDecision?: "accepted" | "rejected"
+  reviewComment?: string
   error?: string
   stateSnapshot?: Record<string, string>
   createdAt: string

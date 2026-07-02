@@ -40,6 +40,30 @@ steps:
 
 Every step needs `id`, `title`, and `type`.
 
+## Step execution and review gates
+
+Use `stepExecution` when Bob should show engine `steps[]` as visible Bob steps instead of one full workflow entry or legacy Todo entries.
+
+```yaml
+stepExecution:
+  mode: engineSteps
+  allowOutOfOrder: false
+  showInBob: true
+stepReview:
+  enabled: true
+  pauseAfter: everyStep
+  requireAcceptBeforeNext: true
+  allowRetry: true
+  allowEditBeforeRetry: true
+  preserveAttempts: true
+```
+
+- `mode: full`: show one Bob step that runs the full workflow.
+- `mode: todo`: show Todo-derived Bob steps.
+- `mode: engineSteps`: show each `steps[]` item as a Bob step.
+- `allowOutOfOrder: false`: reject a later `singleStep` run until all previous steps are `completed`.
+- `stepReview.enabled: true`: successful steps stop in `reviewing`; accept marks the step `completed`, retry archives the attempt and reruns it.
+
 ## State flow
 
 Use `resultKey` to store output from a command or agent step. Later steps can read that value with `includeState` or `result.source: state`.

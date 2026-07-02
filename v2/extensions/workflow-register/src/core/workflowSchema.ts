@@ -16,6 +16,15 @@ export const workflowV1Schema = {
     todoAsSteps: { type: "boolean" },
     stepCompletion: { enum: ["auto", "manual"] },
     stepMessage: { enum: ["full", "current", "silent", "step"] },
+    stepExecution: {
+      type: "object",
+      properties: {
+        mode: { enum: ["full", "todo", "engineSteps"] },
+        allowOutOfOrder: { type: "boolean" },
+        showInBob: { type: "boolean" }
+      },
+      additionalProperties: false
+    },
     stepReview: {
       type: "object",
       properties: {

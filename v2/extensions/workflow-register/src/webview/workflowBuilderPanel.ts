@@ -1,8 +1,9 @@
 import * as path from "path"
 import * as vscode from "vscode"
 import { createAuthoringModelFromTemplate } from "../core/workflowAuthoringDefaults"
-import { WorkflowAuthoringModel } from "../core/workflowAuthoringModel"
+import { WorkflowAuthoringModel, WorkflowAuthoringStep } from "../core/workflowAuthoringModel"
 import { serializeAuthoringModelToMarkdown } from "../core/workflowAuthoringSerializer"
+import { validateStepDraft } from "../core/workflowAuthoringStepDraftValidation"
 import { WorkflowTemplateKind, workflowTemplates } from "../core/workflowScaffold"
 import { formatWorkflowDiagnostics, validateWorkflowText } from "../core/workflowValidator"
 import { renderWorkflowBuilderHtml } from "./workflowBuilderHtml"
@@ -22,6 +23,7 @@ type WorkflowBuilderMessage =
   | { type: "preview"; model: WorkflowAuthoringModel }
   | { type: "save"; model: WorkflowAuthoringModel }
   | { type: "diff"; model: WorkflowAuthoringModel }
+  | { type: "validateStepDraft"; model: WorkflowAuthoringModel; draftStep: WorkflowAuthoringStep; stepIndex: number }
   | { type: "resetTemplate"; name: string; title?: string; description: string; template: WorkflowTemplateKind }
 
 export class WorkflowBuilderPanel {
@@ -62,6 +64,7 @@ export class WorkflowBuilderPanel {
     }
     if (message.type === "preview") return this.preview(message.model)
     if (message.type === "diff") return this.showDiff(message.model)
+    if (message.type === "validateStepDraft") return this.validateStepDraft(message.model, message.draftStep, message.stepIndex)
     if (message.type === "save") await this.save(message.model)
   }
 
@@ -71,6 +74,30 @@ export class WorkflowBuilderPanel {
     const filePath = this.displayPathForUri(targetUri, rendered.filePath)
     const validation = validateWorkflowText({ sourceId: this.options.sourceId, filePath, text: rendered.markdown })
     await this.panel.webview.postMessage({ type: "previewResult", markdown: rendered.markdown, ok: validation.ok, diagnostics: formatWorkflowDiagnostics(validation), filePath })
+  }
+
+  private async validateStepDraft(model: WorkflowAuthoringModel, draftStep: WorkflowAuthoringStep, stepIndex: number): Promise<void> {
+    const originalStep = model.steps[stepIndex]
+    const stepValidation = validateStepDraft({ model, originalStep, draftStep, stepIndex })
+    const draftModel: WorkflowAuthoringModel = {
+      ...model,
+      steps: model.steps.map((step, index) => index === stepIndex ? draftStep : step)
+    }
+    const rendered = serializeAuthoringModelToMarkdown(draftModel)
+    const targetUri = this.targetUri(rendered.filePath)
+    const filePath = this.displayPathForUri(targetUri, rendered.filePath)
+    const workflowValidation = validateWorkflowText({ sourceId: this.options.sourceId, filePath, text: rendered.markdown })
+    await this.panel.webview.postMessage({
+      type: "stepDraftValidationResult",
+      stepIndex,
+      stepValidation,
+      workflowValidation: {
+        ok: workflowValidation.ok,
+        diagnostics: formatWorkflowDiagnostics(workflowValidation),
+        filePath,
+        markdown: rendered.markdown
+      }
+    })
   }
 
   private async showDiff(model: WorkflowAuthoringModel): Promise<void> {

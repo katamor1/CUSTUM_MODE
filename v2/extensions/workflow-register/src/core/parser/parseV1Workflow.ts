@@ -18,6 +18,7 @@ import {
   normalizeInputs,
   normalizePreflight,
   normalizeRequires,
+  normalizeStepExecution,
   normalizeStepReview,
   normalizeTools,
   stepCompletion,
@@ -45,6 +46,7 @@ export function parseV1Workflow(request: ParseWorkflowRequest, fields: Record<st
   const name = requiredString(fields, "name")
   const prompt = optionalString(fields, "prompt") ?? body.trim()
   const stepCompletionValue = stepCompletion(fields, todoEnabled && todos.length > 0 ? "manual" : "auto")
+  const todoAsStepsValue = optionalBoolean(fields, "todoAsSteps") ?? (todoEnabled && todos.length > 0)
   const workflow: CoreWorkflowDefinition = {
     id: optionalString(fields, "id") ?? `${request.sourceId}.${name}`,
     name,
@@ -66,9 +68,10 @@ export function parseV1Workflow(request: ParseWorkflowRequest, fields: Record<st
     hidden: optionalBoolean(fields, "hidden") ?? false,
     todoEnabled,
     todoRequired: optionalBoolean(fields, "todoRequired") ?? false,
-    todoAsSteps: optionalBoolean(fields, "todoAsSteps") ?? (todoEnabled && todos.length > 0),
+    todoAsSteps: todoAsStepsValue,
     stepCompletion: stepCompletionValue,
     stepMessage: stepMessage(fields, "current"),
+    stepExecution: normalizeStepExecution(fields.stepExecution, todoAsStepsValue ? "todo" : "full"),
     stepReview: normalizeStepReview(fields.stepReview, stepCompletionValue),
     todos,
     inputs: normalizeInputs(asRecord(fields.inputs)),

@@ -34,7 +34,9 @@ export function validateAndDescribeWorkflow(input: WorkflowDiagnosticsInput): Wo
       }
     }
   }
-  const stepCount = workflow.todoEnabled && workflow.todoAsSteps && workflow.todos.length > 0
+  const stepCount = workflow.stepExecution.showInBob !== false && workflow.stepExecution.mode === "engineSteps"
+    ? workflow.core.engineSteps.length
+    : workflow.todoEnabled && workflow.todoAsSteps && workflow.todos.length > 0
     ? workflow.todos.length
     : 1
   const stepPromptCount = Object.values(workflow.stepsById)

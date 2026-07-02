@@ -16,6 +16,7 @@ button { border: 1px solid var(--vscode-button-border, transparent); background:
 button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
 button.danger { background: var(--vscode-inputValidation-errorBackground); color: var(--vscode-inputValidation-errorForeground); }
 button.link { background: transparent; color: var(--vscode-textLink-foreground); border: none; padding: 0; margin: 0; text-align: left; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
 .muted { color: var(--vscode-descriptionForeground); font-size: 12px; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .card { border: 1px solid var(--vscode-panel-border); padding: 10px; margin: 8px 0; border-radius: 4px; background: var(--vscode-sideBar-background); }
@@ -23,6 +24,7 @@ button.link { background: transparent; color: var(--vscode-textLink-foreground);
 .step-card.selected { outline: 1px solid var(--vscode-focusBorder); }
 .badge { display: inline-block; border: 1px solid var(--vscode-panel-border); padding: 1px 6px; border-radius: 99px; font-size: 11px; margin-left: 6px; }
 .badge.error { border-color: var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); }
+.badge.warning { border-color: var(--vscode-inputValidation-warningBorder); background: var(--vscode-inputValidation-warningBackground); }
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--vscode-panel-border); margin-top: 12px; }
 .tab { padding: 6px 10px; cursor: pointer; border: 1px solid transparent; border-bottom: none; }
 .tab.active { border-color: var(--vscode-panel-border); background: var(--vscode-sideBar-background); }
@@ -33,6 +35,10 @@ pre { white-space: pre-wrap; overflow: auto; padding: 10px; background: var(--vs
 .issue-list li { margin: 4px 0; }
 .help-inline-guide { border-left: 4px solid var(--vscode-focusBorder); }
 .help-inline-guide ol { margin: 6px 0 0 20px; padding: 0; }
+.step-draft-check { border-left: 4px solid var(--vscode-testing-iconPassed); }
+.step-draft-error { border-left-color: var(--vscode-testing-iconFailed); }
+.step-draft-warning { border-left-color: var(--vscode-inputValidation-warningBorder); }
+.step-draft-actions { margin-top: 8px; }
 .help-panel { border-left: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); padding: 14px; }
 .help-panel h2 { margin-top: 0; }
 .help-panel p { line-height: 1.55; }

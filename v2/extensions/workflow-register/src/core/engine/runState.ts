@@ -1,4 +1,11 @@
-import { CoreWorkflowDefinition, EngineStep, RunStepState, WorkflowRunState, WorkflowStepReviewDefinition } from "../model"
+import {
+  CoreWorkflowDefinition,
+  EngineStep,
+  RunStepState,
+  WorkflowRunState,
+  WorkflowStepExecutionDefinition,
+  WorkflowStepReviewDefinition
+} from "../model"
 
 type WorkflowExecutionMode = "full" | "singleStep"
 
@@ -11,9 +18,16 @@ const DEFAULT_STEP_REVIEW: WorkflowStepReviewDefinition = {
   preserveAttempts: true
 }
 
+const DEFAULT_STEP_EXECUTION: WorkflowStepExecutionDefinition = {
+  mode: "full",
+  allowOutOfOrder: false,
+  showInBob: true
+}
+
 interface RunWorkflowOptionsLike {
   executionMode?: WorkflowExecutionMode
   stepId?: string
+  allowOutOfOrder?: boolean
 }
 
 export function nextPendingIndex(run: WorkflowRunState): number {
@@ -41,8 +55,15 @@ export function workflowStepReview(workflow: CoreWorkflowDefinition): WorkflowSt
   return stepReview ?? DEFAULT_STEP_REVIEW
 }
 
+export function workflowStepExecution(workflow: CoreWorkflowDefinition): WorkflowStepExecutionDefinition {
+  const stepExecution = (workflow as Partial<CoreWorkflowDefinition>).stepExecution
+  return stepExecution ?? {
+    ...DEFAULT_STEP_EXECUTION,
+    mode: workflow.todoAsSteps ? "todo" : "full"
+  }
+}
+
 export function shouldPauseForStepReview(workflow: CoreWorkflowDefinition, step: EngineStep, mode: WorkflowExecutionMode): boolean {
-  if (mode !== "full") return false
   const review = workflowStepReview(workflow)
   if (!review.enabled) return false
   if (review.pauseAfter === "none") return false
@@ -50,7 +71,17 @@ export function shouldPauseForStepReview(workflow: CoreWorkflowDefinition, step:
   return true
 }
 
-export function archiveAttempt(stepState: RunStepState, state: Record<string, string>): void {
+export function blockedPreviousStep(workflow: CoreWorkflowDefinition, run: WorkflowRunState, targetIndex: number, options: RunWorkflowOptionsLike): RunStepState | undefined {
+  if (options.executionMode !== "singleStep") return undefined
+  const allowOutOfOrder = options.allowOutOfOrder ?? workflowStepExecution(workflow).allowOutOfOrder
+  if (allowOutOfOrder) return undefined
+  for (let index = 0; index < targetIndex && index < run.steps.length; index += 1) {
+    if (run.steps[index]?.status !== "completed") return run.steps[index]
+  }
+  return undefined
+}
+
+export function archiveAttempt(stepState: RunStepState, state: Record<string, string>, reviewDecision?: "accepted" | "rejected"): void {
   const attempt = stepState.attempt ?? ((stepState.attempts?.length ?? 0) + 1)
   stepState.attempts = [
     ...(stepState.attempts ?? []),
@@ -61,6 +92,7 @@ export function archiveAttempt(stepState: RunStepState, state: Record<string, st
       completedAt: stepState.completedAt,
       reviewStartedAt: stepState.reviewStartedAt,
       acceptedAt: stepState.acceptedAt,
+      reviewDecision,
       error: stepState.error,
       stateSnapshot: { ...state },
       createdAt: new Date().toISOString()

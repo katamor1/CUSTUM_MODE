@@ -2,7 +2,7 @@ import * as path from "path"
 import { CoreWorkflowDefinition, ParseWorkflowRequest, ParseWorkflowResult } from "../model"
 import { legacyStepsFromMarkdown, legacyTodosFromMarkdown } from "./legacyMarkdown"
 import { removeMarkdownSection, removeMarkdownStepSections } from "./markdownSections"
-import { normalizeStepReview, stepCompletion, stepMessage } from "./normalizers"
+import { normalizeStepExecution, normalizeStepReview, stepCompletion, stepMessage } from "./normalizers"
 import { arrayField, listField, optionalBoolean, optionalString } from "./yamlFields"
 
 export function parseLegacyWorkflow(request: ParseWorkflowRequest, fields: Record<string, unknown>, body: string): ParseWorkflowResult {
@@ -39,6 +39,7 @@ export function parseLegacyWorkflow(request: ParseWorkflowRequest, fields: Recor
     todoAsSteps: true,
     stepCompletion: stepCompletionValue,
     stepMessage: stepMessage(fields, "current"),
+    stepExecution: normalizeStepExecution(fields.stepExecution, "todo"),
     stepReview: normalizeStepReview(fields.stepReview, stepCompletionValue),
     todos: legacyTodosFromMarkdown(body),
     inputs: {},

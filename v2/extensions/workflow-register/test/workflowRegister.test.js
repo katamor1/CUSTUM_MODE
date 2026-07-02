@@ -53,6 +53,8 @@ test("package contributes standalone workflow launcher commands without a hard B
   assert.equal(packageJson.extensionDependencies, undefined)
   for (const command of [
     "workflowRegister.runWorkflow",
+    "workflowRegister.runWorkflowStep",
+    "workflowRegister.runNextStep",
     "workflowRegister.inspectRuns",
     "workflowRegister.resumeRun",
     "workflowRegister.retryCurrentStep"
@@ -60,7 +62,18 @@ test("package contributes standalone workflow launcher commands without a hard B
     assertContributesCommand(packageJson, command)
   }
   assert.match(source, /new WorkflowRegisterService\(String\(context\.extension\.packageJSON\.version \?\? "unknown"\)\)/)
+  assert.match(source, /registerCommand\("workflowRegister\.runWorkflowStep", \(workflowId\?: string, stepId\?: string, inputs\?: Record<string, unknown>\) => service\.runWorkflowStep\(workflowId, stepId, inputs\)\)/)
+  assert.match(source, /registerCommand\("workflowRegister\.runNextStep", \(runId\?: string\) => service\.runNextStep\(runId\)\)/)
   assert.match(source, /new FileRunStateStore\(\{ workspaceRoot, engineVersion: this\.options\.engineVersion \}\)/)
+})
+
+test("authoring wrapper delegates accept-and-run-next to the core next-step command without duplicate registration", () => {
+  const wrapper = readSrc("extensionWithAuthoring.ts")
+  const stepReview = readSrc("commands", "stepReview.ts")
+
+  assert.doesNotMatch(wrapper, /registerCommand\("workflowRegister\.runNextStep"/)
+  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", accepted\.runId\)/)
+  assert.doesNotMatch(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.resumeRun", accepted\.runId\)/)
 })
 
 test("package exposes task snapshot retention settings", () => {

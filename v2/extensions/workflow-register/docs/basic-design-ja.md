@@ -28,7 +28,7 @@ Bob 上でレビューや設計作業を定型化する場合、次の課題が�
 - `schemaVersion: workflow-register/v1` の解析、検証、正規化。
 - legacy 形式の互換読み込み。
 - IBM Bob Workflow UI への source / workflow 登録。
-- Bob UI からの full 実行および Todo step 単位の `singleStep` 実行。
+- Bob UI からの full 実行、Todo step 単位の `singleStep` 実行、engine `steps[]` 単位の review-gated step 実行。
 - Command Palette / API からの standalone 実行。
 - `command` / `agent` / `manual` / `result` step の実行。
 - `stepReview` による step 後レビュー、承認、再試行、attempt 保存。
@@ -168,7 +168,8 @@ workflow は `WORKFLOW.md` の YAML front matter と Markdown body で定義す�
 | `requires` | workspace、Bob、必須ファイルなどの実行条件。 |
 | `preflight` | 実行前チェック。 |
 | `guardrails` | command 実行の許可・禁止・承認ルール。 |
-| `stepReview` | full 実行時の step 後レビュー、承認、retry、attempt 保存制御。 |
+| `stepExecution` | Bob UI の visible step 粒度と `singleStep` 順序制約。 |
+| `stepReview` | step 後レビュー、承認、retry、attempt 保存制御。 |
 | `artifacts` | step 結果から保存する成果物。 |
 | `completion` | 完了時の summary / artifacts / visualization。 |
 | `steps` | 実行 step の列。 |
@@ -194,6 +195,7 @@ Bob UI 実行系は、Bob task を持つ実行経路である。Bob step の表�
 | Bob UI 上の形 | Engine 実行 | 用途 |
 | --- | --- | --- |
 | Todo ごとの Bob step | `executionMode: "singleStep"` + `stepId` | UI 上で step を1つずつ進める。 |
+| engine `steps[]` ごとの Bob step | `executionMode: "singleStep"` + `stepId` | `stepExecution.mode: engineSteps` で、実行 step と Bob visible step を一致させる。 |
 | 単一 `runWorkflow` step | `executionMode: "full"` | Bob UI から workflow 全体を一括実行する。 |
 
 Bob UI 実行系では、次を Bob adapter が担う。
@@ -215,7 +217,7 @@ Standalone 実行系では、次を行う。
 - VS Code UI で不足 input を prompt する。
 - `FileRunStateStore` に `run.json` を保存する。
 - `agentCommand` または登録済み `AgentProvider` で agent step を実行する。
-- `resumeRun` / `retryCurrentStep` で保存済み run を再開する。
+- `runWorkflowStep` / `runNextStep` / `resumeRun` / `retryCurrentStep` で保存済み run を step 単位に操作する。
 - 既存 snapshot がある場合は `recoverResultText` の候補として参照できるが、新規 Bob task snapshot は作らない。
 
 ## 10. 実行状態と再開
@@ -232,7 +234,7 @@ Standalone 実行系では、次を行う。
 - error
 - created / updated timestamp
 
-`FileRunStateStore` は `run.json` を atomic write で保存する。`findRecoverableRun()` は `running` / `held` の run から、workflow ID、workflow definition hash、workflow file、安定化した inputs が一致する run を探す。
+`FileRunStateStore` は `run.json` を atomic write で保存する。`findRecoverableRun()` は `running` / `reviewing` / `held` の run から、workflow ID、workflow definition hash、workflow file、安定化した inputs が一致する run を探す。
 
 再開方式は次の通り。
 
@@ -241,7 +243,8 @@ Standalone 実行系では、次を行う。
 | recoverable run 再利用 | 同じ workflow 定義・同じ inputs で開始された場合、既存の `running` / `held` run を再利用する。 |
 | Resume | held step を完了扱いにし、次 step から再開する。 |
 | Retry | current step を pending に戻し、同じ step から再実行する。 |
-| singleStep 継続 | Todo step 実行後も run を `running` のまま残し、次の Bob step が同じ run を取得する。 |
+| Review gate | 成功 step を `reviewing` で停止し、accept で `completed` 化、retry で attempt を保存して再実行する。 |
+| singleStep 継続 | step 実行後も run を `running` または `reviewing` のまま残し、次の操作が同じ run を取得する。 |
 
 `StepRuntime.activeSteps` は、Bob UI の手動完了待ち Promise と Bob task 参照だけを保持する。これは extension host のメモリ上の補助状態であり、step state、inputs、outputs、run status の正本ではない。
 
@@ -296,6 +299,8 @@ Help / README / authoring guide / 設計書は、GUI Builder とワークフロ�
 | `registerResultSink(type, handler)` | `result.sinks[].type` で参照できる sink を追加する。 |
 | `listWorkflows()` | 読み込み済み workflow 定義を取得する。 |
 | `runWorkflow(workflowId, inputs)` | workflow をプログラムから standalone 実行する。 |
+| `runWorkflowStep(workflowId, stepId, inputs)` | workflow step を `singleStep` で実行する。 |
+| `runNextStep(runId)` | 保存済み run の次の pending step を1つ実行する。 |
 
 ## 14. セキュリティと安全設計
 

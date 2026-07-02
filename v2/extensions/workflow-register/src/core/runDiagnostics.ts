@@ -15,12 +15,14 @@ export function buildWorkflowRunDiagnosticReport(runs: WorkflowRunState[], optio
   const lines = runs.length === 0 ? ["- No workflow runs were found."] : runs.flatMap((run) => [...formatWorkflowRunDiagnostics(run, { snapshots: options.snapshotsByRunId?.[run.runId] ?? [] }), ""])
   if (lines[lines.length - 1] === "") lines.pop()
   const failed = runs.filter((run) => run.status === "failed").length
+  const paused = runs.filter((run) => run.status === "paused").length
   const reviewing = runs.filter((run) => run.status === "reviewing").length
   const held = runs.filter((run) => run.status === "held").length
   const attempts = runs.reduce((sum, run) => sum + run.steps.reduce((stepSum, step) => stepSum + (step.attempts?.length ?? 0), 0), 0)
+  const pausedPart = paused > 0 ? ` ${paused} paused;` : ""
   return {
     title: "Workflow Run Diagnostics",
-    summary: `${runs.length} run(s); ${failed} failed; ${reviewing} reviewing; ${held} held; ${attempts} archived attempt(s).`,
+    summary: `${runs.length} run(s); ${failed} failed;${pausedPart} ${reviewing} reviewing; ${held} held; ${attempts} archived attempt(s).`,
     lines
   }
 }
@@ -41,6 +43,7 @@ export function formatWorkflowRunDiagnostics(run: WorkflowRunState, options: { s
     if (hint) lines.push(`- suggested fix: ${hint}`)
   }
   if (run.state["workflow.definitionMismatch"]) lines.push(`- workflow definition mismatch: ${run.state["workflow.definitionMismatch"]}`)
+  if (run.state["workflow.pause"]) lines.push("", "Pause:", ...formatJsonState(run.state["workflow.pause"]))
   const problemStep = currentProblemStep(run)
   if (problemStep) {
     lines.push("", "Current attention step:", `- id: ${problemStep.id}`, `- title: ${problemStep.title}`, `- type: ${problemStep.type}`, `- status: ${problemStep.status}`, `- current attempt: ${problemStep.attempt ?? 1}`, `- archived attempts: ${problemStep.attempts?.length ?? 0}`)
@@ -85,6 +88,15 @@ export function workflowRunFailureHint(error: string): string | undefined {
 function currentProblemStep(run: WorkflowRunState): RunStepState | undefined {
   return run.steps.find((step) => step.id === run.currentStep && (step.status === "failed" || step.status === "held" || step.status === "reviewing"))
     ?? run.steps.find((step) => step.status === "failed" || step.status === "held" || step.status === "reviewing")
+}
+
+function formatJsonState(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>
+    return Object.entries(parsed).map(([key, entry]) => `- ${key}: ${String(entry)}`)
+  } catch {
+    return [`- ${value}`]
+  }
 }
 
 function appendAttemptSummaries(lines: string[], step: RunStepState): void {

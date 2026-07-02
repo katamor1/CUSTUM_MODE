@@ -42,6 +42,7 @@ export function adaptCoreWorkflowForBob(core: CoreWorkflowDefinition, file: vsco
     todoAsSteps: core.todoAsSteps,
     stepCompletion: core.stepCompletion,
     stepMessage: core.stepMessage,
+    stepExecution: core.stepExecution,
     stepsById: Object.fromEntries(
       core.engineSteps.map((step) => [step.id, workflowStepDefinitionFromEngineStep(step)])
     ),

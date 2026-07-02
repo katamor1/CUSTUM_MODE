@@ -50,18 +50,7 @@ export async function acceptAndRunNextStep(options: StepReviewCommandOptions, ru
     await vscode.window.showInformationMessage(message)
     return accepted
   }
-  return vscode.commands.executeCommand("workflowRegister.resumeRun", accepted.runId)
-}
-
-export async function runNextStep(_options: StepReviewCommandOptions, runId?: string): Promise<unknown> {
-  const selection = runId ? await findRunSelection(runId) : await pickRunSelection("Run next workflow step", (run) => run.status === "running" || run.status === "held" || run.status === "failed")
-  if (!selection) return runId ? `Workflow run not found: ${runId}` : "No workflow run selected."
-  if (selection.run.status === "reviewing") {
-    const message = "Current step is waiting for review. Accept or retry it before running the next step."
-    await vscode.window.showWarningMessage(message)
-    return message
-  }
-  return vscode.commands.executeCommand("workflowRegister.resumeRun", selection.runId)
+  return vscode.commands.executeCommand("workflowRegister.runNextStep", accepted.runId)
 }
 
 export async function inspectCurrentStep(options: StepReviewCommandOptions, runId?: string): Promise<void> {

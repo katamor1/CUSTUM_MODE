@@ -18,12 +18,14 @@
   ],
   "activationEvents": [
     "onStartupFinished",
+    "onView:workflowRegister.runs",
     "onCommand:workflowRegister.reload",
     "onCommand:workflowRegister.inspect",
     "onCommand:workflowRegister.completeCurrentStep",
     "onCommand:workflowRegister.completeStep",
     "onCommand:workflowRegister.inspectActiveSteps",
     "onCommand:workflowRegister.runWorkflow",
+    "onCommand:workflowRegister.runWorkflowStep",
     "onCommand:workflowRegister.inspectRuns",
     "onCommand:workflowRegister.resumeRun",
     "onCommand:workflowRegister.retryCurrentStep",
@@ -31,6 +33,12 @@
     "onCommand:workflowRegister.runNextStep",
     "onCommand:workflowRegister.acceptAndRunNextStep",
     "onCommand:workflowRegister.inspectCurrentStep",
+    "onCommand:workflowRegister.pauseCurrentRun",
+    "onCommand:workflowRegister.pauseAfterCurrentStep",
+    "onCommand:workflowRegister.pauseBeforeNextAiCall",
+    "onCommand:workflowRegister.resumePausedRun",
+    "onCommand:workflowRegister.inspectRunControl",
+    "onCommand:workflowRegister.refreshRunsView",
     "onCommand:workflowRegister.openCurrentStepInBuilder",
     "onCommand:workflowRegister.inspectRunDiagnostics",
     "onCommand:workflowRegister.designWorkflowWithAi",
@@ -51,6 +59,7 @@
       { "command": "workflowRegister.completeStep", "title": "現在のワークフローステップを完了", "category": "ワークフローステップ" },
       { "command": "workflowRegister.inspectActiveSteps", "title": "Bob ワークフロー: 実行中ステップを確認", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.runWorkflow", "title": "Bob ワークフロー: 実行", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.runWorkflowStep", "title": "Bob ワークフロー: ステップを実行", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.inspectRuns", "title": "Bob ワークフロー: 実行履歴を確認", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.resumeRun", "title": "Bob ワークフロー: 実行を再開", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.retryCurrentStep", "title": "Bob ワークフロー: 現在のステップを再試行", "category": "Bob ワークフロー" },
@@ -58,6 +67,12 @@
       { "command": "workflowRegister.runNextStep", "title": "Bob ワークフロー: 次のステップを実行", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.acceptAndRunNextStep", "title": "Bob ワークフロー: 承認して次のステップを実行", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.inspectCurrentStep", "title": "Bob ワークフロー: 現在のステップ状態を確認", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.pauseCurrentRun", "title": "Bob ワークフロー: 実行中 run を中断", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.pauseAfterCurrentStep", "title": "Bob ワークフロー: 現在ステップ後に中断", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.pauseBeforeNextAiCall", "title": "Bob ワークフロー: 次のAI呼び出し前に中断", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.resumePausedRun", "title": "Bob ワークフロー: 中断 run を再開", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.inspectRunControl", "title": "Bob ワークフロー: 中断・再開状態を確認", "category": "Bob ワークフロー" },
+      { "command": "workflowRegister.refreshRunsView", "title": "Bob ワークフロー: 実行一覧を更新", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.openCurrentStepInBuilder", "title": "Bob ワークフロー: 現在のステップをGUIで編集", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.inspectRunDiagnostics", "title": "Bob ワークフロー: 診断を確認", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.designWorkflowWithAi", "title": "Bob ワークフロー: AI で新規設計", "category": "Bob ワークフロー" },
@@ -69,6 +84,14 @@
       { "command": "workflowRegister.openWorkflowBuilder", "title": "Bob ワークフロー: GUI で作成", "category": "Bob ワークフロー" },
       { "command": "workflowRegister.editWorkflowInBuilder", "title": "Bob ワークフロー: GUI で編集", "category": "Bob ワークフロー" }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "workflowRegister.runs",
+          "name": "Bob Workflow Runs"
+        }
+      ]
+    },
     "configuration": {
       "title": "Bob ワークフロー登録",
       "properties": {
@@ -107,7 +130,7 @@
           "type": "number",
           "default": 50,
           "minimum": 1,
-          "description": "1 run に保持する task snapshot 数。latest.json はこの数に含めません。"
+          "description": "1 run に保持する snapshot 数。latest.json はこの数に含めません。"
         },
         "workflowRegister.taskSnapshots.includeMessages": {
           "type": "boolean",
@@ -129,6 +152,7 @@
         { "command": "workflowRegister.completeStep" },
         { "command": "workflowRegister.inspectActiveSteps" },
         { "command": "workflowRegister.runWorkflow" },
+        { "command": "workflowRegister.runWorkflowStep" },
         { "command": "workflowRegister.inspectRuns" },
         { "command": "workflowRegister.resumeRun" },
         { "command": "workflowRegister.retryCurrentStep" },
@@ -136,6 +160,12 @@
         { "command": "workflowRegister.runNextStep" },
         { "command": "workflowRegister.acceptAndRunNextStep" },
         { "command": "workflowRegister.inspectCurrentStep" },
+        { "command": "workflowRegister.pauseCurrentRun" },
+        { "command": "workflowRegister.pauseAfterCurrentStep" },
+        { "command": "workflowRegister.pauseBeforeNextAiCall" },
+        { "command": "workflowRegister.resumePausedRun" },
+        { "command": "workflowRegister.inspectRunControl" },
+        { "command": "workflowRegister.refreshRunsView" },
         { "command": "workflowRegister.openCurrentStepInBuilder" },
         { "command": "workflowRegister.inspectRunDiagnostics" },
         { "command": "workflowRegister.designWorkflowWithAi" },
@@ -146,6 +176,30 @@
         { "command": "workflowRegister.createWorkflowFromTemplate" },
         { "command": "workflowRegister.openWorkflowBuilder" },
         { "command": "workflowRegister.editWorkflowInBuilder" }
+      ],
+      "view/title": [
+        {
+          "command": "workflowRegister.refreshRunsView",
+          "when": "view == workflowRegister.runs",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "workflowRegister.inspectRunControl",
+          "when": "view == workflowRegister.runs",
+          "group": "inline"
+        },
+        {
+          "command": "workflowRegister.pauseAfterCurrentStep",
+          "when": "view == workflowRegister.runs && viewItem =~ /workflowRun\\.(running|reviewing|held)/",
+          "group": "inline"
+        },
+        {
+          "command": "workflowRegister.resumePausedRun",
+          "when": "view == workflowRegister.runs && viewItem == workflowRun.paused",
+          "group": "inline"
+        }
       ]
     }
   },

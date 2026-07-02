@@ -106,11 +106,12 @@ extensions/workflow-register/
 | `workflowRegister.reload` | `.bob/workflows/*/WORKFLOW.md` を再読み込みする。 |
 | `workflowRegister.inspect` | 登録状態と diagnostics を Markdown で表示する。 |
 | `workflowRegister.runWorkflow` | standalone engine で workflow を実行する。 |
+| `workflowRegister.runWorkflowStep` | workflow と step を選択し、`singleStep` で1 step だけ実行する。 |
 | `workflowRegister.inspectRuns` | 保存済み run state を一覧表示する。 |
 | `workflowRegister.resumeRun` | held / running run を再開する。 |
 | `workflowRegister.retryCurrentStep` | current step を再試行する。 |
 | `workflowRegister.acceptCurrentStep` | step review 中の current step を承認する。 |
-| `workflowRegister.runNextStep` | step review 中の次 step を実行する。 |
+| `workflowRegister.runNextStep` | 保存済み run の次の pending step を `singleStep` で1つ実行する。 |
 | `workflowRegister.acceptAndRunNextStep` | current step を承認して次 step を実行する。 |
 | `workflowRegister.inspectCurrentStep` | current step の状態を表示する。 |
 | `workflowRegister.openCurrentStepInBuilder` | current step の workflow 定義を GUI Builder で開く。 |
@@ -152,10 +153,12 @@ export interface WorkflowRegisterApi {
   registerResultSink: (type: string, handler: Parameters<ResultSinkRegistry["register"]>[1]) => void
   listWorkflows: () => CoreWorkflowDefinition[]
   runWorkflow: (workflowId?: string, inputs?: Record<string, unknown>) => Promise<unknown>
+  runWorkflowStep: (workflowId?: string, stepId?: string, inputs?: Record<string, unknown>) => Promise<unknown>
+  runNextStep: (runId?: string) => Promise<unknown>
 }
 ```
 
-公開 API の `runWorkflow` は standalone 実行である。Bob task は作成されない。
+公開 API の `runWorkflow` / `runWorkflowStep` / `runNextStep` は standalone 実行である。Bob task は作成されない。
 
 ## 5. Workflow 定義探索設計
 
@@ -220,6 +223,7 @@ v1 では `workflowV1Schema` を AJV で検証し、`CoreWorkflowDefinition` へ
 - `name` は英数字で始まり、英数字、`.`、`_`、`-` のみを許可する。
 - `stepCompletion` は `auto` または `manual`。
 - `stepMessage` は `full` / `current` / `silent` / `step`。
+- `stepExecution.mode` は `full` / `todo` / `engineSteps`。
 - `stepReview.pauseAfter` は `everyStep` / `agentAndCommand` / `none`。
 - input `type` は `string` / `number` / `boolean` / `select`。
 - input は `prompt` boolean を持てる。
@@ -253,7 +257,8 @@ v1 では `workflowV1Schema` を AJV で検証し、`CoreWorkflowDefinition` へ
 
 | 条件 | Bob step |
 | --- | --- |
-| `todoEnabled && todoAsSteps && todos.length > 0` | Todo ごとの Bob step。各 step は `runner.runTodoStep(todo, index, task)` を呼ぶ。 |
+| `stepExecution.showInBob !== false && stepExecution.mode === "engineSteps"` | engine `steps[]` ごとの Bob step。各 step は `runner.runEngineStep(step.id, index, task)` を呼ぶ。 |
+| `stepExecution.showInBob !== false && stepExecution.mode === "todo" && todoEnabled && todoAsSteps && todos.length > 0` | Todo ごとの Bob step。各 step は `runner.runTodoStep(todo, index, task)` を呼ぶ。 |
 | 上記以外 | 単一 `runWorkflow` step。`runner.runSingleWorkflowStep(task)` を呼ぶ。 |
 
 Bob に登録する object は、`getId()`、`getLabel()`、`getMenuLabel()`、`getDescription()`、`getMode()`、`isEnabled()`、`getSteps()`、`getApprovalConfig()` を提供する。
@@ -290,10 +295,11 @@ Bob UI 実行系だけが扱うものは次の通り。
 
 | Bob entry | Engine request | 戻り値の扱い |
 | --- | --- | --- |
-| `runSingleWorkflowStep` | `{ executionMode: "full" }` | run が `completed` または `running` なら Bob step 成功。 |
-| `runTodoStep` | `{ executionMode: "singleStep", stepId: todo.id }` | 1 step 実行後に run が `running` なら Bob step 成功。 |
+| `runSingleWorkflowStep` | `{ executionMode: "full" }` | run が `completed` / `running` / `reviewing` なら Bob step 成功。 |
+| `runTodoStep` | `{ executionMode: "singleStep", stepId: todo.id, allowOutOfOrder }` | 1 step 実行後に run が `running` / `reviewing` なら Bob step 成功。 |
+| `runEngineStep` | `{ executionMode: "singleStep", stepId, allowOutOfOrder }` | `steps[]` と Bob visible step を一致させる。 |
 
-`singleStep` では指定 step だけを実行する。後続 step が残る場合、run は `running` のまま保存され、次の Bob step が同じ inputs と workflow hash で recoverable run を取得して継続する。
+`singleStep` では指定 step だけを実行する。後続 step が残る場合、run は `running` または `reviewing` のまま保存され、次の Bob step / command が同じ inputs と workflow hash で recoverable run を取得して継続する。`allowOutOfOrder` が false の場合、前 step が `completed` でない後続 step は failed になる。
 
 ### 9.4 Hook 処理
 
@@ -313,7 +319,7 @@ Bob UI 実行系だけが扱うものは次の通り。
 
 ## 10. Standalone 実行系詳細設計
 
-Standalone 実行系は `WorkflowRegisterService.runWorkflow()`、公開 API の `runWorkflow()`、`resumeRun()`、`retryCurrentStep()` から `WorkflowEngine` を直接呼び出す経路である。
+Standalone 実行系は `WorkflowRegisterService.runWorkflow()` / `runWorkflowStep()` / `runNextStep()`、公開 API の `runWorkflow()` / `runWorkflowStep()` / `runNextStep()`、`resumeRun()`、`retryCurrentStep()` から `WorkflowEngine` を直接呼び出す経路である。
 
 Standalone 実行系では Bob task がないため、次を行わない。
 
@@ -330,7 +336,7 @@ Standalone 実行系では Bob task がないため、次を行わない。
 - `ResultSinkRegistry` による result / artifact 出力。
 - preflight。
 - recoverable run 再利用。
-- `resumeRun` / `retryCurrentStep`。
+- `runWorkflowStep` / `runNextStep` / `resumeRun` / `retryCurrentStep`。
 
 Standalone 実行系では、agent step は登録済み `AgentProvider` または `workflowRegister.agentCommand` に委譲する。既存 task snapshot がある run を retry する場合は、snapshot の `lastAssistantText` を復帰候補として参照できる。
 
@@ -354,7 +360,7 @@ Standalone 実行系では、agent step は登録済み `AgentProvider` また�
 
 `runWorkflow(workflow, inputs, options)` は、recoverable run の検索、run 作成、input 検証、preflight、開始 step 決定、step 実行を順に行う。
 
-`stepReview` が有効な場合は、full 実行中に対象 step 後で `reviewing` 状態へ移行し、人間が承認または retry できる。
+`stepReview` が有効な場合は、full / singleStep の対象 step 後で `reviewing` 状態へ移行し、人間が承認または retry できる。`retryCurrentStep` は reviewing attempt を `reviewDecision: "rejected"` として `steps[].attempts` に保存してから再実行する。
 
 ## 12. Run State 詳細設計
 

@@ -95,7 +95,8 @@ steps:
 | `requires` | ワークスペース、Bob 最小バージョン、必須ファイルなどの実行条件。 |
 | `preflight` | 実行前チェック。 |
 | `guardrails` | 許可コマンド、禁止コマンド、承認メッセージ。 |
-| `stepReview` | full 実行時に各 step 後のレビュー停止、承認、再試行、attempt 保存を制御する。 |
+| `stepExecution` | Bob UI で full / Todo / engine `steps[]` のどれを visible step として表示するか、singleStep の順序制約を制御する。 |
+| `stepReview` | 各 step 後のレビュー停止、承認、再試行、attempt 保存を制御する。 |
 | `artifacts` | 生成成果物の宣言。 |
 | `completion` | 完了時の要約、成果物表示、結果検証。 |
 | `steps` | 実行ステップ本体。新規ワークフローではこの形式を推奨する。 |
@@ -185,9 +186,26 @@ steps:
 
 `file` 出力先は、ワークスペース外への書き込みを拒否します。
 
+## stepExecution
+
+`stepExecution` は Bob UI に表示する step 粒度と singleStep の順序制約を制御します。
+
+```yaml
+stepExecution:
+  mode: engineSteps
+  allowOutOfOrder: false
+  showInBob: true
+```
+
+| フィールド | 説明 |
+| --- | --- |
+| `mode` | `full` は単一 Bob step、`todo` は Todo ごとの Bob step、`engineSteps` は `steps[]` ごとの Bob step を表示する。 |
+| `allowOutOfOrder` | `false` の場合、前 step が `completed` になるまで後続 step の singleStep 実行を拒否する。既定値は `false`。 |
+| `showInBob` | `false` の場合、Bob UI では単一 Bob step 表示に戻す。既定値は `true`。 |
+
 ## stepReview
 
-`stepReview` を使うと、full 実行中に step 結果を人間が確認してから次へ進められます。
+`stepReview` を使うと、step 結果を人間が確認してから次へ進められます。成功した step は `completed` ではなく `reviewing` で停止し、`Bob ワークフロー: 現在のステップ結果を承認` 後に `completed` になります。
 
 ```yaml
 stepReview:
@@ -236,11 +254,12 @@ stepReview:
 | `Bob ワークフロー: ファイルを再読み込み` | ワークフローファイルを再読み込みして Bob に登録する。 |
 | `Bob ワークフロー: 登録状態を確認` | 登録状況と診断を Markdown で確認する。 |
 | `Bob ワークフロー: 実行` | ワークフローを選択して実行する。 |
+| `Bob ワークフロー: ステップを実行` | ワークフローと step を選択して `singleStep` 実行する。 |
 | `Bob ワークフロー: 実行履歴を確認` | 実行状態を確認する。 |
 | `Bob ワークフロー: 実行を再開` | 中断または保持された実行を再開する。 |
 | `Bob ワークフロー: 現在のステップを再試行` | 現在のステップを再試行する。 |
 | `Bob ワークフロー: 現在のステップ結果を承認` | step review 中の現在ステップを承認する。 |
-| `Bob ワークフロー: 次のステップを実行` | step review 中に次 step を実行する。 |
+| `Bob ワークフロー: 次のステップを実行` | `reviewing` でない run の次の pending step を1つだけ実行する。 |
 | `Bob ワークフロー: 承認して次のステップを実行` | current step を承認して次 step を実行する。 |
 | `Bob ワークフロー: 現在のステップ状態を確認` | current step の状態を表示する。 |
 | `Bob ワークフロー: 現在のステップをGUIで編集` | current step の定義を GUI Builder で開く。 |

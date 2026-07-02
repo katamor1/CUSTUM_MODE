@@ -7,11 +7,18 @@ import { explainWorkflowDiagnostics } from "./commands/explainWorkflowDiagnostic
 import { improveWorkflowWithAi } from "./commands/improveWorkflowWithAi"
 import { inspectRunDiagnostics } from "./commands/inspectRunDiagnostics"
 import {
+  inspectRunControl,
+  pauseAfterCurrentStep,
+  pauseBeforeNextAiCall,
+  pauseCurrentRun,
+  resumePausedRun
+} from "./commands/runControl"
+import { WorkflowRunControlView } from "./commands/runControlView"
+import {
   acceptAndRunNextStep,
   acceptCurrentStep,
   inspectCurrentStep,
-  openCurrentStepInBuilder,
-  runNextStep
+  openCurrentStepInBuilder
 } from "./commands/stepReview"
 import {
   isWorkflowDocument,
@@ -29,6 +36,8 @@ export { deactivate }
 export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi {
   const api = activateCore(context)
   const diagnostics = new WorkflowDiagnosticsReporter()
+  const runControlView = new WorkflowRunControlView()
+  runControlView.start()
   const config = () => vscode.workspace.getConfiguration("workflowRegister")
   const sourceId = () => config().get<string>("sourceId", "workflow-register")
   const aiProvider = () => createConfiguredWorkflowAiProvider({
@@ -37,8 +46,12 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
   })
   const stepReviewOptions = { showMarkdownReport }
   const stepReviewBuilderOptions = { showMarkdownReport, sourceId: sourceId(), extensionUri: context.extensionUri }
+  const runControlOptions = { showMarkdownReport }
   context.subscriptions.push(
     diagnostics,
+    runControlView,
+    vscode.window.registerTreeDataProvider("workflowRegister.runs", runControlView),
+    vscode.commands.registerCommand("workflowRegister.refreshRunsView", () => runControlView.refresh()),
     vscode.commands.registerCommand(
       "workflowRegister.validateCurrentWorkflow",
       () => validateCurrentWorkflow({ sourceId: sourceId(), showMarkdownReport, diagnostics })
@@ -61,9 +74,13 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     ),
     vscode.commands.registerCommand("workflowRegister.inspectRunDiagnostics", () => inspectRunDiagnostics({ showMarkdownReport })),
     vscode.commands.registerCommand("workflowRegister.acceptCurrentStep", (runId?: string) => acceptCurrentStep(stepReviewOptions, runId)),
-    vscode.commands.registerCommand("workflowRegister.runNextStep", (runId?: string) => runNextStep(stepReviewOptions, runId)),
     vscode.commands.registerCommand("workflowRegister.acceptAndRunNextStep", (runId?: string) => acceptAndRunNextStep(stepReviewOptions, runId)),
     vscode.commands.registerCommand("workflowRegister.inspectCurrentStep", (runId?: string) => inspectCurrentStep(stepReviewOptions, runId)),
+    vscode.commands.registerCommand("workflowRegister.pauseCurrentRun", (runId?: string) => pauseCurrentRun(runControlOptions, runId)),
+    vscode.commands.registerCommand("workflowRegister.pauseAfterCurrentStep", (runId?: string) => pauseAfterCurrentStep(runControlOptions, runId)),
+    vscode.commands.registerCommand("workflowRegister.pauseBeforeNextAiCall", (runId?: string) => pauseBeforeNextAiCall(runControlOptions, runId)),
+    vscode.commands.registerCommand("workflowRegister.resumePausedRun", (runId?: string) => resumePausedRun(runControlOptions, runId)),
+    vscode.commands.registerCommand("workflowRegister.inspectRunControl", (runId?: string) => inspectRunControl(runControlOptions, runId)),
     vscode.commands.registerCommand(
       "workflowRegister.openCurrentStepInBuilder",
       (runId?: string) => openCurrentStepInBuilder(stepReviewBuilderOptions, runId)

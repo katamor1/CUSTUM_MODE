@@ -10,6 +10,7 @@ import type {
 import {
   buildCommandResultMessage,
   buildStepMessage,
+  buildWorkflowControlBlock,
   buildWorkflowStartMessage,
   shouldIncludeCommandResult
 } from "./bobWorkflowMessages"
@@ -66,12 +67,24 @@ export class BobWorkflowEngineRunner {
   }
 
   async runTodoStep(todo: WorkflowTodoItem, index: number, task: BobWorkflowTask): Promise<boolean> {
-    return this.runEngine(task, { executionMode: "singleStep", stepId: todo.id })
+    return this.runEngine(task, {
+      executionMode: "singleStep",
+      stepId: todo.id,
+      allowOutOfOrder: this.options.definition.stepExecution.allowOutOfOrder
+    })
+  }
+
+  async runEngineStep(stepId: string, index: number, task: BobWorkflowTask): Promise<boolean> {
+    return this.runEngine(task, {
+      executionMode: "singleStep",
+      stepId,
+      allowOutOfOrder: this.options.definition.stepExecution.allowOutOfOrder
+    })
   }
 
   private async runEngine(
     task: BobWorkflowTask,
-    request: { executionMode: "full" | "singleStep"; stepId?: string }
+    request: { executionMode: "full" | "singleStep"; stepId?: string; allowOutOfOrder?: boolean }
   ): Promise<boolean> {
     const workspaceRoot = this.options.definition.workflowRoot
     if (!workspaceRoot) {
@@ -128,12 +141,13 @@ export class BobWorkflowEngineRunner {
     try {
       const run = await engine.runWorkflow(this.options.coreWorkflow, inputs, {
         executionMode: request.executionMode,
-        stepId: request.stepId
+        stepId: request.stepId,
+        allowOutOfOrder: request.allowOutOfOrder
       })
       if (run.status === "failed") {
         await vscode.window.showErrorMessage(`Bob workflow run failed: ${run.error ?? run.runId}`)
       }
-      return run.status === "completed" || run.status === "running"
+      return run.status === "completed" || run.status === "running" || run.status === "paused" || run.status === "reviewing"
     } catch (error) {
       await vscode.window.showErrorMessage(
         `Bob workflow execution failed: ${error instanceof Error ? error.message : String(error)}`
@@ -211,6 +225,15 @@ export class BobWorkflowEngineRunner {
       }))
       if (payload) await snapshotStore.saveSnapshot(payload)
     }
+    const sendControlBlock = async (run: WorkflowRunState, step?: EngineStep, includeResume = false) => {
+      await task.sendMessage?.(buildWorkflowControlBlock({
+        runId: run.runId,
+        stepId: step?.id,
+        status: run.status,
+        currentStep: run.currentStep,
+        includeResume
+      }), "user")
+    }
     return {
       onWorkflowStart: async ({ workflow, run }) => snapshot("workflow-start", { workflow, run }),
       onStepStart: async ({ workflow, run, step }) => {
@@ -237,6 +260,7 @@ export class BobWorkflowEngineRunner {
             stateEntries
           )
         if (message) await task.sendMessage?.(message, "user")
+        await sendControlBlock(run, step)
         await snapshot("step-start", { workflow, run, step })
       },
       onCommandResult: async ({ run, step, commandValue }) => {
@@ -273,6 +297,21 @@ export class BobWorkflowEngineRunner {
       onStepCompleted: async ({ workflow, run, step }) => {
         if (step && !manuallyCompleted.has(stepKey(run.runId, step.id))) task.setStepComplete?.()
         await snapshot("completed", { workflow, run, step })
+      },
+      onStepReviewRequired: async ({ workflow, run, step }) => {
+        if (step) await sendControlBlock(run, step)
+        await snapshot("review-required", { workflow, run, step })
+      },
+      onRunPaused: async ({ workflow, run, step }) => {
+        await task.sendMessage?.([
+          "Workflow run paused.",
+          "",
+          `- runId: ${run.runId}`,
+          `- currentStep: ${run.currentStep ?? "none"}`,
+          "- pause mode: graceful; no in-flight AI response was force-cancelled."
+        ].join("\n"), "user")
+        await sendControlBlock(run, step, true)
+        await snapshot("paused", { workflow, run, step })
       },
       onWorkflowCompleted: async ({ workflow, run }) => snapshot("completed", { workflow, run })
     }

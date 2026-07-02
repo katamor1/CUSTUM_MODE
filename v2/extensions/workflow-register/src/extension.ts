@@ -40,6 +40,8 @@ export interface WorkflowRegisterApi {
   registerResultSink: (type: string, handler: Parameters<ResultSinkRegistry["register"]>[1]) => void
   listWorkflows: () => CoreWorkflowDefinition[]
   runWorkflow: (workflowId?: string, inputs?: Record<string, unknown>) => Promise<unknown>
+  runWorkflowStep: (workflowId?: string, stepId?: string, inputs?: Record<string, unknown>) => Promise<unknown>
+  runNextStep: (runId?: string) => Promise<unknown>
 }
 
 export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi {
@@ -55,6 +57,8 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
       "workflowRegister.runWorkflow",
       (workflowId?: string, inputs?: Record<string, unknown>) => service.runWorkflow(workflowId, inputs)
     ),
+    vscode.commands.registerCommand("workflowRegister.runWorkflowStep", (workflowId?: string, stepId?: string, inputs?: Record<string, unknown>) => service.runWorkflowStep(workflowId, stepId, inputs)),
+    vscode.commands.registerCommand("workflowRegister.runNextStep", (runId?: string) => service.runNextStep(runId)),
     vscode.commands.registerCommand("workflowRegister.inspectRuns", () => service.inspectRuns()),
     vscode.commands.registerCommand("workflowRegister.resumeRun", (runId?: string) => service.resumeRun(runId)),
     vscode.commands.registerCommand("workflowRegister.retryCurrentStep", (runId?: string) => service.retryCurrentStep(runId))
@@ -75,7 +79,9 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     registerAgentProvider: (provider) => service.registerAgentProvider(provider),
     registerResultSink: (type, handler) => service.registerResultSink(type, handler),
     listWorkflows: () => service.listCoreWorkflows(),
-    runWorkflow: (workflowId, inputs) => service.runWorkflow(workflowId, inputs)
+    runWorkflow: (workflowId, inputs) => service.runWorkflow(workflowId, inputs),
+    runWorkflowStep: (workflowId, stepId, inputs) => service.runWorkflowStep(workflowId, stepId, inputs),
+    runNextStep: (runId) => service.runNextStep(runId)
   }
 }
 
@@ -178,6 +184,82 @@ class WorkflowRegisterService implements vscode.Disposable {
     return run
   }
 
+  async runWorkflowStep(workflowId?: string, stepId?: string, inputs: Record<string, unknown> = {}): Promise<unknown> {
+    if (this.coreWorkflows.size === 0) await this.reload({ showReport: false })
+    const workflow = workflowId
+      ? this.coreWorkflows.get(workflowId)
+      : await this.pickCoreWorkflow()
+    if (!workflow) return "No workflow selected."
+    const step = stepId
+      ? workflow.engineSteps.find((candidate) => candidate.id === stepId)
+      : await this.pickWorkflowStep(workflow)
+    if (!step) return stepId ? `Workflow step not found: ${stepId}` : "No workflow step selected."
+    const root = workflow.workflowRoot ?? await this.pickWorkflowRoot("Select workflow workspace")
+    if (!root) {
+      const message = "No workspace folder is open."
+      await vscode.window.showErrorMessage(message)
+      return message
+    }
+    const resolvedInputs = await this.collectWorkflowInputs(workflow, inputs)
+    if (!resolvedInputs) return "Workflow input was cancelled."
+    const engine = this.runtimeFactory.createEngine(root)
+    const run = await engine.runWorkflow(workflow, resolvedInputs, {
+      executionMode: "singleStep",
+      stepId: step.id,
+      allowOutOfOrder: workflow.stepExecution.allowOutOfOrder
+    })
+    await vscode.window.showInformationMessage(`Workflow run ${run.status}: ${run.runId}`)
+    return run
+  }
+
+  async runNextStep(runId?: string): Promise<unknown> {
+    if (this.coreWorkflows.size === 0) await this.reload({ showReport: false })
+    const roots = await this.workflowRootCandidates()
+    if (roots.length === 0) {
+      const message = "No workspace folder is open."
+      await vscode.window.showErrorMessage(message)
+      return message
+    }
+    const selection = runId
+      ? await findRunSelection(runId, roots, (root) => this.runtimeFactory.createRunStore(root))
+      : await pickRunSelection(roots, (root) => this.runtimeFactory.createRunStore(root))
+    if (!selection) {
+      const message = runId ? `Workflow run not found: ${runId}` : "No workflow run selected."
+      if (runId) await vscode.window.showWarningMessage(message)
+      return message
+    }
+    const runStore = this.runtimeFactory.createRunStore(selection.root)
+    const run = selection.run ?? await runStore.loadRun(selection.runId)
+    if (!run) throw new Error(`Workflow run not found: ${selection.runId}`)
+    if (run.status === "reviewing") return this.warnStepGate("Current step is waiting for review. Accept or retry it before running the next step.")
+    if (run.status === "held") return this.warnStepGate("Current step is held. Complete the held step before running the next step.")
+    if (run.status === "failed") return this.warnStepGate("Current step failed. Retry the current step before running the next step.")
+    const workflow = this.coreWorkflows.get(run.workflowId)
+    if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
+    const next = run.steps.find((step) => step.status === "pending")
+    if (!next) {
+      if (run.status !== "completed" && run.steps.every((step) => step.status === "completed")) {
+        run.status = "completed"
+        run.currentStep = undefined
+        run.error = undefined
+        await runStore.saveRun(run)
+      }
+      const message = run.status === "completed"
+        ? `Workflow run completed: ${run.runId}`
+        : `No pending workflow step: ${run.runId}`
+      await vscode.window.showInformationMessage(message)
+      return run
+    }
+    const engine = this.runtimeFactory.createEngine(selection.root)
+    const result = await engine.runWorkflow(workflow, run.inputs, {
+      executionMode: "singleStep",
+      stepId: next.id,
+      allowOutOfOrder: workflow.stepExecution.allowOutOfOrder
+    })
+    await vscode.window.showInformationMessage(`Workflow run ${result.status}: ${result.runId}`)
+    return result
+  }
+
   async inspectRuns(): Promise<void> {
     const roots = await this.workflowRootCandidates()
     if (roots.length === 0) {
@@ -262,6 +344,23 @@ class WorkflowRegisterService implements vscode.Disposable {
       workflow
     })), { title: "Run Workflow" })
     return picked?.workflow
+  }
+
+  private async pickWorkflowStep(workflow: CoreWorkflowDefinition): Promise<CoreWorkflowDefinition["engineSteps"][number] | undefined> {
+    if (workflow.engineSteps.length === 0) return undefined
+    if (workflow.engineSteps.length === 1) return workflow.engineSteps[0]
+    const picked = await vscode.window.showQuickPick(workflow.engineSteps.map((step, index) => ({
+      label: step.title,
+      description: step.id,
+      detail: `${index + 1}. ${step.type}`,
+      step
+    })), { title: `Run Workflow Step: ${workflow.label}` })
+    return picked?.step
+  }
+
+  private async warnStepGate(message: string): Promise<string> {
+    await vscode.window.showWarningMessage(message)
+    return message
   }
 
   private async collectWorkflowInputs(workflow: CoreWorkflowDefinition, provided: Record<string, unknown>): Promise<Record<string, unknown> | undefined> {

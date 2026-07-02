@@ -10,6 +10,8 @@ export type TaskSnapshotReason =
   | "held"
   | "failed"
   | "review-required"
+  | "pause-requested"
+  | "paused"
   | "completed"
 
 export interface TaskSnapshotHandoff {
@@ -92,69 +94,109 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
     this.now = options.now ?? (() => new Date().toISOString())
     this.maxBytes = options.maxBytes ?? 262_144
     this.maxPerRun = options.maxPerRun ?? 50
-    this.includeMessages = options.includeMessages !== false
-    this.pruneOnSave = options.pruneOnSave !== false
+    this.includeMessages = options.includeMessages ?? true
+    this.pruneOnSave = options.pruneOnSave ?? true
   }
 
   async saveSnapshot(snapshot: TaskSnapshotPayload): Promise<{ path: string }> {
-    const prepared = prepareSnapshot({ ...snapshot, createdAt: this.now() }, {
-      includeMessages: this.includeMessages,
-      maxBytes: this.maxBytes
-    })
-    const root = this.snapshotRoot(snapshot.runId)
-    await fs.mkdir(root, { recursive: true })
-    const file = path.join(root, snapshotFileName(prepared))
-    await atomicWriteFile(file, `${JSON.stringify(prepared, null, 2)}\n`)
-    await atomicWriteFile(path.join(root, "latest.json"), `${JSON.stringify(prepared, null, 2)}\n`)
-    if (this.pruneOnSave) await this.pruneSnapshots(snapshot.runId)
+    const pruned = this.prepareSnapshot(snapshot)
+    const dir = this.snapshotDir(snapshot.runId)
+    await fs.mkdir(dir, { recursive: true })
+    const file = path.join(dir, `${safeTimestamp(pruned.createdAt)}-${pruned.reason}.json`)
+    await atomicWriteFile(file, `${JSON.stringify(pruned, null, 2)}\n`)
+    await atomicWriteFile(path.join(dir, "latest.json"), `${JSON.stringify(pruned, null, 2)}\n`)
+    if (this.pruneOnSave) await this.pruneSnapshots(dir)
     return { path: file }
   }
 
   async loadLatest(runId: string): Promise<TaskSnapshotPayload | undefined> {
-    return readSnapshot(path.join(this.snapshotRoot(runId), "latest.json"))
+    try {
+      return JSON.parse(await fs.readFile(path.join(this.snapshotDir(runId), "latest.json"), "utf8")) as TaskSnapshotPayload
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+      throw error
+    }
   }
 
   async listSnapshots(runId: string): Promise<TaskSnapshotSummary[]> {
-    const snapshots = await this.loadSnapshots(runId)
-    return snapshots.map(({ fileName, snapshot }) => summarizeSnapshot(fileName, snapshot))
-  }
-
-  async findLatestSnapshot(runId: string, predicate: (snapshot: TaskSnapshotPayload) => boolean): Promise<TaskSnapshotPayload | undefined> {
-    const snapshots = await this.loadSnapshots(runId)
-    for (let index = snapshots.length - 1; index >= 0; index -= 1) {
-      if (predicate(snapshots[index].snapshot)) return snapshots[index].snapshot
-    }
-    return undefined
-  }
-
-  private async loadSnapshots(runId: string): Promise<Array<{ fileName: string; snapshot: TaskSnapshotPayload }>> {
-    const root = this.snapshotRoot(runId)
+    const dir = this.snapshotDir(runId)
     let entries: string[]
     try {
-      entries = await fs.readdir(root)
+      entries = await fs.readdir(dir)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
       throw error
     }
-    const snapshots: Array<{ fileName: string; snapshot: TaskSnapshotPayload }> = []
-    for (const fileName of entries.filter((entry) => entry.endsWith(".json") && entry !== "latest.json")) {
-      const snapshot = await readSnapshot(path.join(root, fileName))
-      if (snapshot) snapshots.push({ fileName, snapshot })
+    const jsonEntries = entries.filter((entry) => entry.endsWith(".json") && entry !== "latest.json")
+    const snapshots = await Promise.all(jsonEntries.map(async (entry) => {
+      try {
+        const snapshot = JSON.parse(await fs.readFile(path.join(dir, entry), "utf8")) as TaskSnapshotPayload
+        return summarizeSnapshot(entry, snapshot)
+      } catch {
+        return undefined
+      }
+    }))
+    return snapshots
+      .filter((snapshot): snapshot is TaskSnapshotSummary => Boolean(snapshot))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  }
+
+  async findLatestSnapshot(runId: string, predicate: (snapshot: TaskSnapshotPayload) => boolean): Promise<TaskSnapshotPayload | undefined> {
+    const dir = this.snapshotDir(runId)
+    let entries: string[]
+    try {
+      entries = await fs.readdir(dir)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+      throw error
     }
-    return snapshots.sort((a, b) => a.snapshot.createdAt.localeCompare(b.snapshot.createdAt) || a.fileName.localeCompare(b.fileName))
+    const jsonEntries = entries.filter((entry) => entry.endsWith(".json") && entry !== "latest.json").sort().reverse()
+    for (const entry of jsonEntries) {
+      try {
+        const snapshot = JSON.parse(await fs.readFile(path.join(dir, entry), "utf8")) as TaskSnapshotPayload
+        if (predicate(snapshot)) return snapshot
+      } catch {
+        // Ignore unreadable snapshots.
+      }
+    }
+    return undefined
   }
 
-  private async pruneSnapshots(runId: string): Promise<void> {
+  private prepareSnapshot(snapshot: TaskSnapshotPayload): TaskSnapshotPayload {
+    let prepared: TaskSnapshotPayload = {
+      ...snapshot,
+      createdAt: this.now(),
+      messages: this.includeMessages ? snapshot.messages : undefined
+    }
+    while (Buffer.byteLength(JSON.stringify(prepared), "utf8") > this.maxBytes && prepared.messages && prepared.messages.length > 0) {
+      prepared = {
+        ...prepared,
+        messages: prepared.messages.slice(1),
+        omittedMessageCount: (prepared.omittedMessageCount ?? 0) + 1,
+        truncated: true
+      }
+    }
+    if (Buffer.byteLength(JSON.stringify(prepared), "utf8") > this.maxBytes && prepared.taskExport !== undefined) {
+      prepared = { ...prepared, taskExport: undefined, truncated: true }
+    }
+    if (Buffer.byteLength(JSON.stringify(prepared), "utf8") > this.maxBytes && prepared.lastAssistantText) {
+      prepared = { ...prepared, lastAssistantText: truncateToBytes(prepared.lastAssistantText, Math.max(1024, Math.floor(this.maxBytes / 4))), truncated: true }
+    }
+    return prepared
+  }
+
+  private async pruneSnapshots(dir: string): Promise<void> {
     if (this.maxPerRun <= 0) return
-    const snapshots = await this.loadSnapshots(runId)
-    const excess = snapshots.length - this.maxPerRun
+    const entries = (await fs.readdir(dir))
+      .filter((entry) => entry.endsWith(".json") && entry !== "latest.json")
+      .sort()
+    const excess = entries.length - this.maxPerRun
     if (excess <= 0) return
-    const root = this.snapshotRoot(runId)
-    await Promise.all(snapshots.slice(0, excess).map((entry) => fs.rm(path.join(root, entry.fileName), { force: true })))
+    await Promise.all(entries.slice(0, excess).map((entry) => fs.rm(path.join(dir, entry), { force: true })))
   }
 
-  private snapshotRoot(runId: string): string {
-    return path.join(this.workspaceRoot, ".bob", "workflows", "runs", safeSegment(runId, "runId"), "task-snapshots")
+  private snapshotDir(runId: string): string {
+    return path.join(this.workspaceRoot, ".bob", "workflows", "runs", sanitize(runId), "task-snapshots")
   }
 }
 
@@ -165,9 +207,8 @@ export function createBobTaskSnapshotProvider(task: {
 }): TaskSnapshotProvider {
   return {
     exportTask: (input) => {
-      const rawMessages = task.getMessages?.()
-      const messages = Array.isArray(rawMessages) ? rawMessages : []
-      const lastAssistantText = input.lastAssistantText ?? extractLastAssistantText(messages)
+      const messages = task.getMessages?.()
+      const lastAssistantText = input.lastAssistantText ?? extractLastAssistantText(messages ?? [])
       return {
         schemaVersion: "workflow-register/task-snapshot/v1",
         createdAt: new Date().toISOString(),
@@ -176,13 +217,13 @@ export function createBobTaskSnapshotProvider(task: {
         workflowId: input.workflow.id,
         logicalWorkflowId: input.workflow.logicalWorkflowId,
         workflowDefinitionHash: input.workflow.definitionHash,
-        stepId: input.step?.id ?? input.run.currentStep ?? "workflow",
+        stepId: input.step?.id ?? input.run.currentStep ?? "none",
         runStatus: input.run.status,
         runCurrentStep: input.run.currentStep,
-        taskMetadata: recordValue(task.getAllMetadata?.()),
+        taskMetadata: safeObject(task.getAllMetadata?.()),
         messages,
-        messageCount: messages.length,
-        taskExport: safeCall(() => task.toSerializable?.()),
+        messageCount: messages?.length,
+        taskExport: task.toSerializable?.(),
         lastAssistantText,
         handoff: input.handoff
       }
@@ -190,42 +231,18 @@ export function createBobTaskSnapshotProvider(task: {
   }
 }
 
-export function snapshotMatchesRun(snapshot: TaskSnapshotPayload, workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep): boolean {
+export function snapshotMatchesRun(
+  snapshot: TaskSnapshotPayload,
+  workflow: CoreWorkflowDefinition,
+  run: WorkflowRunState,
+  step?: EngineStep
+): boolean {
   if (snapshot.runId !== run.runId) return false
   if (snapshot.workflowId !== workflow.id) return false
-  if (snapshot.stepId !== step.id) return false
   if (snapshot.workflowDefinitionHash && workflow.definitionHash && snapshot.workflowDefinitionHash !== workflow.definitionHash) return false
+  if (step && snapshot.stepId !== step.id) return false
+  if (!step && run.currentStep && snapshot.stepId !== run.currentStep) return false
   return true
-}
-
-function prepareSnapshot(snapshot: TaskSnapshotPayload, options: { includeMessages: boolean; maxBytes: number }): TaskSnapshotPayload {
-  const prepared: TaskSnapshotPayload = {
-    ...snapshot,
-    messages: options.includeMessages ? [...(snapshot.messages ?? [])] : undefined,
-    messageCount: snapshot.messageCount ?? snapshot.messages?.length
-  }
-  if (!options.includeMessages && snapshot.messages?.length) {
-    prepared.omittedMessageCount = snapshot.messages.length
-    prepared.truncated = true
-  }
-  while (options.maxBytes > 0 && byteLength(prepared) > options.maxBytes && (prepared.messages?.length ?? 0) > 0) {
-    prepared.messages?.shift()
-    prepared.omittedMessageCount = (prepared.omittedMessageCount ?? 0) + 1
-    prepared.truncated = true
-  }
-  if (options.maxBytes > 0 && byteLength(prepared) > options.maxBytes && prepared.lastAssistantText) {
-    prepared.lastAssistantText = truncateUtf8(prepared.lastAssistantText, Math.max(128, Math.floor(options.maxBytes / 3)))
-    prepared.truncated = true
-  }
-  if (options.maxBytes > 0 && byteLength(prepared) > options.maxBytes && prepared.taskExport !== undefined) {
-    prepared.taskExport = undefined
-    prepared.truncated = true
-  }
-  if (options.maxBytes > 0 && byteLength(prepared) > options.maxBytes && prepared.taskMetadata !== undefined) {
-    prepared.taskMetadata = undefined
-    prepared.truncated = true
-  }
-  return prepared
 }
 
 function summarizeSnapshot(fileName: string, snapshot: TaskSnapshotPayload): TaskSnapshotSummary {
@@ -236,20 +253,29 @@ function summarizeSnapshot(fileName: string, snapshot: TaskSnapshotPayload): Tas
     workflowId: snapshot.workflowId,
     workflowDefinitionHash: snapshot.workflowDefinitionHash,
     stepId: snapshot.stepId,
-    hasLastAssistantText: Boolean(snapshot.lastAssistantText?.trim()),
+    hasLastAssistantText: Boolean(snapshot.lastAssistantText),
     handoffError: snapshot.handoff?.error,
     truncated: snapshot.truncated
   }
 }
 
-async function readSnapshot(file: string): Promise<TaskSnapshotPayload | undefined> {
-  try {
-    const parsed = JSON.parse(await fs.readFile(file, "utf8")) as TaskSnapshotPayload
-    return parsed?.schemaVersion === "workflow-register/task-snapshot/v1" ? parsed : undefined
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
-    return undefined
+function extractLastAssistantText(messages: unknown[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index]
+    if (!candidate || typeof candidate !== "object") continue
+    const record = candidate as Record<string, unknown>
+    const role = record.role ?? record.sender ?? record.type
+    if (role !== "assistant" && role !== "ai") continue
+    const text = record.text ?? record.content ?? record.message
+    if (typeof text === "string" && text.trim()) return text
   }
+  return undefined
+}
+
+function safeObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
 }
 
 async function atomicWriteFile(file: string, content: string): Promise<void> {
@@ -263,61 +289,19 @@ async function atomicWriteFile(file: string, content: string): Promise<void> {
   }
 }
 
-function snapshotFileName(snapshot: TaskSnapshotPayload): string {
-  const stamp = snapshot.createdAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z").replace(/[^\dTZ]/g, "")
-  const reason = safeSegment(snapshot.reason, "reason")
-  const step = safeSegment(snapshot.stepId, "step")
-  return `${stamp}-${reason}-${step}.json`
+function sanitize(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "run"
 }
 
-function extractLastAssistantText(messages: unknown[]): string | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = recordValue(messages[index])
-    const role = String(message.role ?? message.type ?? "").toLowerCase()
-    if (role && role !== "assistant" && role !== "ai") continue
-    const content = textFromMessage(message)
-    if (content.trim()) return content
-  }
-  return undefined
+function safeTimestamp(value: string): string {
+  return value.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z").replace(/[^\dTZ]/g, "") || Date.now().toString()
 }
 
-function textFromMessage(message: Record<string, unknown>): string {
-  const candidates = [message.text, message.content, message.message]
-  for (const candidate of candidates) {
-    const text = textValue(candidate)
-    if (text.trim()) return text
-  }
-  return ""
-}
-
-function textValue(value: unknown): string {
-  if (typeof value === "string") return value
-  if (Array.isArray(value)) return value.map(textValue).filter(Boolean).join("\n")
-  const record = recordValue(value)
-  if (typeof record.text === "string") return record.text
-  if (typeof record.content === "string") return record.content
-  return ""
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
-function safeCall<T>(run: () => T): T | undefined {
-  try { return run() } catch { return undefined }
-}
-
-function byteLength(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value), "utf8")
-}
-
-function truncateUtf8(value: string, maxBytes: number): string {
+function truncateToBytes(value: string, maxBytes: number): string {
   if (Buffer.byteLength(value, "utf8") <= maxBytes) return value
   let output = value
-  while (Buffer.byteLength(output, "utf8") > maxBytes && output.length > 0) output = output.slice(0, Math.max(0, output.length - 512))
+  while (Buffer.byteLength(output, "utf8") > maxBytes && output.length > 0) {
+    output = output.slice(0, Math.max(0, output.length - 512))
+  }
   return `${output}\n... [truncated to ${maxBytes} bytes]`
-}
-
-function safeSegment(value: string, fallback: string): string {
-  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || fallback
 }

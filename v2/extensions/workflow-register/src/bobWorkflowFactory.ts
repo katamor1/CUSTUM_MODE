@@ -9,6 +9,7 @@ import type {
 export interface BobWorkflowStepRunner {
   runSingleWorkflowStep: (task: BobWorkflowTask) => Promise<boolean>
   runTodoStep: (todo: WorkflowTodoItem, index: number, task: BobWorkflowTask) => Promise<boolean>
+  runEngineStep: (stepId: string, index: number, task: BobWorkflowTask) => Promise<boolean>
 }
 
 export function createBobWorkflow(
@@ -36,7 +37,14 @@ function buildWorkflowSteps(
   definition: WorkflowDefinition,
   runner: BobWorkflowStepRunner
 ): BobWorkflowStep[] {
-  if (definition.todoEnabled && definition.todoAsSteps && definition.todos.length > 0) {
+  if (definition.stepExecution.showInBob !== false && definition.stepExecution.mode === "engineSteps") {
+    return definition.core.engineSteps.map((step, index) => ({
+      id: step.id,
+      title: step.title,
+      execution: async (task) => runner.runEngineStep(step.id, index, task)
+    }))
+  }
+  if (definition.stepExecution.showInBob !== false && definition.stepExecution.mode === "todo" && definition.todoEnabled && definition.todoAsSteps && definition.todos.length > 0) {
     return definition.todos.map((todo, index) => ({
       id: todo.id,
       title: todo.text,

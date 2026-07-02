@@ -17,6 +17,8 @@ Current runtime behavior includes:
 - Result steps can write state or agent output to result sinks.
 - File result sinks refuse paths that escape the workspace.
 - Guardrails can deny or allow command providers at runtime.
+- `stepExecution.allowOutOfOrder: false` rejects later `singleStep` execution until previous steps are `completed`.
+- `stepReview.enabled: true` moves successful steps to `reviewing` until accepted or retried.
 
 ## Inspecting run failures
 
@@ -64,6 +66,18 @@ Workflow state is missing: analysisReport
 
 Fix: check that an earlier step uses `resultKey: analysisReport`, and that the producing step runs before the consuming step.
 
+### Out-of-order single step
+
+```text
+Step 'output-result' cannot run before previous step 'collect-context' is completed.
+```
+
+Fix: run and accept previous steps first, or explicitly set `stepExecution.allowOutOfOrder: true` for workflows that are safe to jump.
+
+### Review gate is waiting
+
+If `run.json` has `status: "reviewing"`, `workflowRegister.runNextStep` will not advance. Use `workflowRegister.acceptCurrentStep` to mark the current step completed, or `workflowRegister.retryCurrentStep` to archive and rerun the current attempt.
+
 ### Agent provider missing
 
 ```text
@@ -107,5 +121,5 @@ Unknown placeholders are left unchanged so the report can reveal the unresolved 
 2. Run the workflow.
 3. If it fails, inspect run diagnostics.
 4. Fix the first failed step.
-5. Retry the current step or rerun the workflow.
+5. If the run is `reviewing`, accept or retry the current step. If it is `failed`, retry the current step or rerun the workflow.
 6. Confirm that expected state keys and artifacts are created.

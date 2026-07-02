@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict")
 const { test } = require("node:test")
 
-const { createDefaultActionRegistry } = require("../out/core/actionRegistry")
+const { ActionRegistry, createDefaultActionRegistry } = require("../out/core/actionRegistry")
 
 test("default action registry exposes a VS Code command provider", async () => {
   const calls = []
@@ -29,4 +29,23 @@ test("default action registry rejects missing VS Code command ids", async () => 
 
   assert.equal(result.ok, false)
   assert.match(result.error, /requires the command id/)
+})
+
+test("action registry executes registered providers and rejects unknown providers", async () => {
+  const registry = new ActionRegistry()
+  registry.register({
+    id: "sample.collect",
+    execute: async ({ args, inputs }) => ({ revision: args.revision, target: inputs.target })
+  })
+
+  const ok = await registry.execute("sample.collect", {
+    args: { revision: "42" },
+    inputs: { target: "trunk" }
+  })
+  const missing = await registry.execute("sample.missing", { args: {}, inputs: {} })
+
+  assert.equal(ok.ok, true)
+  assert.deepEqual(ok.value, { revision: "42", target: "trunk" })
+  assert.equal(missing.ok, false)
+  assert.match(missing.error, /Unsupported action provider/)
 })
