@@ -133,6 +133,7 @@ function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: Ev
 }
 
 async function cleanManagedPackageOutputs(outDir: string): Promise<void> {
+  // 生成 package の鮮度を保つため、管理対象の既知ファイルだけを消し、ユーザーが置いた補助ファイルは残す。
   await Promise.all(MANAGED_PACKAGE_OUTPUTS.map((item) =>
     fs.rm(path.join(outDir, item), { recursive: true, force: true })
   ))

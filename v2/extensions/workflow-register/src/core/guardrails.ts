@@ -5,6 +5,7 @@ export interface WorkflowGuardrailsCarrier {
 }
 
 export function validateCommandGuardrails(workflow: WorkflowGuardrailsCarrier, providerId: string, args?: unknown): string | undefined {
+  // command step / result handoff / legacy Bob 経路で共有する最終境界なので、provider と VS Code command id の両方を見る。
   const guardrails = workflow.guardrails ?? {}
   if (guardrails.deniedCommands?.includes(providerId)) return `Command is denied by workflow guardrails: ${providerId}`
   if (guardrails.allowedCommands && guardrails.allowedCommands.length > 0 && !guardrails.allowedCommands.includes(providerId)) return `Command is not allowed by workflow guardrails: ${providerId}`

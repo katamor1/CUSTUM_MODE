@@ -31,6 +31,7 @@ export function resolveWorkspacePath(workspaceRoot: string, value: string): stri
 export function resolveWorkspacePathStrict(workspaceRoot: string, value: string, label = "path"): string {
   const root = path.resolve(workspaceRoot)
   const resolved = path.resolve(path.isAbsolute(value) ? value : path.join(root, value))
+  // 絶対パスも入力として許すが、最終的な解決先は workspaceRoot 配下に限定する。
   if (!isInsidePath(root, resolved)) throw new Error(`${label} escapes workspace: ${value}`)
   return resolved
 }

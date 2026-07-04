@@ -13,10 +13,12 @@ const WORKFLOW_PROVIDER_RETRY_DELAYS_MS = [1000, 3000, 10000]
 let workflowProvidersRegistered = false
 
 /**
- * Registers Bazaar review actions with workflow-register when that dependency is available.
+ * workflow-register が利用できる場合に Bazaar レビュー用 action provider を登録する。
  *
- * @param context VS Code extension context passed to GUI and review command handlers.
- * @returns Nothing.
+ * provider ID は WORKFLOW.md から参照される互換性契約であり、再試行しても同じ ID だけを登録する。
+ *
+ * @param context GUI と review command handler に渡す VS Code extension context。
+ * @returns なし。
  */
 export function registerWorkflowProvidersWithRetry(context: vscode.ExtensionContext): void {
   let retryIndex = 0
@@ -35,10 +37,12 @@ export function registerWorkflowProvidersWithRetry(context: vscode.ExtensionCont
 }
 
 /**
- * Registers Bazaar review actions with workflow-register when that dependency is available.
+ * workflow-register API へ Bazaar レビュー用 action provider を実際に登録する。
  *
- * @param context VS Code extension context passed to GUI and review command handlers.
- * @returns True when providers are already or newly registered; false when workflow-register is unavailable.
+ * workflow-register が未起動または未導入の場合は false を返し、呼び出し元の retry に任せる。
+ *
+ * @param context GUI と review command handler に渡す VS Code extension context。
+ * @returns provider が既存または新規に登録済みなら true、workflow-register が使えない場合は false。
  */
 async function registerWorkflowProviders(context: vscode.ExtensionContext): Promise<boolean> {
   if (workflowProvidersRegistered) return true

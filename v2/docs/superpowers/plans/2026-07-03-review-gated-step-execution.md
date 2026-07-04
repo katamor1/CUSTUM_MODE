@@ -743,7 +743,7 @@ Add activation event:
 Add command contribution near `runWorkflow`:
 
 ```json
-{ "command": "workflowRegister.runWorkflowStep", "title": "Bob ワークフロー: 指定ステップを実行", "category": "Bob ワークフロー" },
+{ "command": "workflowRegister.runWorkflowStep", "title": "指定ステップを実行", "category": "Bob Workflow" },
 ```
 
 Add command palette entry:

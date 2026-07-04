@@ -54,6 +54,7 @@ async function collectBazaarDiff(reviewInput: ReviewInput, options: { workspaceR
   const base = validateBazaarRevision(reviewInput.review.base)
   const head = validateBazaarRevision(reviewInput.review.head)
   const revisionRange = `${base}..${head}`
+  // Bazaar の alias は差分本文と副作用を変え得るため、収集系でも bzr --no-aliases を必ず先頭に置く。
   const unifiedDiff = await runCommandText(
     bzrPath,
     ["--no-aliases", "diff", "-r", revisionRange],
@@ -72,11 +73,12 @@ async function resolveGitRevision(revision: string, cwd: string, textEncoding = 
   if (!trimmed) throw new Error("Invalid Git revision: revision is empty")
 
   try {
+    // Git revision は rev-parse --verify --end-of-options で commit SHA に固定し、以降の diff へ曖昧指定を渡さない。
     const output = await runGitText(["rev-parse", "--verify", "--end-of-options", `${trimmed}^{commit}`], cwd, 1024 * 1024, textEncoding)
     const sha = output.trim().split(/\r?\n/).at(-1) ?? ""
     if (/^[0-9a-f]{40}$/i.test(sha)) return sha.toLowerCase()
   } catch {
-    // Fall through to the normalized validation error below.
+    // git の詳細 error はそのまま出さず、下の正規化済み validation error に揃える。
   }
 
   throw new Error(`Invalid Git revision: ${formatRevisionForError(revision)}`)

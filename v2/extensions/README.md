@@ -104,6 +104,14 @@ review-input.yaml
 
 コマンド名、設定キー、JSON / YAML のフィールド名、ファイル名、識別子は実装上の名称として原文を維持します。
 
+## Command Palette 表示名ポリシー
+
+VS Code の Command Palette では、コマンド表示名を `category: title` として扱います。IBM Bob 連携コマンドであることを入力途中でも見つけやすくしつつ、日本語ユーザーが操作内容を読めるよう、表示名は `Bob <English area>: <日本語の操作名>` に統一してください。
+
+- `category`（`contributes.commands[].category`）は ASCII 英語で `Bob` から始めます。例: `Bob Workflow`、`Bob Bazaar Review`、`Bob Code Consistency Review`。
+- `title`（`contributes.commands[].title`）にはコロンを含めず、日本語の操作名を書きます。`review-input.yaml`、`AI draft`、`MCP` などの実装上の名称は必要に応じて原文のまま残します。
+- README や実機手順で Command Palette 上の表示名を書くときは `category: title` の完成形を記載します。コロンの手前には日本語を入れません。
+
 ## ビルド方針
 
 各拡張機能は、原則として拡張機能ディレクトリごとにビルドします。

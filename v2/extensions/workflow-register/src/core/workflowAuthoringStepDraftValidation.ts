@@ -36,9 +36,10 @@ export interface StepDraftValidationInput {
 const STEP_TYPES = new Set(["agent", "command", "manual", "result"])
 
 /**
- * Validates a selected step before the Webview applies draft edits to the main
- * authoring model. This catches local step inconsistencies and the downstream
- * reference impact that would otherwise appear only at whole-workflow save time.
+ * Webview が draft edit を main authoring model へ反映する前に、選択中 step を検証する。
+ *
+ * step 単体の不整合と downstream reference への影響をここで捕捉し、
+ * whole-workflow save まで問題が見えない状態を避ける。
  */
 export function validateStepDraft(input: StepDraftValidationInput): StepDraftValidationResult {
   const diagnostics: StepDraftDiagnostic[] = []

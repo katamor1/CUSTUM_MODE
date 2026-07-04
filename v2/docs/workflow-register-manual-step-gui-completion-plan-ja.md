@@ -182,7 +182,7 @@ Manual Step Panel
 ```text
 この run は held ですが、現在の Bob task への接続がありません。
 VS Code の再起動などで active step handle が失われた可能性があります。
-`Bob ワークフロー: 実行を再開` または `Bob ワークフロー: 次のステップを実行` を使って復帰してください。
+`Bob Workflow: 実行を再開` または `Bob Workflow: 次のステップを実行` を使って復帰してください。
 ```
 
 ## 7. メッセージレンダリング
@@ -334,7 +334,7 @@ extensions/workflow-register/src/webview/manualStepScript.ts
 
 | command | title | 用途 |
 | --- | --- | --- |
-| `workflowRegister.openManualStepPanel` | `Bob ワークフロー: 手動操作ステップを開く` | active step または held run の操作 GUI を開く。 |
+| `workflowRegister.openManualStepPanel` | `Bob Workflow: 手動操作ステップを開く` | active step または held run の操作 GUI を開く。 |
 | `workflowRegister.completeManualStepFromPanel` | internal | Webview から完了要求を受ける内部 command。通常は command palette に出さない。 |
 
 Webview からは command を直接実行せず、`postMessage` で host に要求する。

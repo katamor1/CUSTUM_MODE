@@ -43,34 +43,34 @@ AI チャット、Skill、Workflow、手動調査で Bazaar CLI を直接使う�
 ## 代表的な利用フロー
 
 1. Bazaar ワークスペースを Bob IDE / VS Code で開く。
-2. `Bazaar レビュー: GUI を開く` を実行する。
+2. `Bob Bazaar Review: GUI を開く` を実行する。
 3. `.bob` が未初期化の場合は `.bobを初期化` を押す。
 4. レビュー対象を選ぶ。
 5. `取得` で revision 情報と変更ファイルを確認する。
 6. `レビューしてBobにADD` でレビュー用 packet を作成する。`IBM.bob-code` が導入済みなら Bob context に追加する。
 7. Bob のワークフローで `bazaar-project-rule-review` を実行する。
-8. Bob が出力した JSON を `Bazaar レビュー: レビュー結果を取り込む` で検証、保存する。
+8. Bob が出力した JSON を `Bob Bazaar Review: レビュー結果を取り込む` で検証、保存する。
 
 ## Command Palette のコマンド
 
 | コマンド | 内部 command ID | 用途 |
 | --- | --- | --- |
-| `Bazaar レビュー: GUI を開く` | `bobBazaar.openReviewGui` | Bazaar レビュー用 GUI を開く。 |
-| `Bazaar レビュー: レビューコンテキストを収集` | `bobBazaar.collectReviewContext` | ワークフローステップから、現在のレビュー対象メタデータ、変更ファイル、レビュー用 packet 概要を取得する。 |
-| `Bazaar レビュー: プロジェクト規約を読み込む` | `bobBazaar.loadReviewRules` | `.bob/review/checklist.json` と `.bob/review/review-result.schema.json` を読み込む。欠落時はエラーにする。 |
-| `Bazaar レビュー: レビュー結果を取り込む` | `bobBazaar.captureReviewResult` | active editor、selection、clipboard から review-result JSON を抽出し、検証して保存する。 |
-| `Bazaar レビュー: クリップボードからレビュー結果を保存` | `bobBazaar.saveReviewResultFromClipboard` | clipboard だけを入力として review-result JSON を検証して保存する。 |
-| `Bazaar レビュー: Bob MCP を設定` | `bobBazaar.configureMcp` | `.bob/mcp.json` に Bazaar MCP サーバーを登録する。 |
-| `Bazaar レビュー: プロジェクト規約を初期化` | `bobBazaar.initProjectRules` | `.bob/review/checklist.json` と `.bob/review/review-result.schema.json` を未作成時に生成する。 |
-| `Bazaar レビュー: 1リビジョンを Bob でレビュー` | `bobBazaar.reviewRevision` | `bzr log -r REV` と `bzr diff -c REV` をもとにレビュー用 packet を作る。 |
-| `Bazaar レビュー: リビジョン範囲を Bob でレビュー` | `bobBazaar.reviewRange` | `bzr diff -r BASE..TARGET` をもとにレビュー用 packet を作る。 |
-| `Bazaar レビュー: 1リビジョンをプロジェクト規約付きでレビュー` | `bobBazaar.reviewRevisionWithProjectRules` | 単一 revision レビューにプロジェクト規約と JSON 出力契約を追加する。 |
-| `Bazaar レビュー: リビジョン範囲をプロジェクト規約付きでレビュー` | `bobBazaar.reviewRangeWithProjectRules` | revision range レビューにプロジェクト規約と JSON 出力契約を追加する。 |
-| `Bazaar レビュー: レビュー結果 JSON を検証` | `bobBazaar.validateReviewResultJson` | active editor / selection の review-result JSON を検証し、Markdown 表示できる。 |
+| `Bob Bazaar Review: GUI を開く` | `bobBazaar.openReviewGui` | Bazaar レビュー用 GUI を開く。 |
+| `Bob Bazaar Review: レビューコンテキストを収集` | `bobBazaar.collectReviewContext` | ワークフローステップから、現在のレビュー対象メタデータ、変更ファイル、レビュー用 packet 概要を取得する。 |
+| `Bob Bazaar Review: プロジェクト規約を読み込む` | `bobBazaar.loadReviewRules` | `.bob/review/checklist.json` と `.bob/review/review-result.schema.json` を読み込む。欠落時はエラーにする。 |
+| `Bob Bazaar Review: レビュー結果を取り込む` | `bobBazaar.captureReviewResult` | active editor、selection、clipboard から review-result JSON を抽出し、検証して保存する。 |
+| `Bob Bazaar Review: クリップボードからレビュー結果を保存` | `bobBazaar.saveReviewResultFromClipboard` | clipboard だけを入力として review-result JSON を検証して保存する。 |
+| `Bob Bazaar Review: Bob MCP を設定` | `bobBazaar.configureMcp` | `.bob/mcp.json` に Bazaar MCP サーバーを登録する。 |
+| `Bob Bazaar Review: プロジェクト規約を初期化` | `bobBazaar.initProjectRules` | `.bob/review/checklist.json` と `.bob/review/review-result.schema.json` を未作成時に生成する。 |
+| `Bob Bazaar Review: 1リビジョンを Bob でレビュー` | `bobBazaar.reviewRevision` | `bzr log -r REV` と `bzr diff -c REV` をもとにレビュー用 packet を作る。 |
+| `Bob Bazaar Review: リビジョン範囲を Bob でレビュー` | `bobBazaar.reviewRange` | `bzr diff -r BASE..TARGET` をもとにレビュー用 packet を作る。 |
+| `Bob Bazaar Review: 1リビジョンをプロジェクト規約付きでレビュー` | `bobBazaar.reviewRevisionWithProjectRules` | 単一 revision レビューにプロジェクト規約と JSON 出力契約を追加する。 |
+| `Bob Bazaar Review: リビジョン範囲をプロジェクト規約付きでレビュー` | `bobBazaar.reviewRangeWithProjectRules` | revision range レビューにプロジェクト規約と JSON 出力契約を追加する。 |
+| `Bob Bazaar Review: レビュー結果 JSON を検証` | `bobBazaar.validateReviewResultJson` | active editor / selection の review-result JSON を検証し、Markdown 表示できる。 |
 
 ## レビュー GUI
 
-`Bazaar レビュー: GUI を開く` を実行すると、GUI でレビュー対象を選べます。
+`Bob Bazaar Review: GUI を開く` を実行すると、GUI でレビュー対象を選べます。
 
 GUI は次の `.bob` ファイルを確認します。
 
@@ -144,8 +144,8 @@ workflow-register から `bobBazaar.captureReviewResult` を呼ぶ場合、`work
 Bob が正規化 review-result JSON を出力したら、JSON fenced block をコピーして次のどちらかを実行します。
 
 ```text
-Bazaar レビュー: レビュー結果を取り込む
-Bazaar レビュー: クリップボードからレビュー結果を保存
+Bob Bazaar Review: レビュー結果を取り込む
+Bob Bazaar Review: クリップボードからレビュー結果を保存
 ```
 
 入力は raw JSON と fenced JSON block の両方に対応します。
@@ -285,7 +285,7 @@ Bob には JSON を先に返し、その後に Markdown checklist を出力す�
 Bazaar ワークスペースを開いて次を実行します。
 
 ```text
-Bazaar レビュー: Bob MCP を設定
+Bob Bazaar Review: Bob MCP を設定
 ```
 
 `.bob/mcp.json` には次のような設定が書き込まれます。

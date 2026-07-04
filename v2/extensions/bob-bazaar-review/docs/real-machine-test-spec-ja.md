@@ -114,7 +114,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | 拡張が起動し、Command Palette に主要 command が表示されることを確認する。 |
-| 手順 | 1. テスト workspace を開く。<br>2. `Developer: Show Running Extensions` で拡張状態を確認する。<br>3. Command Palette で `Bazaar レビュー:` を検索する。 |
+| 手順 | 1. テスト workspace を開く。<br>2. `Developer: Show Running Extensions` で拡張状態を確認する。<br>3. Command Palette で `Bob Bazaar Review:` を検索する。 |
 | 期待結果 | GUI、context 収集、rules 読み込み、capture、MCP 設定、init、revision / range review、JSON 検証 command が表示される。 |
 
 ### BZR-RT-002 workflow-register provider 登録
@@ -130,7 +130,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | `.bob/review` 規約ファイルを初期化できることを確認する。 |
-| 手順 | 1. `.bob/review` が無い workspace を開く。<br>2. `Bazaar レビュー: プロジェクト規約を初期化` を実行する。 |
+| 手順 | 1. `.bob/review` が無い workspace を開く。<br>2. `Bob Bazaar Review: プロジェクト規約を初期化` を実行する。 |
 | 期待結果 | `.bob/review/checklist.json`、`review-result.schema.json`、`review-prompt-template.md`、example が作成される。checklist が editor で開く。 |
 
 ### BZR-RT-004 `.bob` workspace / workflow template 初期化
@@ -146,7 +146,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | `.bob/mcp.json` に Bazaar MCP server を設定できることを確認する。 |
-| 手順 | 1. `Bazaar レビュー: Bob MCP を設定` を実行する。<br>2. Bob workspace を選択する。<br>3. `.bob/mcp.json` を確認する。 |
+| 手順 | 1. `Bob Bazaar Review: Bob MCP を設定` を実行する。<br>2. Bob workspace を選択する。<br>3. `.bob/mcp.json` を確認する。 |
 | 期待結果 | configured server name、command、args、env.BZR_PATH、disabled false が設定される。 |
 
 ### BZR-RT-006 Bazaar Review GUI 起動
@@ -154,7 +154,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | Webview GUI が開き、workspace state と `.bob` status が表示されることを確認する。 |
-| 手順 | 1. `Bazaar レビュー: GUI を開く` を実行する。<br>2. Webview の初期表示を確認する。 |
+| 手順 | 1. `Bob Bazaar Review: GUI を開く` を実行する。<br>2. Webview の初期表示を確認する。 |
 | 期待結果 | Bazaar workspace、Bob workspace、初期化状態、target 入力欄が表示される。 |
 
 ### BZR-RT-007 GUI singleRevision target 読み込み
@@ -210,7 +210,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | Command Palette から単一 revision packet を生成できることを確認する。 |
-| 手順 | 1. `Bazaar レビュー: 1リビジョンを Bob でレビュー` を実行する。<br>2. Bazaar workspace と revision を入力する。 |
+| 手順 | 1. `Bob Bazaar Review: 1リビジョンを Bob でレビュー` を実行する。<br>2. Bazaar workspace と revision を入力する。 |
 | 期待結果 | review packet Markdown が開き、環境に応じて Bob context 追加または選択ダイアログが表示される。 |
 
 ### BZR-RT-014 direct reviewRange command
@@ -218,7 +218,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | Command Palette から revision range packet を生成できることを確認する。 |
-| 手順 | 1. `Bazaar レビュー: リビジョン範囲を Bob でレビュー` を実行する。<br>2. baseRevision / targetRevision を入力する。 |
+| 手順 | 1. `Bob Bazaar Review: リビジョン範囲を Bob でレビュー` を実行する。<br>2. baseRevision / targetRevision を入力する。 |
 | 期待結果 | range packet Markdown が開く。 |
 
 ### BZR-RT-015 project rules 付き direct reviewRevision
@@ -226,7 +226,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | project rules section 付きの単一 revision packet を生成できることを確認する。 |
-| 手順 | 1. `.bob/review` を初期化する。<br>2. `Bazaar レビュー: 1リビジョンをプロジェクト規約付きでレビュー` を実行する。 |
+| 手順 | 1. `.bob/review` を初期化する。<br>2. `Bob Bazaar Review: 1リビジョンをプロジェクト規約付きでレビュー` を実行する。 |
 | 期待結果 | packet に checklist と review-result output contract が含まれる。 |
 
 ### BZR-RT-016 project rules 付き direct reviewRange
@@ -234,7 +234,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | project rules section 付きの range packet を生成できることを確認する。 |
-| 手順 | 1. `.bob/review` を初期化する。<br>2. `Bazaar レビュー: リビジョン範囲をプロジェクト規約付きでレビュー` を実行する。 |
+| 手順 | 1. `.bob/review` を初期化する。<br>2. `Bob Bazaar Review: リビジョン範囲をプロジェクト規約付きでレビュー` を実行する。 |
 | 期待結果 | range packet に project rules section が含まれる。 |
 
 ### BZR-RT-017 workflow collectReviewContext
@@ -242,7 +242,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | 開いている review packet から workflow state 用 context を収集できることを確認する。 |
-| 手順 | 1. review packet Markdown を開く。<br>2. `Bazaar レビュー: レビューコンテキストを収集` を実行する。 |
+| 手順 | 1. review packet Markdown を開く。<br>2. `Bob Bazaar Review: レビューコンテキストを収集` を実行する。 |
 | 期待結果 | packet の repository、mode、revision、diff summary などが result として返る。workflow 経由の場合は state に保存される。 |
 
 ### BZR-RT-018 workflow loadReviewRules
@@ -250,7 +250,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | checklist / schema を読み込み、workflow action result に反映できることを確認する。 |
-| 手順 | 1. `.bob/review` を初期化する。<br>2. `Bazaar レビュー: プロジェクト規約を読み込む` を実行する。 |
+| 手順 | 1. `.bob/review` を初期化する。<br>2. `Bob Bazaar Review: プロジェクト規約を読み込む` を実行する。 |
 | 期待結果 | checklistItems、categories、schemaTopLevelKeys、summary が返る。 |
 
 ### BZR-RT-019 review-result capture: clipboard
@@ -258,7 +258,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | clipboard の review-result JSON を検証・保存できることを確認する。 |
-| 手順 | 1. valid review-result JSON を clipboard にコピーする。<br>2. `Bazaar レビュー: クリップボードからレビュー結果を保存` を実行する。 |
+| 手順 | 1. valid review-result JSON を clipboard にコピーする。<br>2. `Bob Bazaar Review: クリップボードからレビュー結果を保存` を実行する。 |
 | 期待結果 | `.bob/review/results/<review_id>.json` と `.md` が保存される。 |
 
 ### BZR-RT-020 review-result capture: active editor
@@ -266,7 +266,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | active editor の selection / full text から review-result JSON を保存できることを確認する。 |
-| 手順 | 1. review-result JSON を editor で開く。<br>2. 必要に応じて範囲選択する。<br>3. `Bazaar レビュー: レビュー結果を取り込む` を実行する。 |
+| 手順 | 1. review-result JSON を editor で開く。<br>2. 必要に応じて範囲選択する。<br>3. `Bob Bazaar Review: レビュー結果を取り込む` を実行する。 |
 | 期待結果 | JSON と Markdown が `.bob/review/results` に保存される。 |
 
 ### BZR-RT-021 review-result capture: workflow handoff
@@ -290,7 +290,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | active editor の valid review-result JSON を検証できることを確認する。 |
-| 手順 | 1. valid JSON を editor で開く。<br>2. `Bazaar レビュー: レビュー結果 JSON を検証` を実行する。<br>3. `Markdown サマリを表示` を選ぶ。 |
+| 手順 | 1. valid JSON を editor で開く。<br>2. `Bob Bazaar Review: レビュー結果 JSON を検証` を実行する。<br>3. `Markdown サマリを表示` を選ぶ。 |
 | 期待結果 | 有効メッセージが表示され、Markdown summary が開く。 |
 
 ### BZR-RT-024 active editor JSON validation error
@@ -298,7 +298,7 @@ bazaar_test/branch2/
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | invalid JSON の validation report が表示されることを確認する。 |
-| 手順 | 1. invalid JSON を editor で開く。<br>2. `Bazaar レビュー: レビュー結果 JSON を検証` を実行する。 |
+| 手順 | 1. invalid JSON を editor で開く。<br>2. `Bob Bazaar Review: レビュー結果 JSON を検証` を実行する。 |
 | 期待結果 | Markdown validation report が開き、issue path と message が表示される。 |
 
 ### BZR-RT-025 MCP initialize / tools/list

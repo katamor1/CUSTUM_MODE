@@ -90,7 +90,7 @@ Bazaar の指定 revision range をプロジェクト規約に照らしてレビ
 Command Palette で次を実行します。
 
 ```text
-Bob Workflow Register: Create Workflow from Template
+Bob Workflow: テンプレートから作成
 ```
 
 選ぶ目安:
@@ -137,7 +137,7 @@ steps:
 Command Palette で次を実行します。
 
 ```text
-Bob Workflow Register: Design Workflow with AI
+Bob Workflow: AI で新規設計
 ```
 
 入力する内容:
@@ -367,13 +367,13 @@ steps:
 現在のファイルだけを検証する場合:
 
 ```text
-Bob Workflow Register: Validate Current Workflow
+Bob Workflow: 現在の定義を検証
 ```
 
 workspace 内の workflow をまとめて検証する場合:
 
 ```text
-Bob Workflow Register: Validate Workspace Workflows
+Bob Workflow: ワークスペース定義を検証
 ```
 
 検証で見るべき優先順位:
@@ -399,13 +399,13 @@ Bob Workflow Register: Validate Workspace Workflows
 ファイルを保存したら、必要に応じて再読み込みします。
 
 ```text
-Bob Workflow Register: Reload Bob Workflow Files
+Bob Workflow: ファイルを再読み込み
 ```
 
 登録状態を確認します。
 
 ```text
-Bob Workflow Register: Inspect Bob Workflow Registration
+Bob Workflow: 登録状態を確認
 ```
 
 Bob の `Start Workflow` に表示されない場合は、次を確認してください。
@@ -426,13 +426,13 @@ Start Workflow
 Command Palette から実行する場合:
 
 ```text
-Bob Workflow Register: Run Workflow
+Bob Workflow: 実行
 ```
 
 手動 step がある場合は、作業が終わったら次を実行します。
 
 ```text
-Bob Workflow Register: Complete Current Bob Workflow Step
+Bob Workflow: 現在のステップを完了
 ```
 
 または:
@@ -446,25 +446,25 @@ Workflow Step: Complete Current Step
 実行状態を確認します。
 
 ```text
-Bob Workflow Register: Inspect Workflow Runs
+Bob Workflow: 実行履歴を確認
 ```
 
 診断を確認します。
 
 ```text
-Bob Workflow Register: Inspect Workflow Run Diagnostics
+Bob Workflow: 診断を確認
 ```
 
 途中で止まった run を再開します。
 
 ```text
-Bob Workflow Register: Resume Workflow Run
+Bob Workflow: 実行を再開
 ```
 
 現在 step を再試行します。
 
 ```text
-Bob Workflow Register: Retry Current Workflow Step
+Bob Workflow: 現在のステップを再試行
 ```
 
 run state は次の場所に保存されます。
@@ -478,7 +478,7 @@ run state は次の場所に保存されます。
 開いている `WORKFLOW.md` を改善したい場合:
 
 ```text
-Bob Workflow Register: Improve Workflow with AI
+Bob Workflow: AI で改善
 ```
 
 処理の流れ:

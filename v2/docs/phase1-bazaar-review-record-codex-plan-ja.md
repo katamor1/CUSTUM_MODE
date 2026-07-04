@@ -352,9 +352,9 @@ extensions/bob-bazaar-review/src/records/reviewRecordCommands.ts
 
 | コマンド | command ID | 用途 |
 |---|---|---|
-| `Bazaar レビュー: 実績 campaign を初期化` | `bobBazaar.records.initCampaign` | campaign.yaml / targets.yaml 雛形を作る。 |
-| `Bazaar レビュー: 実績 record を作成` | `bobBazaar.records.createRecord` | 保存済み review-result から record.yaml を作る。 |
-| `Bazaar レビュー: 実績 record を検証` | `bobBazaar.records.validateRecord` | record と参照成果物の整合を検証する。 |
+| `Bob Bazaar Review: 実績 campaign を初期化` | `bobBazaar.records.initCampaign` | campaign.yaml / targets.yaml 雛形を作る。 |
+| `Bob Bazaar Review: 実績 record を作成` | `bobBazaar.records.createRecord` | 保存済み review-result から record.yaml を作る。 |
+| `Bob Bazaar Review: 実績 record を検証` | `bobBazaar.records.validateRecord` | record と参照成果物の整合を検証する。 |
 
 #### 10.2.3 path boundary
 
@@ -444,7 +444,7 @@ Bob の review-result を、人間の正式判断へ変換する。Phase 1 の�
 保存済み review-result JSON から `triage.yaml` の雛形を生成する。
 
 ```text
-Bazaar レビュー: 人間 triage 雛形を生成
+Bob Bazaar Review: 人間 triage 雛形を生成
 bobBazaar.records.createTriage
 ```
 
@@ -458,7 +458,7 @@ bobBazaar.records.createTriage
 #### 12.2.2 triage validator
 
 ```text
-Bazaar レビュー: 人間 triage を検証
+Bob Bazaar Review: 人間 triage を検証
 bobBazaar.records.validateTriage
 ```
 
@@ -505,7 +505,7 @@ triage 結果を human-friendly な Markdown に変換する。
 #### 13.2.1 command
 
 ```text
-Bazaar レビュー: 実績 campaign summary を生成
+Bob Bazaar Review: 実績 campaign summary を生成
 bobBazaar.records.generateSummary
 ```
 
@@ -625,7 +625,7 @@ UAT 担当が、最小 3 ケース、推奨 6 ケースの Bazaar review 実績�
 
 1. Phase 0 済み VSIX を導入する。
 2. テスト対象 Bazaar workspace を開く。
-3. `Bazaar レビュー: GUI を開く` を実行する。
+3. `Bob Bazaar Review: GUI を開く` を実行する。
 4. `.bob` 未初期化の場合は初期化する。
 5. campaign.yaml と targets.yaml を作る。
 6. 対象ごとに review packet を生成する。

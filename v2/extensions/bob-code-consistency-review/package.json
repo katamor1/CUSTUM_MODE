@@ -43,78 +43,78 @@
     "commands": [
       {
         "command": "bobCodeConsistency.initializeWorkspace",
-        "title": "コード整合レビュー: .bob ワークフロー定義と review-input 雛形を初期化",
-        "category": "Bob コード整合"
+        "title": ".bob ワークフロー定義と review-input 雛形を初期化",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.createReviewInput",
-        "title": "コード整合レビュー: 対話式に review-input.yaml を作成",
-        "category": "Bob コード整合"
+        "title": "対話式に review-input.yaml を作成",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.prepareAiReviewInputDraft",
-        "title": "コード整合レビュー: AI draft 用プロンプトを作成",
-        "category": "Bob コード整合"
+        "title": "AI draft 用プロンプトを作成",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.applyAiReviewInputDraft",
-        "title": "コード整合レビュー: AI draft JSON から review-input.yaml を生成",
-        "category": "Bob コード整合"
+        "title": "AI draft JSON から review-input.yaml を生成",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.prepareAiTraceabilityDraft",
-        "title": "コード整合レビュー: traceability AI draft 用プロンプトを作成",
-        "category": "Bob コード整合"
+        "title": "traceability AI draft 用プロンプトを作成",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.applyAiTraceabilityDraft",
-        "title": "コード整合レビュー: traceability AI draft JSON を catalog に反映",
-        "category": "Bob コード整合"
+        "title": "traceability AI draft JSON を catalog に反映",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.openTraceabilityPrep",
-        "title": "コード整合レビュー: traceability prep を開く",
-        "category": "Bob コード整合"
+        "title": "traceability prep を開く",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.validateTraceabilityCatalog",
-        "title": "コード整合レビュー: traceability catalog を検証",
-        "category": "Bob コード整合"
+        "title": "traceability catalog を検証",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.createReviewInputFromTraceability",
-        "title": "コード整合レビュー: traceability catalog から review-input.yaml を生成",
-        "category": "Bob コード整合"
+        "title": "traceability catalog から review-input.yaml を生成",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.repairReviewInput",
-        "title": "コード整合レビュー: review-input.yaml を自動修復",
-        "category": "Bob コード整合"
+        "title": "review-input.yaml を自動修復",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.explainReviewInputDiagnostics",
-        "title": "コード整合レビュー: review-input.yaml 診断を説明",
-        "category": "Bob コード整合"
+        "title": "review-input.yaml 診断を説明",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.preprocess",
-        "title": "コード整合レビュー: 入力を前処理して Bob 用パッケージを作成",
-        "category": "Bob コード整合"
+        "title": "入力を前処理して Bob 用パッケージを作成",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.captureBobOutput",
-        "title": "コード整合レビュー: Bob 出力 YAML を取り込む",
-        "category": "Bob コード整合"
+        "title": "Bob 出力 YAML を取り込む",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.validateOutput",
-        "title": "コード整合レビュー: Bob 出力 YAML を検証",
-        "category": "Bob コード整合"
+        "title": "Bob 出力 YAML を検証",
+        "category": "Bob Code Consistency Review"
       },
       {
         "command": "bobCodeConsistency.triage",
-        "title": "コード整合レビュー: 人間確認用 triage を生成",
-        "category": "Bob コード整合"
+        "title": "人間確認用 triage を生成",
+        "category": "Bob Code Consistency Review"
       }
     ],
     "configuration": {

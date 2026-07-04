@@ -157,7 +157,7 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
         const snapshot = JSON.parse(await fs.readFile(path.join(dir, entry), "utf8")) as TaskSnapshotPayload
         if (predicate(snapshot)) return snapshot
       } catch {
-        // Ignore unreadable snapshots.
+        // 読めない snapshot は古い/壊れた補助証跡として扱い、run 再開そのものは止めない。
       }
     }
     return undefined

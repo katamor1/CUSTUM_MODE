@@ -13,38 +13,42 @@ import {
 import { resolveBobWorkspaceFolder } from "../workspace/workspaceResolver"
 
 /**
- * Summary returned to workflow steps after project review rules are loaded.
+ * project review rules 読み込み後に workflow step へ返す summary。
+ *
+ * field 名は workflow result と後続 Bob prompt から参照されるため、互換性を維持する。
  */
 interface ReviewRulesBridgeResult {
-  /** Rule-loading status for workflow consumers. */
+  /** workflow consumer が分岐に使う読み込み状態。 */
   status: "ok"
-  /** Workspace-relative or absolute path to the loaded checklist file. */
+  /** 読み込んだ checklist file の workspace 相対または絶対 path。 */
   checklistPath: string
-  /** Workspace-relative or absolute path to the loaded review result schema file. */
+  /** 読み込んだ review result schema file の workspace 相対または絶対 path。 */
   schemaPath: string
-  /** Optional project name declared by the checklist. */
+  /** checklist が宣言する project 名。 */
   project?: string
-  /** Optional checklist version declared by the project rules. */
+  /** project rules が宣言する checklist version。 */
   checklistVersion?: string
-  /** Number of checklist rule items that were loaded. */
+  /** 読み込んだ checklist rule item 数。 */
   checklistItems: number
-  /** Checklist rule IDs in project checklist order. */
+  /** project checklist の順序を保った rule ID。 */
   ruleIds: string[]
-  /** Sorted list of rule categories found in the checklist. */
+  /** checklist 内で検出した rule category のソート済み一覧。 */
   categories: string[]
-  /** Review result JSON schema loaded for the project. */
+  /** project 用に読み込んだ review result JSON schema。 */
   reviewResultSchema: unknown
-  /** Sorted top-level keys found in the review result JSON schema. */
+  /** review result JSON schema の top-level key 一覧。 */
   schemaTopLevelKeys: string[]
-  /** Human-readable summary suitable for command and workflow output. */
+  /** command と workflow output にそのまま出せる人間向け summary。 */
   summary: string
 }
 
 /**
- * Collects the active Bazaar review packet from open editor documents for workflow execution.
+ * 開いている editor document から workflow 実行用の Bazaar review packet を収集する。
  *
- * @returns Bazaar review context parsed from the visible review packet.
- * @throws Error when no Bazaar review packet document is open.
+ * packet の本文は Bob-visible な証跡であり、実 repository root は workflow state から復元して混同を避ける。
+ *
+ * @returns 表示中の review packet から解析した Bazaar review context。
+ * @throws Bazaar review packet document が開かれていない場合。
  */
 export async function collectReviewContext(input?: WorkflowActionExecutionInput): Promise<BazaarReviewContextResult> {
   const packet = await findReviewPacketText(input)
@@ -57,10 +61,12 @@ export async function collectReviewContext(input?: WorkflowActionExecutionInput)
 }
 
 /**
- * Loads project-specific review checklist and result schema files for commands or workflow actions.
+ * command または workflow action から使う project-specific review checklist と result schema を読み込む。
  *
- * @param input Optional workflow action input that may provide the workspace root.
- * @returns Summary of the loaded checklist and schema metadata.
+ * workflowRoot は Bob workspace 選択の補助にだけ使い、path 解決と必須 file 検証は loader 側に委ねる。
+ *
+ * @param input workspace root を含み得る workflow action input。
+ * @returns 読み込んだ checklist と schema metadata の summary。
  */
 export async function loadReviewRules(input?: WorkflowActionExecutionInput): Promise<ReviewRulesBridgeResult> {
   const folder = await resolveBobWorkspaceFolder({
@@ -96,9 +102,11 @@ export async function loadReviewRules(input?: WorkflowActionExecutionInput): Pro
 }
 
 /**
- * Finds a Bazaar review packet in the active, visible, or open VS Code documents.
+ * active、visible、open の VS Code document から Bazaar review packet を探す。
  *
- * @returns Review packet text when a matching document is open; otherwise undefined.
+ * workflow state の packet URI がある場合は、曖昧な editor 選択より優先して同じ run の packet を使う。
+ *
+ * @returns 一致する document が開かれていれば review packet text、なければ undefined。
  */
 async function findReviewPacketText(input?: WorkflowActionExecutionInput): Promise<string | undefined> {
   const active = vscode.window.activeTextEditor?.document

@@ -36,63 +36,63 @@
     "commands": [
       {
         "command": "bobBazaar.openReviewGui",
-        "title": "Bazaar レビュー: GUI を開く",
-        "category": "Bob Bazaar"
+        "title": "GUI を開く",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.collectReviewContext",
-        "title": "Bazaar レビュー: レビューコンテキストを収集",
-        "category": "Bob Bazaar"
+        "title": "レビューコンテキストを収集",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.loadReviewRules",
-        "title": "Bazaar レビュー: プロジェクト規約を読み込む",
-        "category": "Bob Bazaar"
+        "title": "プロジェクト規約を読み込む",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.captureReviewResult",
-        "title": "Bazaar レビュー: レビュー結果を取り込む",
-        "category": "Bob Bazaar"
+        "title": "レビュー結果を取り込む",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.saveReviewResultFromClipboard",
-        "title": "Bazaar レビュー: クリップボードからレビュー結果を保存",
-        "category": "Bob Bazaar"
+        "title": "クリップボードからレビュー結果を保存",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.configureMcp",
-        "title": "Bazaar レビュー: Bob MCP を設定",
-        "category": "Bob Bazaar"
+        "title": "Bob MCP を設定",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.initProjectRules",
-        "title": "Bazaar レビュー: プロジェクト規約を初期化",
-        "category": "Bob Bazaar"
+        "title": "プロジェクト規約を初期化",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.reviewRevision",
-        "title": "Bazaar レビュー: 1リビジョンを Bob でレビュー",
-        "category": "Bob Bazaar"
+        "title": "1リビジョンを Bob でレビュー",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.reviewRange",
-        "title": "Bazaar レビュー: リビジョン範囲を Bob でレビュー",
-        "category": "Bob Bazaar"
+        "title": "リビジョン範囲を Bob でレビュー",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.reviewRevisionWithProjectRules",
-        "title": "Bazaar レビュー: 1リビジョンをプロジェクト規約付きでレビュー",
-        "category": "Bob Bazaar"
+        "title": "1リビジョンをプロジェクト規約付きでレビュー",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.reviewRangeWithProjectRules",
-        "title": "Bazaar レビュー: リビジョン範囲をプロジェクト規約付きでレビュー",
-        "category": "Bob Bazaar"
+        "title": "リビジョン範囲をプロジェクト規約付きでレビュー",
+        "category": "Bob Bazaar Review"
       },
       {
         "command": "bobBazaar.validateReviewResultJson",
-        "title": "Bazaar レビュー: レビュー結果 JSON を検証",
-        "category": "Bob Bazaar"
+        "title": "レビュー結果 JSON を検証",
+        "category": "Bob Bazaar Review"
       }
     ],
     "configuration": {

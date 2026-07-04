@@ -5,6 +5,7 @@ import type { DiffSummary } from "../core/diffTypes"
 export type DiffLine = { file: string; line: number; text: string; kind: "add" | "delete" }
 
 export function parseUnifiedDiff(diff: DiffSummary): DiffLine[] {
+  // ここは Bob 入力用の軽量 diff 解析であり、C/C++ の意味解析や include 解決は後段の証跡で補う。
   const result: DiffLine[] = []
   const text = diff.unifiedDiff ?? ""
   let currentFile = diff.files.length === 1 ? diff.files[0].path : ""
@@ -58,10 +59,12 @@ export function diffLinesForFile(diffLines: DiffLine[], filePath: string): DiffL
   if (exact.length > 0) return exact
   const basenameMatches = diffLines.filter((line) => path.posix.basename(toPosixPath(line.file)) === basename)
   const matchedPaths = new Set(basenameMatches.map((line) => toPosixPath(line.file)))
+  // 同名ファイルが複数ある場合に hunk を混ぜると誤証跡になるため、一意な basename fallback だけを採用する。
   return matchedPaths.size === 1 ? basenameMatches : []
 }
 
 export function changedIdentifierTokens(diffLines: DiffLine[]): Set<string> {
+  // macro/global 候補の足がかりだけを拾う heuristic なので、検出結果は evidence 付き候補として扱う。
   const result = new Set<string>()
   for (const line of diffLines) {
     for (const match of line.text.matchAll(/\b[A-Z][A-Z0-9_]{2,}\b/g)) result.add(match[0])

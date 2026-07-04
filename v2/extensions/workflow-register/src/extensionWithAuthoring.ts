@@ -34,10 +34,12 @@ import { showMarkdownReport } from "./reports"
 export { deactivate }
 
 /**
- * Activates the workflow-register extension with authoring, diagnostics, run-control, and builder commands.
+ * authoring、diagnostics、run-control、builder command を含む workflow-register 拡張を有効化する。
  *
- * @param context VS Code extension context used to register commands, views, and document listeners.
- * @returns Public workflow-register API returned by the core activation path.
+ * 追加 command も既存 command ID と同じ registration service を通し、runtime と authoring の入口を分離しない。
+ *
+ * @param context command、view、document listener の登録に使う VS Code extension context。
+ * @returns core activation path が返す public workflow-register API。
  */
 export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi {
   const api = activateCore(context)

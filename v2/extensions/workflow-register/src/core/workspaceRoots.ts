@@ -20,6 +20,7 @@ export async function findWorkflowRootCandidates(folders: readonly WorkspaceFold
 }
 
 export async function findMarkerRoots(folders: readonly WorkspaceFolderLike[], marker: string): Promise<MarkerRootCandidate[]> {
+  // 同一 workspace root と子ディレクトリ root の両方を扱うため、直下 marker を優先し、なければ一段下だけを候補にする。
   const direct: MarkerRootCandidate[] = []
   for (const folder of folders) {
     const root = path.resolve(folder.uri.fsPath)

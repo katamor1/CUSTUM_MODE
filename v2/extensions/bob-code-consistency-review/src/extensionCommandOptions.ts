@@ -10,7 +10,7 @@ import {
 import { resolveWorkspacePathStrict } from "./core/fileSystem"
 import { resolveBobWorkspaceRoot } from "./workspaceResolver"
 
-/** Shared VS Code command option, prompt, path, and notification helpers. */
+/** VS Code command / workflow provider で共有する option、prompt、path、通知 helper。 */
 export function notifyInfo(message: string): void {
   console.info(message)
   vscode.window.setStatusBarMessage(message, 5000)

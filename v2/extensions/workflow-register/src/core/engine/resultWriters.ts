@@ -29,6 +29,7 @@ export async function writeResultSinks(input: {
   try {
     const text = await resultText({ workflow, run, step, result, recoverResultText, agentText })
     for (const sink of result.sinks) {
+      // result sink はファイル書き込みやコマンド連携を含む副作用境界なので、失敗は run state に記録して再開可能にする。
       const write = await resultSinks.write(sink, {
         workflowId: workflow.id,
         logicalWorkflowId: workflow.logicalWorkflowId,
@@ -73,6 +74,7 @@ export async function writeProducedArtifacts(input: {
     const value = run.state[artifact.id]
     if (value === undefined) continue
     const path = renderArtifactPath(artifact, { inputs: run.inputs, state: run.state, run, workflow, step })
+    // artifact path に未解決テンプレートが残る場合は、誤った literal path への生成物書き込みを避ける。
     if (path.includes("{{")) continue
     const write = await resultSinks.write({ type: "file", path }, {
       workflowId: workflow.id,

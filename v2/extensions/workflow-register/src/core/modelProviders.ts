@@ -39,14 +39,13 @@ export interface ActionExecutionInput {
   runId?: string
   stepId?: string
   /**
-   * Latest assistant text captured from the current workflow step chat.
-   * Result handoff providers may use this to resume from an already generated artifact
-   * instead of asking the agent to regenerate earlier outputs.
+   * 現在の workflow step chat から取得した最新 assistant text。
+   * result handoff provider はこれを使い、agent に再生成させず既存生成物から再開できる。
    */
   latestAssistantText?: string
-  /** Alias for latestAssistantText when the text is being handed off as a step result. */
+  /** step result として渡す場合の latestAssistantText alias。 */
   resultText?: string
-  /** Alias for latestAssistantText for providers that treat the value as a generated artifact. */
+  /** 生成 artifact として扱う provider 向けの latestAssistantText alias。 */
   artifactText?: string
 }
 

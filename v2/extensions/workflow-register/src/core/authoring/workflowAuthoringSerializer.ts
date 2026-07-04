@@ -25,12 +25,10 @@ export interface WorkflowAuthoringSerializationResult {
 }
 
 /**
- * Converts the GUI authoring model into a complete WORKFLOW.md file.
+ * GUI authoring model を完全な WORKFLOW.md file へ変換する。
  *
- * This serializer owns both YAML front matter generation and Markdown body
- * preservation. Keeping both outputs in one place makes the Builder save path
- * predictable: form fields update structured YAML while hand-written workflow
- * documentation remains in the Markdown body.
+ * YAML front matter 生成と Markdown body 保持を同じ serializer に集約し、Builder の保存経路を安定させる。
+ * form field は structured YAML を更新し、手書き workflow documentation は Markdown body に残す。
  */
 export function serializeAuthoringModelToMarkdown(model: WorkflowAuthoringModel): WorkflowAuthoringSerializationResult {
   const name = normalizeWorkflowName(model.metadata.name)
@@ -248,12 +246,10 @@ function completionOrUndefined(completion: WorkflowCompletionDefinition | undefi
 }
 
 /**
- * Keeps selected string fields quoted in generated YAML to reduce diffs against
- * hand-authored workflow files.
+ * 生成 YAML の一部 string field を quote したままにし、手書き workflow file との差分を抑える。
  *
- * YAML parses quoted and unquoted values as the same string for these schema
- * fields, but preserving quotes for version numbers and approval condition
- * expressions makes reviews easier to read and avoids noisy rewrites.
+ * これらの schema field は quote 有無で同じ string として読まれるが、version number や approval condition
+ * expression の quote を保つことで review しやすくし、不要な rewrite を避ける。
  */
 function quoteStableYamlStrings(text: string): string {
   return text

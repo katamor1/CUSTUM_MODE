@@ -4,11 +4,13 @@ import { initializeCodeConsistencyWorkspace } from "../workspaceInitializer"
 import { optionRecord } from "../workflowProviderRegistration"
 
 /**
- * Initializes workflow definitions and review-input scaffolding for the selected workspace.
+ * 選択した workspace に workflow definition と review-input scaffold を初期化する。
  *
- * @param context VS Code extension context used to resolve packaged templates.
- * @param options Optional command or workflow options for workspace and output paths.
- * @returns Workspace initialization result suitable for command output or workflow chaining.
+ * 同梱 template を workspace 内へ展開し、既存 workflow file は initializer 側で backup する。
+ *
+ * @param context package 済み template を解決する VS Code extension context。
+ * @param options workspace と出力 path を上書きし得る command / workflow options。
+ * @returns command output または workflow chaining に使える workspace initialization result。
  */
 export async function runInitializeWorkspace(context: vscode.ExtensionContext, options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")

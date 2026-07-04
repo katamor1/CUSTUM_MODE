@@ -20,10 +20,12 @@ import { collectReviewInputDraft } from "../reviewInputWizard"
 import { optionRecord } from "../workflowProviderRegistration"
 
 /**
- * Builds a review-input.yaml file from an interactive review input draft wizard.
+ * 対話式 wizard の draft から review-input.yaml を生成する。
  *
- * @param options Optional command or workflow options for workspace, output path, and text encoding.
- * @returns Review-input write result, or a cancelled status when the user aborts the wizard.
+ * 生成前に artifact path を workspace 内へ閉じ込め、既存 file は builder 側で backup する。
+ *
+ * @param options workspace、出力 path、text encoding を上書きし得る command / workflow options。
+ * @returns review-input の write result。ユーザーが wizard を中止した場合は cancelled status。
  */
 export async function runCreateReviewInput(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
@@ -57,10 +59,12 @@ export async function runCreateReviewInput(options?: unknown): Promise<unknown> 
 }
 
 /**
- * Creates an AI prompt package for drafting review-input.yaml from VCS revisions.
+ * VCS revision から review-input.yaml draft 用の AI prompt package を作成する。
  *
- * @param options Optional command or workflow options for revisions, VCS, paths, and text encoding.
- * @returns Prompt-generation result including the written prompt path and warnings.
+ * revision と diff path は後段 collector で検証し、workflow args から bzrPath は上書きさせない。
+ *
+ * @param options revision、VCS、path、text encoding を上書きし得る command / workflow options。
+ * @returns 書き込んだ prompt path と warning を含む prompt-generation result。
  */
 export async function runPrepareAiReviewInputDraft(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
@@ -99,10 +103,12 @@ export async function runPrepareAiReviewInputDraft(options?: unknown): Promise<u
 }
 
 /**
- * Applies AI-generated draft JSON to produce or update review-input.yaml.
+ * AI 生成 draft JSON から review-input.yaml を作成または更新する。
  *
- * @param textOrOptions Draft JSON text, or command/workflow options containing text and path overrides.
- * @returns Draft-application result including errors, warnings, and output path metadata.
+ * AI は候補 draft を出すだけで、schema validation と workspace path 境界は host 側で再検証する。
+ *
+ * @param textOrOptions draft JSON text、または text / path override を含む command / workflow options。
+ * @returns error、warning、output path metadata を含む draft-application result。
  */
 export async function runApplyAiReviewInputDraft(textOrOptions?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
@@ -129,10 +135,12 @@ export async function runApplyAiReviewInputDraft(textOrOptions?: unknown): Promi
 }
 
 /**
- * Repairs legacy or invalid review-input.yaml content using the configured diagnostics repair path.
+ * legacy または invalid な review-input.yaml を diagnostics repair path で修復する。
  *
- * @param options Optional command or workflow options for workspace, input path, and text encoding.
- * @returns Repair result including status, message, and optional backup path.
+ * repair は互換性維持の救済処理であり、過補正を避けるため結果と backup path を呼び出し元へ返す。
+ *
+ * @param options workspace、input path、text encoding を上書きし得る command / workflow options。
+ * @returns status、message、任意の backup path を含む repair result。
  */
 export async function runRepairReviewInput(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
@@ -147,10 +155,12 @@ export async function runRepairReviewInput(options?: unknown): Promise<unknown> 
 }
 
 /**
- * Explains diagnostics found in review-input.yaml for command and workflow consumers.
+ * review-input.yaml の diagnostics を command / workflow consumer 向けに説明する。
  *
- * @param options Optional command or workflow options for workspace, input path, and text encoding.
- * @returns Diagnostic explanation result including status, message, and diagnostic details.
+ * この command は説明専用で、入力 file の修正や生成物の書き込みは行わない。
+ *
+ * @param options workspace、input path、text encoding を上書きし得る command / workflow options。
+ * @returns status、message、diagnostic details を含む explanation result。
  */
 export async function runExplainReviewInputDiagnostics(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")

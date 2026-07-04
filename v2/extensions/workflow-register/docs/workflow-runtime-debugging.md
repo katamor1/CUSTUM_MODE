@@ -25,7 +25,7 @@ Current runtime behavior includes:
 Use the Command Palette command:
 
 ```text
-Bob Workflow Register: Inspect Workflow Run Diagnostics
+Bob Workflow: 診断を確認
 ```
 
 The report shows:

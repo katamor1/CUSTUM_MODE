@@ -283,7 +283,7 @@ Bob chat messages、metadata、assistant output には、ソースコード、�
 
 - run state に workflow version、extension version、input hash、artifact path を記録する。
 - 失敗ステップ、失敗 command、Bob 出力未取得、schema validation failure を分類する。
-- `Bob ワークフロー: 診断を確認` の Markdown 出力を標準化する。
+- `Bob Workflow: 診断を確認` の Markdown 出力を標準化する。
 - サポート時に添付可能な診断 bundle を生成する。ただし機密情報は除去する。
 
 #### WR-0.5 CI / package / release 整備

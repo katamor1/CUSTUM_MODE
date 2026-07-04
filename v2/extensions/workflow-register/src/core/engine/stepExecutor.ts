@@ -115,6 +115,7 @@ async function executeCommandStep(input: {
 }): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
   const { workflow, run, step } = input
   const args = renderValue(step.action.args, { inputs: run.inputs, state: run.state, run, workflow, step })
+  // renderValue 後の args が実際の実行値なので、承認・guardrails はテンプレート展開後に評価する。
   const guardrail = validateCommandGuardrails(workflow, step.action.provider, args)
   if (guardrail) return { ok: false, error: guardrail }
   const approval = findCommandApprovalRequirement({

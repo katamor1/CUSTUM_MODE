@@ -47,6 +47,7 @@ class BazaarReviewGuiController {
 
   private async handleMessage(message: any): Promise<void> {
     try {
+      // Webview message は UI 入力として扱い、ホスト側で対象解析と workspace 解決をやり直してから副作用を起こす。
       if (message?.type === "ready") await this.postWorkspaceState()
       else if (message?.type === "selectWorkspace") await this.selectWorkspace()
       else if (message?.type === "initializeBobWorkspace") await this.initializeBobWorkspace()

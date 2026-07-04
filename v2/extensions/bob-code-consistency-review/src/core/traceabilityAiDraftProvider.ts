@@ -155,6 +155,7 @@ export function parseAiTraceabilityDraft(text: string): TraceabilityCatalog {
   if (schemaErrors.length > 0) throw new Error(`AI traceability draft schema invalid: ${schemaErrors.join("; ")}`)
 
   const typedCatalog = rawCatalog as TraceabilityCatalog
+  // AI 出力は候補作成までで、人が承認済みの id/status/endpoint を直接作らせない。
   const violations = aiAcceptedStateViolations(typedCatalog)
   if (violations.length > 0) throw new Error(`AI draft must not create accepted state: ${violations.join("; ")}`)
   return {
@@ -169,6 +170,7 @@ export function parseAiTraceabilityDraft(text: string): TraceabilityCatalog {
 
 export function mergeAiTraceabilityDraft(existing: TraceabilityCatalog, draft: TraceabilityCatalog): MergeAiTraceabilityDraftResult {
   const warnings: string[] = []
+  // 既存の accepted/rejected/deprecated は人間の判断結果なので、AI draft の同一 key では上書きしない。
   const catalog: TraceabilityCatalog = {
     schema_version: 1,
     documents: mergeByKey(existing.documents ?? [], draft.documents ?? [], (item) => item.document_id, () => false),
@@ -333,6 +335,7 @@ function validateDraftSourcePaths(workspaceRoot: string, catalog: TraceabilityCa
 
 function validateDraftSourcePath(workspaceRoot: string, sourcePath: string, subject: string, errors: string[]): void {
   try {
+    // AI が返す source_path も workspace 内の証跡参照として再解決し、外部ファイル参照を catalog に残さない。
     resolveWorkspacePathStrict(workspaceRoot, sourcePath, `traceability draft source_path for ${subject}`)
   } catch (error) {
     errors.push(`traceability draft source_path invalid for ${subject}: ${error instanceof Error ? error.message : String(error)}`)

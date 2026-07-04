@@ -30,6 +30,7 @@ export interface RegisterWorkflowsInput {
 
 export async function registerWorkflows(input: RegisterWorkflowsInput): Promise<WorkflowRegistrationUpdate> {
   const config = vscode.workspace.getConfiguration("workflowRegister")
+  // sourceId/sourceName と workflow id は Bob 側の登録互換性契約なので、設定値を登録 API へ一貫して渡す。
   const sourceId = config.get<string>("sourceId", "workflow-register")
   const sourceName = config.get<string>("sourceName", "Workflow Register")
   const lines: string[] = []
@@ -65,6 +66,7 @@ export async function registerWorkflows(input: RegisterWorkflowsInput): Promise<
     }
   }
 
+  // 再登録時は古い source を先に無効化し、Bob 側に存在しない workflow id が残らないようにする。
   await deactivateRegisteredSource(input.previousSource, lines)
   const sourceResult = await runAttempt("registerSource(sourceId, sourceName)", () => api.registerSource?.(sourceId, sourceName))
   lines.push(formatAttempt(sourceResult))

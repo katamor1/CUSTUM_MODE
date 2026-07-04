@@ -55,6 +55,7 @@ export async function openTraceabilityPrepWebview(
     getNonce()
   )
   panel.webview.onDidReceiveMessage(async (message: TraceabilityPrepWebviewMessage) => {
+    // Webview は承認 UI だが保存主体ではないため、action 適用と catalog 書き込みは必ず extension host 側で行う。
     if (message.type === "ready") {
       await postTraceabilityPrepModel(panel, catalog)
       return

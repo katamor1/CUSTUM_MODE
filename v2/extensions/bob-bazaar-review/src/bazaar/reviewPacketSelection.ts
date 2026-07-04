@@ -43,6 +43,7 @@ export function buildReviewPacketState(input: {
   repositoryRoot?: string
   createdAt?: string
 }): ReviewPacketState {
+  // Bob に渡す packet 本文は機微な絶対パスを避け、実処理に必要な root だけを VS Code 側 state に保持する。
   return {
     packetUri: input.packetUri,
     runId: input.runId,
@@ -56,6 +57,7 @@ export function buildReviewPacketState(input: {
 export function reviewPacketRepositoryRootFromState(state: Record<string, string> | undefined, runId: string | undefined): string | undefined {
   const packetState = parseReviewPacketState(state?.[REVIEW_PACKET_STATE_KEY])
   if (!packetState?.repositoryRoot) return undefined
+  // 異なる workflow run の state を拾うと別リポジトリへ書き戻すため、runId が合う場合だけ再利用する。
   if (packetState.runId && runId && packetState.runId !== runId) return undefined
   return packetState.repositoryRoot
 }

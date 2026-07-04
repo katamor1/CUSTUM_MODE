@@ -35,16 +35,16 @@ repo root で次を実行する。
 
 VS Code が開いたら Command Palette から以下を順に確認する。
 
-1. `コード整合レビュー: traceability AI draft 用プロンプトを作成`
-2. `コード整合レビュー: traceability AI draft JSON を catalog に反映`
-3. `コード整合レビュー: traceability prep を開く`
-4. `コード整合レビュー: traceability catalog を検証`
-5. `コード整合レビュー: traceability catalog から review-input.yaml を生成`
-6. `コード整合レビュー: 入力を前処理して Bob 用パッケージを作成`
+1. `Bob Code Consistency Review: traceability AI draft 用プロンプトを作成`
+2. `Bob Code Consistency Review: traceability AI draft JSON を catalog に反映`
+3. `Bob Code Consistency Review: traceability prep を開く`
+4. `Bob Code Consistency Review: traceability catalog を検証`
+5. `Bob Code Consistency Review: traceability catalog から review-input.yaml を生成`
+6. `Bob Code Consistency Review: 入力を前処理して Bob 用パッケージを作成`
 7. Bob に `.bob-review/review-package/bob-input.md` を渡す
-8. `コード整合レビュー: Bob 出力 YAML を取り込む`
-9. `コード整合レビュー: Bob 出力 YAML を検証`
-10. `コード整合レビュー: 人間確認用 triage を生成`
+8. `Bob Code Consistency Review: Bob 出力 YAML を取り込む`
+9. `Bob Code Consistency Review: Bob 出力 YAML を検証`
+10. `Bob Code Consistency Review: 人間確認用 triage を生成`
 
 オフラインで取り込みだけ確認する場合は、`bob-output.expected.sample.yaml` の内容を clipboard に入れて
 `Bob 出力 YAML を取り込む` を実行する。

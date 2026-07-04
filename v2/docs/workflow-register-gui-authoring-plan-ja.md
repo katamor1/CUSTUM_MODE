@@ -105,7 +105,7 @@ VS Code Webview を使ったウィザード兼ビルダー形式を推奨する�
 
 #### 導線 A: テンプレートから作る
 
-1. `Bob ワークフロー: GUI で作成` を実行する。
+1. `Bob Workflow: GUI で作成` を実行する。
 2. workspace root を選ぶ。
 3. テンプレートを選ぶ。
 4. 基本情報を入力する。
@@ -126,7 +126,7 @@ VS Code Webview を使ったウィザード兼ビルダー形式を推奨する�
 #### 導線 C: 既存 `WORKFLOW.md` を編集する
 
 1. `WORKFLOW.md` を開く。
-2. `Bob ワークフロー: GUI で編集` を実行する。
+2. `Bob Workflow: GUI で編集` を実行する。
 3. front matter を解析して GUI モデルに変換する。
 4. GUI で編集する。
 5. 変更差分を確認し、backup を作って保存する。
@@ -544,9 +544,9 @@ Webview form state
 
 | command | title | 用途 |
 | --- | --- | --- |
-| `workflowRegister.openWorkflowBuilder` | `Bob ワークフロー: GUI で作成` | 新規作成 GUI を開く。 |
-| `workflowRegister.editWorkflowInBuilder` | `Bob ワークフロー: GUI で編集` | 現在の `WORKFLOW.md` を GUI で編集する。後続フェーズ。 |
-| `workflowRegister.reviewWorkflowDraftWithAi` | `Bob ワークフロー: 下書きを AI でレビュー` | GUI 上の下書きに対する AI レビュー。後続フェーズ。 |
+| `workflowRegister.openWorkflowBuilder` | `Bob Workflow: GUI で作成` | 新規作成 GUI を開く。 |
+| `workflowRegister.editWorkflowInBuilder` | `Bob Workflow: GUI で編集` | 現在の `WORKFLOW.md` を GUI で編集する。後続フェーズ。 |
+| `workflowRegister.reviewWorkflowDraftWithAi` | `Bob Workflow: 下書きを AI でレビュー` | GUI 上の下書きに対する AI レビュー。後続フェーズ。 |
 
 初期 MVP では `openWorkflowBuilder` のみ追加する。
 

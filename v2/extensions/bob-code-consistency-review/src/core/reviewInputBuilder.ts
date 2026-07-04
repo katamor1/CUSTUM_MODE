@@ -132,6 +132,7 @@ export async function writeReviewInputFromDraft(input: {
 
   let backupPath: string | undefined
   if (existing !== undefined && input.backupExisting !== false) {
+    // guided authoring の再実行は想定操作なので、既存ファイルは上書き前に時刻付きバックアップへ退避する。
     backupPath = `${input.outputPath}.bak-${timestampForFileName(new Date())}`
     await writeTextFile(backupPath, existing)
   }
@@ -169,6 +170,7 @@ async function buildArtifacts(candidates: ReviewInputArtifactDraft[], workspaceR
       continue
     }
     const resolvedPath = resolveWorkspacePath(workspaceRoot, artifactPath)
+    // review-input.yaml は人手で編集されるため、存在確認より先に workspace 外参照を拒否する。
     if (!isInsideWorkspace(workspaceRoot, resolvedPath)) {
       errors.push(`artifact path escapes workspace: ${artifactPath}`)
       continue

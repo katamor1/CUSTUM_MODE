@@ -192,7 +192,7 @@ A command should not appear in both `allowedCommands` and `deniedCommands`.
 
 Run these commands from the Command Palette:
 
-- `Bob Workflow Register: Validate Current Workflow`
-- `Bob Workflow Register: Validate Workspace Workflows`
+- `Bob Workflow: 現在の定義を検証`
+- `Bob Workflow: ワークスペース定義を検証`
 
 Validation results are shown in a Markdown report and in the VS Code Problems panel. Open workflow files are also validated when saved.

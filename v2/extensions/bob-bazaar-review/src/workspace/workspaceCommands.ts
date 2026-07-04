@@ -5,10 +5,12 @@ import { initializeProjectRules } from "../projectRules/io"
 import { resolveBazaarWorkspaceFolder, resolveBobWorkspaceFolder } from "./workspaceResolver"
 
 /**
- * Writes the Bazaar MCP server configuration for the selected Bob workspace.
+ * 選択した Bob workspace に Bazaar MCP server 設定を書き込む。
  *
- * @param context VS Code extension context used to locate extension resources for MCP configuration.
- * @returns A promise that resolves after configuration is saved or the user cancels folder selection.
+ * allowedRoots と bzrPath は外部コマンド境界に直結するため、GUI 選択と信頼済み設定からだけ組み立てる。
+ *
+ * @param context MCP 設定で使う拡張リソース解決用の VS Code extension context。
+ * @returns 設定保存または folder 選択 cancel 後に解決する Promise。
  */
 export async function configureMcp(context: vscode.ExtensionContext): Promise<void> {
   const folder = await pickBobWorkspaceFolder(undefined, true)
@@ -35,9 +37,11 @@ export async function configureMcp(context: vscode.ExtensionContext): Promise<vo
 }
 
 /**
- * Initializes project review rule files in the selected Bob workspace.
+ * 選択した Bob workspace に project review rule file を初期化する。
  *
- * @returns A promise that resolves after the rule scaffold is created or the user cancels folder selection.
+ * 生成 file は以後 Bob output validation の契約になるため、既定 template を workspace 内へ配置する。
+ *
+ * @returns scaffold 作成または folder 選択 cancel 後に解決する Promise。
  */
 export async function initProjectRules(): Promise<void> {
   const folder = await pickBobWorkspaceFolder(undefined, true)
@@ -51,11 +55,11 @@ export async function initProjectRules(): Promise<void> {
 }
 
 /**
- * Resolves the Bob workspace folder from workflow input or an interactive picker.
+ * workflow input または interactive picker から Bob workspace folder を解決する。
  *
- * @param workflowRoot Optional workspace root path supplied by workflow-register.
- * @param allowPick Whether to show an interactive picker when the root is not supplied.
- * @returns The selected workspace folder, or undefined when no folder is available.
+ * @param workflowRoot workflow-register から渡される workspace root path。
+ * @param allowPick root がない場合に interactive picker を表示するか。
+ * @returns 選択された workspace folder。利用できない場合は undefined。
  */
 async function pickBobWorkspaceFolder(workflowRoot?: string, allowPick = true): Promise<vscode.WorkspaceFolder | undefined> {
   return resolveBobWorkspaceFolder({ workflowRoot, allowPick, title: "Bob ワークスペースを選択" })

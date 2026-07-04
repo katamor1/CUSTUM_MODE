@@ -65,6 +65,7 @@ async function requiredAllowedCwd(args: unknown, name: string): Promise<string> 
 async function assertAllowedCwd(cwd: string): Promise<string> {
   if (allowedRootInputs.length === 0) return cwd
 
+  // MCP tool の cwd はエージェント入力なので、realpath 後に明示許可 root 配下だけへ閉じ込める。
   const resolvedCwd = await fs.realpath(cwd)
   const allowedRoots = await getAllowedRoots()
   for (const root of allowedRoots) {

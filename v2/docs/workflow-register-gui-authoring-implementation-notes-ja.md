@@ -6,7 +6,7 @@
 
 追加した主な機能は次のとおり。
 
-- Command Palette から `Bob ワークフロー: GUI で作成` を起動する。
+- Command Palette から `Bob Workflow: GUI で作成` を起動する。
 - VS Code Webview に `Bob Workflow Builder` を表示する。
 - テンプレートを選び、基本情報、steps、inputs、artifacts、guardrails を編集する。
 - step を `agent` / `command` / `manual` / `result` として追加・削除・複製・上下移動する。
@@ -38,7 +38,7 @@ Phase 3 では、既存の `schemaVersion: workflow-register/v1` workflow を GU
 
 追加した内容は次のとおり。
 
-- Command Palette から `Bob ワークフロー: GUI で編集` を起動する。
+- Command Palette から `Bob Workflow: GUI で編集` を起動する。
 - active editor の `WORKFLOW.md`、または file picker で選択した Markdown を読み込む。
 - `parseWorkflowMarkdown` の結果を `WorkflowAuthoringModel` に変換する `workflowAuthoringLoader.ts` を追加する。
 - GUI 管理対象外の front matter、例: `category` / `permissions` などを `unknownFrontMatter` として保持し、保存時に再出力する。
@@ -91,9 +91,9 @@ Phase 6 では、`type: manual` step と workflow-level manual completion の完
 
 | command | title | 用途 |
 | --- | --- | --- |
-| `workflowRegister.openWorkflowBuilder` | `Bob ワークフロー: GUI で作成` | Webview ベースのワークフロー作成画面を開く。 |
-| `workflowRegister.editWorkflowInBuilder` | `Bob ワークフロー: GUI で編集` | 既存 `WORKFLOW.md` を Webview Builder に読み込んで編集する。 |
-| `workflowRegister.openManualStepPanel` | `Bob ワークフロー: 手動操作ステップを開く` | held run または active manual step の手動操作ページを開く。 |
+| `workflowRegister.openWorkflowBuilder` | `Bob Workflow: GUI で作成` | Webview ベースのワークフロー作成画面を開く。 |
+| `workflowRegister.editWorkflowInBuilder` | `Bob Workflow: GUI で編集` | 既存 `WORKFLOW.md` を Webview Builder に読み込んで編集する。 |
+| `workflowRegister.openManualStepPanel` | `Bob Workflow: 手動操作ステップを開く` | held run または active manual step の手動操作ページを開く。 |
 
 ## 追加・変更ファイル
 

@@ -683,9 +683,9 @@ Bob visible step は workflow 定義時に静的に作られる。過去 step �
 
 | Command ID | 表示名 | 用途 |
 | --- | --- | --- |
-| `workflowRegister.approveBranchCheckpoint` | Bob ワークフロー: ループ上限を承認して続行 | checkpoint を承認し、+5 loop を許可する。 |
-| `workflowRegister.abortBranchCheckpoint` | Bob ワークフロー: ループ上限で中止 | checkpoint 中の run を中止する。 |
-| `workflowRegister.inspectBranching` | Bob ワークフロー: 分岐状態を確認 | loop count、history、checkpoint を表示する。 |
+| `workflowRegister.approveBranchCheckpoint` | Bob Workflow: ループ上限を承認して続行 | checkpoint を承認し、+5 loop を許可する。 |
+| `workflowRegister.abortBranchCheckpoint` | Bob Workflow: ループ上限で中止 | checkpoint 中の run を中止する。 |
+| `workflowRegister.inspectBranching` | Bob Workflow: 分岐状態を確認 | loop count、history、checkpoint を表示する。 |
 
 ### 12.3 Tree View
 

@@ -83,6 +83,7 @@ export class BazaarClient {
       throw new BazaarError("Bazaar の作業ディレクトリが不正です。")
     }
 
+    // Bazaar はユーザー環境の alias で出力や副作用が変わり得るため、全呼び出しで bzr --no-aliases を強制する。
     const commandArgs = withRequiredGlobalOption(args)
     const allowedExitCodes = options.allowedExitCodes ?? [0]
 
@@ -123,6 +124,7 @@ export class BazaarClient {
 
   private exec(cwd: string, args: string[]): Promise<{ stdout: Buffer; stderr: Buffer }> {
     return new Promise((resolve, reject) => {
+      // 外部コマンド境界では shell を使わず argv として渡し、リビジョンやパス検証の前提を壊さない。
       execFile(this.bzrPath, args, {
         cwd,
         shell: false,
@@ -168,8 +170,7 @@ export function validateRevision(revision: string): string {
     throw new BazaarError(`安全でない Bazaar リビジョン指定です: ${revision}`)
   }
 
-  // Supports revno such as 1234, dotted revno such as 1.2.3,
-  // date:, tag:, revid:, submit:, before:, ancestor: style revision specs.
+  // Bazaar の revision spec は名前付き指定を許すが、argv 上の別引数や範囲指定へ広がる形はここで止める。
   if (!/^[A-Za-z0-9_.:+@/=-]+$/.test(trimmed)) {
     throw new BazaarError(`安全でない Bazaar リビジョン指定です: ${revision}`)
   }

@@ -23,10 +23,9 @@ export interface LoadAuthoringModelResult {
 }
 
 /**
- * Front matter fields that the GUI owns and may rewrite from form state.
+ * GUI が所有し、form state から書き戻してよい front matter field。
  *
- * Any field not listed here is intentionally copied through unknownFrontMatter
- * so existing hand-authored workflow metadata is not lost during GUI editing.
+ * ここにない field は unknownFrontMatter として保持し、手書き workflow metadata を GUI 編集で落とさない。
  */
 const guiManagedFrontMatterFields = new Set([
   "schemaVersion",
@@ -47,11 +46,10 @@ const guiManagedFrontMatterFields = new Set([
 ])
 
 /**
- * Loads an existing workflow-register/v1 WORKFLOW.md into the GUI model.
+ * 既存の workflow-register/v1 WORKFLOW.md を GUI model として読み込む。
  *
- * The loader first delegates semantic validation and normalization to the parser,
- * then keeps authoring-only details that the execution model does not need:
- * unknown front matter and the Markdown body after the YAML block.
+ * semantic validation と normalize は parser に委ね、execution model が不要な authoring-only 情報
+ * である unknown front matter と YAML block 後の Markdown body を保持する。
  */
 export function loadAuthoringModelFromMarkdown(options: LoadAuthoringModelOptions): LoadAuthoringModelResult {
   const split = splitMarkdownFrontMatter(options.text)
@@ -123,7 +121,7 @@ function normalizeAction(action: WorkflowActionDefinition): { provider: string; 
   return { provider: action.provider, args: Array.isArray(action.args) ? action.args : action.args === undefined ? undefined : [action.args] }
 }
 
-/** Preserves front matter owned by users or future workflow-register versions. */
+/** user または将来の workflow-register version が所有する front matter を保持する。 */
 function preservedFrontMatter(frontMatter: Record<string, unknown>): Record<string, unknown> | undefined {
   const preserved: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(frontMatter)) {

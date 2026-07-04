@@ -72,7 +72,7 @@ YAML schema error、必須ファイル不足、MCP 未設定、review-result inv
 
 ### 5.1 Command Palette 依存
 
-既存 README の手順では、`Bob ワークフロー: GUI で作成`、`Bazaar レビュー: GUI を開く`、`コード整合レビュー: 入力を前処理して Bob 用パッケージを作成` など、Command Palette 起動が多い。慣れていないユーザーは、コマンド名を覚える、検索する、実行順を理解する、という負担を負う。
+既存 README の手順では、`Bob Workflow: GUI で作成`、`Bob Bazaar Review: GUI を開く`、`Bob Code Consistency Review: 入力を前処理して Bob 用パッケージを作成` など、Command Palette 起動が多い。慣れていないユーザーは、コマンド名を覚える、検索する、実行順を理解する、という負担を負う。
 
 ### 5.2 ファイル編集依存
 
@@ -128,11 +128,11 @@ Bob Operation Hub
 
 | 既存機能 | GUI 改善方針 |
 |---|---|
-| `Bob ワークフロー: GUI で作成` | Hub の `ワークフローを作る` ボタンから起動。 |
-| `Bob ワークフロー: 現在の定義を検証` | 保存時・画面遷移時に自動検証し、問題をカード表示。 |
-| `Bob ワークフロー: 実行` | Workflow Catalog の `開始` ボタンから起動。 |
-| `Bob ワークフロー: 実行を再開` | Home の `前回の続き` に表示。 |
-| `Bob ワークフロー: 診断を確認` | Troubleshooter に統合。 |
+| `Bob Workflow: GUI で作成` | Hub の `ワークフローを作る` ボタンから起動。 |
+| `Bob Workflow: 現在の定義を検証` | 保存時・画面遷移時に自動検証し、問題をカード表示。 |
+| `Bob Workflow: 実行` | Workflow Catalog の `開始` ボタンから起動。 |
+| `Bob Workflow: 実行を再開` | Home の `前回の続き` に表示。 |
+| `Bob Workflow: 診断を確認` | Troubleshooter に統合。 |
 | step review | Run Monitor に `承認`, `再試行`, `編集して再試行` ボタンとして表示。 |
 
 ### 7.2 `bob-bazaar-review`
@@ -407,17 +407,17 @@ Workflow Catalog
 
 | 現在の操作 | GUI での入口 | 備考 |
 |---|---|---|
-| `Bob ワークフロー: GUI で作成` | Hub > ワークフローを作る | 既存 GUI Builder を再利用。 |
-| `Bob ワークフロー: 現在の定義を検証` | Workflow Editor > 自動検証 | 保存時・画面遷移時に実行。 |
-| `Bob ワークフロー: 実行` | Workflow Catalog > 開始 | workflow 選択をカード化。 |
-| `Bazaar レビュー: GUI を開く` | Hub > レビューする > Bazaar | 既存 GUI を主導線に昇格。 |
-| `Bazaar レビュー: Bob MCP を設定` | Setup Checklist > MCPを設定 | 不足時だけ表示。 |
-| `Bazaar レビュー: レビュー結果を取り込む` | Result Capture > 取り込む | active editor / clipboard を裏側で利用。 |
-| `コード整合レビュー: 対話式に review-input.yaml を作成` | 整合プレレビュー Wizard | review-input を画面生成。 |
-| `コード整合レビュー: traceability prep を開く` | Evidence Picker > Traceability | 承認待ち件数を表示。 |
-| `コード整合レビュー: 入力を前処理して Bob 用パッケージを作成` | 整合プレレビュー > パッケージ作成 | 成果物 preview 付き。 |
-| `コード整合レビュー: Bob 出力 YAML を検証` | Result Capture > 検証 | 保存前に自動実行。 |
-| `コード整合レビュー: 人間確認用 triage を生成` | Human Triage > triage作成 | findings table へ直接遷移。 |
+| `Bob Workflow: GUI で作成` | Hub > ワークフローを作る | 既存 GUI Builder を再利用。 |
+| `Bob Workflow: 現在の定義を検証` | Workflow Editor > 自動検証 | 保存時・画面遷移時に実行。 |
+| `Bob Workflow: 実行` | Workflow Catalog > 開始 | workflow 選択をカード化。 |
+| `Bob Bazaar Review: GUI を開く` | Hub > レビューする > Bazaar | 既存 GUI を主導線に昇格。 |
+| `Bob Bazaar Review: Bob MCP を設定` | Setup Checklist > MCPを設定 | 不足時だけ表示。 |
+| `Bob Bazaar Review: レビュー結果を取り込む` | Result Capture > 取り込む | active editor / clipboard を裏側で利用。 |
+| `Bob Code Consistency Review: 対話式に review-input.yaml を作成` | 整合プレレビュー Wizard | review-input を画面生成。 |
+| `Bob Code Consistency Review: traceability prep を開く` | Evidence Picker > Traceability | 承認待ち件数を表示。 |
+| `Bob Code Consistency Review: 入力を前処理して Bob 用パッケージを作成` | 整合プレレビュー > パッケージ作成 | 成果物 preview 付き。 |
+| `Bob Code Consistency Review: Bob 出力 YAML を検証` | Result Capture > 検証 | 保存前に自動実行。 |
+| `Bob Code Consistency Review: 人間確認用 triage を生成` | Human Triage > triage作成 | findings table へ直接遷移。 |
 
 ## 11. 実装アーキテクチャ案
 

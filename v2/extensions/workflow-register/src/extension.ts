@@ -6,89 +6,93 @@ import { WorkflowRegisterService } from "./workflowRegisterService"
 import type { StepCompletionOptions } from "./workflowRegisterService"
 
 /**
- * Public API exported by the workflow-register extension for other Bob extensions.
+ * 他の Bob companion extension へ公開する workflow-register API。
+ *
+ * provider ID、workflow ID、command ID は WORKFLOW.md と companion extension から参照される互換性契約である。
  */
 export interface WorkflowRegisterApi {
   /**
-   * Registers a workflow action provider that can execute custom action steps.
+   * custom action step を実行する workflow action provider を登録する。
    *
-   * @param provider Action provider implementation to expose to the workflow runtime.
-   * @returns Nothing.
+   * @param provider workflow runtime へ公開する action provider 実装。
+   * @returns なし。
    */
   registerActionProvider: (provider: ActionProvider) => void
   /**
-   * Registers an agent provider that can execute agent-backed workflow steps.
+   * agent-backed workflow step を実行する agent provider を登録する。
    *
-   * @param provider Agent provider implementation to expose to the workflow runtime.
-   * @returns Nothing.
+   * @param provider workflow runtime へ公開する agent provider 実装。
+   * @returns なし。
    */
   registerAgentProvider: (provider: AgentProvider) => void
   /**
-   * Registers a result sink handler for persisting or forwarding workflow outputs.
+   * workflow output の保存または転送に使う result sink handler を登録する。
    *
-   * @param type Result sink type identifier used by workflow definitions.
-   * @param handler Handler invoked when a workflow step emits a matching result sink payload.
-   * @returns Nothing.
+   * @param type workflow definition から参照される result sink type identifier。
+   * @param handler workflow step が一致する result sink payload を出したときに呼ぶ handler。
+   * @returns なし。
    */
   registerResultSink: (type: string, handler: Parameters<ResultSinkRegistry["register"]>[1]) => void
   /**
-   * Lists the workflow definitions currently known to the registration service.
+   * registration service が現在把握している workflow definition を返す。
    *
-   * @returns Registered core workflow definitions.
+   * @returns 登録済み core workflow definition。
    */
   listWorkflows: () => CoreWorkflowDefinition[]
   /**
-   * Runs a registered workflow, optionally passing workflow inputs.
+   * 登録済み workflow を実行し、必要に応じて workflow input を渡す。
    *
-   * @param workflowId Optional workflow identifier. When omitted, the user may be prompted to choose one.
-   * @param inputs Optional workflow input values keyed by input id.
-   * @returns The workflow execution result returned by the runtime.
+   * @param workflowId workflow identifier。省略時はユーザー選択になる場合がある。
+   * @param inputs input id を key にした workflow input values。
+   * @returns runtime が返す workflow execution result。
    */
   runWorkflow: (workflowId?: string, inputs?: Record<string, unknown>) => Promise<unknown>
   /**
-   * Runs a single step from a registered workflow.
+   * 登録済み workflow の単一 step を実行する。
    *
-   * @param workflowId Optional workflow identifier. When omitted, the user may be prompted to choose one.
-   * @param stepId Optional step identifier. When omitted, the user may be prompted to choose one.
-   * @param inputs Optional workflow input values keyed by input id.
-   * @returns The step execution result returned by the runtime.
+   * @param workflowId workflow identifier。省略時はユーザー選択になる場合がある。
+   * @param stepId step identifier。省略時はユーザー選択になる場合がある。
+   * @param inputs input id を key にした workflow input values。
+   * @returns runtime が返す step execution result。
    */
   runWorkflowStep: (workflowId?: string, stepId?: string, inputs?: Record<string, unknown>) => Promise<unknown>
   /**
-   * Continues a workflow run by executing its next runnable step.
+   * workflow run の次に実行可能な step を実行して run を進める。
    *
-   * @param runId Optional run identifier. When omitted, the active or selectable run is used.
-   * @returns The next-step execution result returned by the runtime.
+   * @param runId run identifier。省略時は active または選択可能な run を使う。
+   * @returns runtime が返す next-step execution result。
    */
   runNextStep: (runId?: string) => Promise<unknown>
   /**
-   * Approves a pending branch checkpoint and extends the loop allowance.
+   * pending branch checkpoint を承認し、loop allowance を延長する。
    *
-   * @param runId Optional run identifier. When omitted, the active or selectable run is used.
-   * @returns The updated workflow run.
+   * @param runId run identifier。省略時は active または選択可能な run を使う。
+   * @returns 更新後の workflow run。
    */
   approveBranchCheckpoint: (runId?: string) => Promise<unknown>
   /**
-   * Aborts a workflow run that is waiting at a branch checkpoint.
+   * branch checkpoint で待機中の workflow run を中止する。
    *
-   * @param runId Optional run identifier. When omitted, the active or selectable run is used.
-   * @returns The updated workflow run.
+   * @param runId run identifier。省略時は active または選択可能な run を使う。
+   * @returns 更新後の workflow run。
    */
   abortBranchCheckpoint: (runId?: string) => Promise<unknown>
   /**
-   * Shows branching loop/checkpoint/history diagnostics for a workflow run.
+   * workflow run の branching loop / checkpoint / history diagnostics を表示する。
    *
-   * @param runId Optional run identifier. When omitted, the active or selectable run is used.
-   * @returns The inspected workflow run, or an explanatory message.
+   * @param runId run identifier。省略時は active または選択可能な run を使う。
+   * @returns inspection 対象の workflow run、または説明 message。
    */
   inspectBranching: (runId?: string) => Promise<unknown>
 }
 
 /**
- * Activates the workflow-register extension and wires VS Code commands to the registration service.
+ * workflow-register 拡張を有効化し、VS Code command を registration service へ接続する。
  *
- * @param context VS Code extension context that owns command registrations and disposables.
- * @returns Public API object consumed by workflow-aware companion extensions.
+ * 公開 API と command ID は companion extension / WORKFLOW.md から参照されるため、この composition root で安定させる。
+ *
+ * @param context command 登録と disposable を所有する VS Code extension context。
+ * @returns workflow-aware companion extension が利用する public API object。
  */
 export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi {
   const service = new WorkflowRegisterService(String(context.extension.packageJSON.version ?? "unknown"))
@@ -144,10 +148,10 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
 }
 
 /**
- * Deactivates the workflow-register extension.
+ * workflow-register 拡張を無効化する。
  *
- * @returns Nothing.
+ * @returns なし。
  */
 export function deactivate(): void {
-  // Nothing to dispose beyond context subscriptions.
+  // context subscriptions 以外に明示破棄する resource はない。
 }

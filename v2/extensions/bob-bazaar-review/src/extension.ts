@@ -9,10 +9,12 @@ import { captureOptionsFromCommandArgs } from "./workflow/workflowRegisterBridge
 import { configureMcp, initProjectRules } from "./workspace/workspaceCommands"
 
 /**
- * Activates the Bob Bazaar review extension and registers VS Code commands plus workflow providers.
+ * Bob Bazaar レビュー拡張を有効化し、VS Code command と workflow provider を登録する。
  *
- * @param context VS Code extension context that owns command registrations and extension resources.
- * @returns Nothing.
+ * command ID は既存 workflow やユーザー操作から参照される互換性契約なので、処理本体を分離しても変更しない。
+ *
+ * @param context command 登録と拡張リソース解決に使う VS Code extension context。
+ * @returns なし。
  */
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -36,10 +38,10 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 /**
- * Deactivates the Bob Bazaar review extension.
+ * Bob Bazaar レビュー拡張を無効化する。
  *
- * @returns Nothing.
+ * @returns なし。
  */
 export function deactivate(): void {
-  // No background process is kept by the extension host. Bob starts the MCP server on demand.
+  // extension host 側では常駐 process を持たず、Bob が必要時に MCP server を起動する。
 }

@@ -23,10 +23,12 @@ import {
 import { registerWorkflowProviders } from "./workflowProviderRegistration"
 
 /**
- * Activates the Bob code-consistency review extension and registers command plus workflow entry points.
+ * Bob コード整合プレレビュー拡張を有効化し、command と workflow entry point を登録する。
  *
- * @param context VS Code extension context used for command registration and workspace initialization resources.
- * @returns Nothing.
+ * command ID は workflow template から参照される互換性契約なので、処理本体を移しても ID は維持する。
+ *
+ * @param context command 登録と workspace 初期化 template 解決に使う VS Code extension context。
+ * @returns なし。
  */
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -103,10 +105,10 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 /**
- * Deactivates the Bob code-consistency review extension.
+ * Bob コード整合プレレビュー拡張を無効化する。
  *
- * @returns Nothing.
+ * @returns なし。
  */
 export function deactivate(): void {
-  // No background resources are held by this extension.
+  // この拡張は常駐 resource を保持しない。
 }

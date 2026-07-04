@@ -121,7 +121,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | 拡張が起動し、Command Palette に主要 command が表示されることを確認する。 |
-| 手順 | 1. テスト workspace を開く。<br>2. `Developer: Show Running Extensions` で拡張状態を確認する。<br>3. Command Palette で `コード整合レビュー:` を検索する。 |
+| 手順 | 1. テスト workspace を開く。<br>2. `Developer: Show Running Extensions` で拡張状態を確認する。<br>3. Command Palette で `Bob Code Consistency Review:` を検索する。 |
 | 期待結果 | `initializeWorkspace`、`createReviewInput`、`preprocess`、`captureBobOutput`、`validateOutput`、`triage`、traceability 系 command が表示される。 |
 
 ### CCR-RT-002 workflow-register provider 登録
@@ -137,7 +137,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | workflow template、review-input 雛形、placeholder document が作成されることを確認する。 |
-| 手順 | 1. `.bob/workflows/code-consistency-review/WORKFLOW.md` と `review-input.yaml` が無い workspace を開く。<br>2. `コード整合レビュー: .bob ワークフロー定義と review-input 雛形を初期化` を実行する。 |
+| 手順 | 1. `.bob/workflows/code-consistency-review/WORKFLOW.md` と `review-input.yaml` が無い workspace を開く。<br>2. `Bob Code Consistency Review: .bob ワークフロー定義と review-input 雛形を初期化` を実行する。 |
 | 期待結果 | `.bob/workflows/code-consistency-review/WORKFLOW.md`、`review-input.yaml`、`docs/review-input-placeholder.md` が作成される。 |
 
 ### CCR-RT-004 workspace 初期化時の既存 review-input 保護
@@ -153,7 +153,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | Wizard で文書候補を選択し、`review-input.yaml` を生成できることを確認する。 |
-| 手順 | 1. `docs` 配下に requirements / design / test 文書を配置する。<br>2. `コード整合レビュー: 対話式に review-input.yaml を作成` を実行する。<br>3. QuickPick / input box に従って入力する。 |
+| 手順 | 1. `docs` 配下に requirements / design / test 文書を配置する。<br>2. `Bob Code Consistency Review: 対話式に review-input.yaml を作成` を実行する。<br>3. QuickPick / input box に従って入力する。 |
 | 期待結果 | `review-input.yaml` が生成され、artifact path、sections / cases、review_focus が反映される。 |
 
 ### CCR-RT-006 AI review-input draft prompt 生成
@@ -161,7 +161,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | AI draft 用 prompt が生成され、clipboard にコピーされることを確認する。 |
-| 手順 | 1. Git repository または diff fixture を用意する。<br>2. `コード整合レビュー: AI draft 用プロンプトを作成` を実行する。<br>3. base / head / vcs を入力する。 |
+| 手順 | 1. Git repository または diff fixture を用意する。<br>2. `Bob Code Consistency Review: AI draft 用プロンプトを作成` を実行する。<br>3. base / head / vcs を入力する。 |
 | 期待結果 | `.bob-review/review-input-draft/ai-draft-prompt.md` が作成され、document candidates、diff summary、allowed enum が含まれる。 |
 
 ### CCR-RT-007 AI review-input draft JSON 適用
@@ -169,7 +169,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | AI draft JSON から `review-input.yaml` を生成できることを確認する。 |
-| 手順 | 1. valid `ReviewInputDraft` JSON を clipboard にコピーする。<br>2. `コード整合レビュー: AI draft JSON から review-input.yaml を生成` を実行する。 |
+| 手順 | 1. valid `ReviewInputDraft` JSON を clipboard にコピーする。<br>2. `Bob Code Consistency Review: AI draft JSON から review-input.yaml を生成` を実行する。 |
 | 期待結果 | `review-input.yaml` が生成または更新され、既存 file がある場合は backup される。 |
 
 ### CCR-RT-008 review-input 診断説明
@@ -177,7 +177,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | 不正な `review-input.yaml` の診断を表示できることを確認する。 |
-| 手順 | 1. required field 不足または missing artifact を含む `review-input.yaml` を配置する。<br>2. `コード整合レビュー: review-input.yaml 診断を説明` を実行する。 |
+| 手順 | 1. required field 不足または missing artifact を含む `review-input.yaml` を配置する。<br>2. `Bob Code Consistency Review: review-input.yaml 診断を説明` を実行する。 |
 | 期待結果 | error / diagnostics が通知または report として表示される。 |
 
 ### CCR-RT-009 review-input 自動修復
@@ -185,7 +185,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | legacy / 不完全な `review-input.yaml` の修復導線を確認する。 |
-| 手順 | 1. 修復対象の `review-input.yaml` を配置する。<br>2. `コード整合レビュー: review-input.yaml を自動修復` を実行する。 |
+| 手順 | 1. 修復対象の `review-input.yaml` を配置する。<br>2. `Bob Code Consistency Review: review-input.yaml を自動修復` を実行する。 |
 | 期待結果 | 修復可能な場合は backup 後に更新される。不可の場合は error が表示される。 |
 
 ### CCR-RT-010 traceability prep Webview 起動
@@ -193,7 +193,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | traceability prep Webview が開き、catalog を表示できることを確認する。 |
-| 手順 | 1. `コード整合レビュー: traceability prep を開く` を実行する。<br>2. Domains / Items / Links / Decisions / Gate Report / Preview タブを確認する。 |
+| 手順 | 1. `Bob Code Consistency Review: traceability prep を開く` を実行する。<br>2. Domains / Items / Links / Decisions / Gate Report / Preview タブを確認する。 |
 | 期待結果 | Webview が表示され、空 catalog または既存 catalog が読み込まれる。 |
 
 ### CCR-RT-011 traceability prep 保存と gate report
@@ -209,7 +209,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | catalog validation と gate report 生成を command から確認する。 |
-| 手順 | 1. valid / invalid catalog を用意する。<br>2. `コード整合レビュー: traceability catalog を検証` を実行する。 |
+| 手順 | 1. valid / invalid catalog を用意する。<br>2. `Bob Code Consistency Review: traceability catalog を検証` を実行する。 |
 | 期待結果 | `.bob-trace/gate-report.md` が更新され、error / warning 件数が通知される。 |
 
 ### CCR-RT-013 traceability AI draft prompt 生成
@@ -217,7 +217,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | traceability AI draft 用 prompt が生成されることを確認する。 |
-| 手順 | 1. catalog と docs を用意する。<br>2. `コード整合レビュー: traceability AI draft 用プロンプトを作成` を実行する。 |
+| 手順 | 1. catalog と docs を用意する。<br>2. `Bob Code Consistency Review: traceability AI draft 用プロンプトを作成` を実行する。 |
 | 期待結果 | `.bob-trace/ai-traceability-draft/ai-draft-prompt.md` が作成され、clipboard にコピーされる。 |
 
 ### CCR-RT-014 traceability AI draft JSON 適用
@@ -225,7 +225,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | traceability AI draft JSON を catalog に反映できることを確認する。 |
-| 手順 | 1. valid traceability draft JSON を clipboard にコピーする。<br>2. `コード整合レビュー: traceability AI draft JSON を catalog に反映` を実行する。 |
+| 手順 | 1. valid traceability draft JSON を clipboard にコピーする。<br>2. `Bob Code Consistency Review: traceability AI draft JSON を catalog に反映` を実行する。 |
 | 期待結果 | catalog が更新され、gate report が再生成される。 |
 
 ### CCR-RT-015 traceability catalog から review-input 生成
@@ -233,7 +233,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | accepted item から `review-input.yaml` を生成できることを確認する。 |
-| 手順 | 1. accepted requirement / design / test item を含む catalog を用意する。<br>2. `コード整合レビュー: traceability catalog から review-input.yaml を生成` を実行する。<br>3. review metadata を入力する。 |
+| 手順 | 1. accepted requirement / design / test item を含む catalog を用意する。<br>2. `Bob Code Consistency Review: traceability catalog から review-input.yaml を生成` を実行する。<br>3. review metadata を入力する。 |
 | 期待結果 | accepted item の source path / id が artifacts に反映された `review-input.yaml` が生成される。 |
 
 ### CCR-RT-016 Git preprocess
@@ -241,7 +241,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | Git diff から review-package を生成できることを確認する。 |
-| 手順 | 1. Git repository で変更を作成する。<br>2. valid `review-input.yaml` に `review.vcs: git`、base / head を設定する。<br>3. `コード整合レビュー: 入力を前処理して Bob 用パッケージを作成` を実行する。 |
+| 手順 | 1. Git repository で変更を作成する。<br>2. valid `review-input.yaml` に `review.vcs: git`、base / head を設定する。<br>3. `Bob Code Consistency Review: 入力を前処理して Bob 用パッケージを作成` を実行する。 |
 | 期待結果 | `.bob-review/review-package` に manifest、changed files、evidence index、bob-input.md などが生成される。 |
 
 ### CCR-RT-017 Bazaar preprocess
@@ -313,7 +313,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | clipboard から Bob 出力 YAML を取り込めることを確認する。 |
-| 手順 | 1. valid Bob output YAML を clipboard にコピーする。<br>2. `コード整合レビュー: Bob 出力 YAML を取り込む` を実行する。 |
+| 手順 | 1. valid Bob output YAML を clipboard にコピーする。<br>2. `Bob Code Consistency Review: Bob 出力 YAML を取り込む` を実行する。 |
 | 期待結果 | `.bob-review/bob-output/bob-output.yaml` が保存される。 |
 
 ### CCR-RT-026 Bob output capture: workflow handoff
@@ -329,7 +329,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | schema と evidence index に合う Bob output が OK になることを確認する。 |
-| 手順 | 1. valid Bob output と review-package を用意する。<br>2. `コード整合レビュー: Bob 出力 YAML を検証` を実行する。 |
+| 手順 | 1. valid Bob output と review-package を用意する。<br>2. `Bob Code Consistency Review: Bob 出力 YAML を検証` を実行する。 |
 | 期待結果 | status ok、error 0 件が通知される。 |
 
 ### CCR-RT-028 Bob output validation error
@@ -345,7 +345,7 @@ int validate_input(const char *value) {
 | 項目 | 内容 |
 | --- | --- |
 | 目的 | Bob output から human triage 成果物を生成できることを確認する。 |
-| 手順 | 1. valid Bob output を保存する。<br>2. `コード整合レビュー: 人間確認用 triage を生成` を実行する。 |
+| 手順 | 1. valid Bob output を保存する。<br>2. `Bob Code Consistency Review: 人間確認用 triage を生成` を実行する。 |
 | 期待結果 | `.bob-review/human-triage` に `triage-result.yaml`、`accepted-findings.md`、`questions-to-author.md`、`rejected-findings.md`、`follow-up-actions.md` が生成される。 |
 
 ### CCR-RT-030 End-to-End: Command Palette 経由
