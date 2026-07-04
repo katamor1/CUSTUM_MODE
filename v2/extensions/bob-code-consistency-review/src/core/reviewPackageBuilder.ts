@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto"
 import { applyTemplate, loadPromptTemplates } from "../templates/templateLoader"
 import { relativePosix, writeJsonFile, writeTextFile } from "./fileSystem"
 import { normalizeReviewProcessingLimits, truncateUtf8Text, type ReviewProcessingLimits } from "./limits"
-import type { CodeAnalysisResult, DiffSummary, DocumentExtractionResult, EvidenceRef, ReviewInput, TraceabilityResult } from "./types"
+import type { CodeAnalysisResult } from "./analysisTypes"
+import type { DiffSummary } from "./diffTypes"
+import type { DocumentExtractionResult, EvidenceRef } from "./documentTypes"
+import type { ReviewInput } from "./reviewTypes"
+import type { TraceabilityResult } from "./traceabilityResultTypes"
 
 const PRIVACY_NOTICE_JA = "生成物は社内設計書・顧客仕様・ソースコード・raw diff を含む可能性があります。"
 const MANAGED_PACKAGE_OUTPUTS = [

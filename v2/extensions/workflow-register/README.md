@@ -357,6 +357,39 @@ workflow-register-0.1.0.vsix
 | `select but has no options` | `inputs.<name>.options` に候補を追加する。 |
 | 手動ステップが進まない | `現在のワークフローステップを完了` または `Bob ワークフロー: 現在のステップを完了` を実行する。 |
 
+## 保守・配布ポリシー
+
+### 生成物
+
+主な生成物はワークスペース内の `.bob/workflows` と `.bob/workflows/runs` です。`.bob/workflows/*/WORKFLOW.md` はワークフロー定義、`.bob/workflows/runs/<runId>/run.json` は standalone 実行状態、task snapshot は Bob UI 実行時の復旧・診断用データです。利用者の要求・設計・レビュー内容が含まれる場合があるため、共有前に内容を確認してください。
+
+### VSIX サイズ
+
+`npm run package:policy` は VSIX サイズの上限を `1200000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` は VSIX に同梱しません。
+
+### 暗黙依存
+
+`IBM.bob-code` は Bob UI へ workflow source を登録する場合だけ必要です。authoring、validation、standalone 実行、診断は `IBM.bob-code` なしで動作します。連携先が未導入の環境では、Bob UI 登録ではなく standalone command を使ってください。
+
+### 必要 CLI
+
+開発と検証には Node.js と npm が必要です。CI と同じ入口は次です。
+
+```powershell
+npm ci
+npm run dependency:policy
+npm run architecture:policy
+npm run unused:report
+npm run audit:prod
+npm test
+npm run package
+npm run package:policy
+```
+
+### Trusted Workspace
+
+ワークフロー定義、実行状態、task snapshot は開いている workspace の `.bob` 配下だけを対象にします。信頼できない workspace では、外部コマンドを実行する command step、result sink、AI provider command の利用範囲を確認してから実行してください。
+
 ## 関連ドキュメント
 
 - `docs/basic-design-ja.md`

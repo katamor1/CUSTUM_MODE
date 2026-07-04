@@ -5,7 +5,7 @@ const path = require("node:path")
 const { test } = require("node:test")
 
 test("configureWorkspaceMcpServer writes the configured Bazaar text encoding", async () => {
-  const { configureWorkspaceMcpServer } = require("../out/mcpConfig")
+  const { configureWorkspaceMcpServer } = require("../out/mcp/mcpConfig")
   const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-mcp-"))
   const result = await configureWorkspaceMcpServer({
     workspaceFolder: { uri: { fsPath: workspaceRoot } },
@@ -22,7 +22,7 @@ test("configureWorkspaceMcpServer writes the configured Bazaar text encoding", a
 })
 
 test("configureWorkspaceMcpServer rejects invalid server names", async () => {
-  const { configureWorkspaceMcpServer } = require("../out/mcpConfig")
+  const { configureWorkspaceMcpServer } = require("../out/mcp/mcpConfig")
   const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-mcp-"))
 
   await assert.rejects(
@@ -37,7 +37,7 @@ test("configureWorkspaceMcpServer rejects invalid server names", async () => {
 })
 
 test("configureWorkspaceMcpServer backs up existing config and writes atomically", async () => {
-  const { configureWorkspaceMcpServer } = require("../out/mcpConfig")
+  const { configureWorkspaceMcpServer } = require("../out/mcp/mcpConfig")
   const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-mcp-"))
   const bobDir = path.join(workspaceRoot, ".bob")
   const configPath = path.join(bobDir, "mcp.json")

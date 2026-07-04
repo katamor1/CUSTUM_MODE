@@ -7,7 +7,7 @@ const {
   clampMaxDiffBytes,
   maxBufferForDiffBytes,
   truncateUtf8
-} = require("../out/reviewLimits")
+} = require("../out/bazaar/reviewLimits")
 
 test("review byte limits clamp non-finite, low, and high values", () => {
   assert.equal(clampMaxDiffBytes(Number.NaN), 1024 * 1024)

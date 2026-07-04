@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
-import { decodeTextBuffer } from "../textEncoding"
+import { decodeTextBuffer } from "../bazaar/textEncoding"
 import { DEFAULT_CHECKLIST, REVIEW_RESULT_SCHEMA } from "./defaults"
 import { ProjectChecklist } from "./types"
 

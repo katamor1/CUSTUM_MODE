@@ -4,7 +4,7 @@ const path = require("node:path")
 const { test } = require("node:test")
 
 const outRoot = path.resolve(__dirname, "..", "out")
-const { parseWorkflowMarkdown } = require(path.join(outRoot, "core", "parser.js"))
+const { parseWorkflowMarkdown } = require(path.join(outRoot, "core", "parser"))
 
 test("review-gated step execution sample workflow validates", () => {
   const workflowFile = path.resolve(

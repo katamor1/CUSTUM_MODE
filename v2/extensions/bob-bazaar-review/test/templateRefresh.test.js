@@ -5,7 +5,7 @@ const path = require("node:path")
 const { test } = require("node:test")
 
 test("refreshTemplateFile backs up an existing different file before overwriting", async () => {
-  const { refreshTemplateFile } = require("../out/templateRefresh")
+  const { refreshTemplateFile } = require("../out/workspace/templateRefresh")
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-template-refresh-"))
   const source = path.join(root, "source", "WORKFLOW.md")
   const target = path.join(root, "workspace", ".bob", "workflows", "review", "WORKFLOW.md")
@@ -23,7 +23,7 @@ test("refreshTemplateFile backs up an existing different file before overwriting
 })
 
 test("refreshTemplateFile skips identical files without creating backups", async () => {
-  const { refreshTemplateFile } = require("../out/templateRefresh")
+  const { refreshTemplateFile } = require("../out/workspace/templateRefresh")
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-template-refresh-same-"))
   const source = path.join(root, "source", "WORKFLOW.md")
   const target = path.join(root, "workspace", ".bob", "workflows", "review", "WORKFLOW.md")
@@ -41,7 +41,7 @@ test("refreshTemplateFile skips identical files without creating backups", async
 })
 
 test("refreshTemplateFile leaves an existing different file untouched when overwrite confirmation is declined", async () => {
-  const { refreshTemplateFile } = require("../out/templateRefresh")
+  const { refreshTemplateFile } = require("../out/workspace/templateRefresh")
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-template-refresh-decline-"))
   const source = path.join(root, "source", "WORKFLOW.md")
   const target = path.join(root, "workspace", ".bob", "workflows", "review", "WORKFLOW.md")
@@ -62,7 +62,7 @@ test("refreshTemplateFile leaves an existing different file untouched when overw
 })
 
 test("refreshTemplateFile passes a bounded diff preview to overwrite confirmation", async () => {
-  const { refreshTemplateFile } = require("../out/templateRefresh")
+  const { refreshTemplateFile } = require("../out/workspace/templateRefresh")
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-template-refresh-preview-"))
   const source = path.join(root, "source", "WORKFLOW.md")
   const target = path.join(root, "workspace", ".bob", "workflows", "review", "WORKFLOW.md")

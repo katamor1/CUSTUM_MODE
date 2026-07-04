@@ -1,15 +1,15 @@
 import * as vscode from "vscode"
 import { BazaarClient } from "./bazaar"
-import { isBobCodeExtensionAvailable } from "./bobCodeExtension"
-import { addMarkdownPacketToBobContext } from "./bobContext"
+import { isBobCodeExtensionAvailable } from "../bob/bobCodeExtension"
+import { addMarkdownPacketToBobContext } from "../bob/bobContext"
 import { resolveBzrPath } from "./bzrPathTrust"
-import { loadProjectChecklistRequired, loadReviewResultSchemaRequired } from "./projectRules/io"
-import { buildProjectRulesSection } from "./projectRules/packet"
+import { loadProjectChecklistRequired, loadReviewResultSchemaRequired } from "../projectRules/io"
+import { buildProjectRulesSection } from "../projectRules/packet"
 import { buildReviewPacket } from "./reviewPacket"
 import { clampMaxAddedFileContentBytes, clampMaxDiffBytes, maxBufferForDiffBytes } from "./reviewLimits"
 import { buildAddedFilesContentSection, loadBazaarRevisionPacketInput } from "./revisionInfo"
-import { isWorkflowRegisterExtensionAvailable } from "./workflowRegisterBridge"
-import { resolveBazaarWorkspaceFolder, resolveBobWorkspaceFolder } from "./workspaceResolver"
+import { isWorkflowRegisterExtensionAvailable } from "../workflow/workflowRegisterBridge"
+import { resolveBazaarWorkspaceFolder, resolveBobWorkspaceFolder } from "../workspace/workspaceResolver"
 
 export async function reviewRevision(context: vscode.ExtensionContext, withProjectRules: boolean): Promise<void> {
   const bazaarFolder = await pickBazaarWorkspaceFolder()

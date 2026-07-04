@@ -380,6 +380,39 @@ npm run package
 - Bob 出力は YAML schema と `evidence-index.json` に照らして検証します。
 - human triage は正式レビュー前の人間判断用成果物です。
 
+## 保守・配布ポリシー
+
+### 生成物
+
+主な生成物は `.bob-review/review-package`、`.bob-review/bob-output.yaml`、`.bob-review/triage`、`.bob-trace/traceability-catalog.json`、`.bob-trace/gate-report.md` です。review-package には `review-package` の manifest、document excerpts、diff context、evidence index、Bob 投入用 `bob-input.md` が含まれます。コード、文書抜粋、Bob 出力、triage 判断を含むため、共有前に内容を確認してください。
+
+### VSIX サイズ
+
+`npm run package:policy` は VSIX サイズの上限を `11000000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` は VSIX に同梱しません。
+
+### 暗黙依存
+
+`IBM.bob-code` と `workflow-register` は `extensionDependencies` として必要です。Bob への投入、workflow action provider、Bob output capture を使う前に両方が導入済みであることを確認してください。Excel 読み取りは production dependency の `read-excel-file` を使い、既知脆弱性のある `xlsx` には依存しません。
+
+### 必要 CLI
+
+差分取得には git または Bazaar CLI が必要です。Bazaar を使う場合は alias の影響を避けるため `bzr --no-aliases` を前提にします。開発と検証には Node.js と npm が必要です。
+
+```powershell
+npm ci
+npm run dependency:policy
+npm run architecture:policy
+npm run unused:report
+npm run audit:prod
+npm test
+npm run package
+npm run package:policy
+```
+
+### Trusted Workspace
+
+`review-input.yaml`、文書 path、review-package path、Bob output path、triage path、traceability catalog path は workspace 内を基準に検証します。Trusted Workspace でない環境では、外部 path opt-in や VCS command 実行の設定を確認してから前処理を実行してください。
+
 ## 関連ドキュメント
 
 - `docs/README-ja.md`

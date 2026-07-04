@@ -6,7 +6,7 @@ import {
   BazaarRevisionInfo,
   BazaarChangedFile
 } from "./revisionInfo"
-import type { TargetMode } from "./reviewGuiTypes"
+import type { TargetMode } from "../ui/reviewGuiTypes"
 
 export interface TargetRequest {
   mode: TargetMode

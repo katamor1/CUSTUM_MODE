@@ -4,7 +4,8 @@ import { promisify } from "node:util"
 import { readTextFile, resolveWorkspacePathStrict, toPosixPath } from "./fileSystem"
 import { decodeTextBuffer } from "./textEncoding"
 import { normalizeReviewProcessingLimits, truncateUtf8Text, type ReviewProcessingLimits } from "./limits"
-import type { DiffSummary, ReviewInput } from "./types"
+import type { DiffSummary } from "./diffTypes"
+import type { ReviewInput } from "./reviewTypes"
 
 const execFileAsync = promisify(execFile)
 

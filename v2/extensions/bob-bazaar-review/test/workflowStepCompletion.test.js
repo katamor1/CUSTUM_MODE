@@ -6,7 +6,7 @@ const { test } = require("node:test")
 const extensionRoot = path.resolve(__dirname, "..")
 
 test("GUI workflow completion calls the workflow-register step command silently", async () => {
-  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflowStepCompletion")
+  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflow/workflowStepCompletion")
   const calls = []
 
   const completed = await completeCurrentWorkflowStepAfterGuiAction({
@@ -21,7 +21,7 @@ test("GUI workflow completion calls the workflow-register step command silently"
 })
 
 test("GUI workflow completion passes expected workflow run and step ids", async () => {
-  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflowStepCompletion")
+  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflow/workflowStepCompletion")
   const calls = []
 
   const completed = await completeCurrentWorkflowStepAfterGuiAction({
@@ -39,7 +39,7 @@ test("GUI workflow completion passes expected workflow run and step ids", async 
 })
 
 test("GUI workflow completion passes workflow state updates for the completed step", async () => {
-  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflowStepCompletion")
+  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflow/workflowStepCompletion")
   const calls = []
 
   const completed = await completeCurrentWorkflowStepAfterGuiAction({
@@ -70,7 +70,7 @@ test("GUI workflow completion passes workflow state updates for the completed st
 })
 
 test("GUI workflow completion reports no active workflow step without failing the GUI action", async () => {
-  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflowStepCompletion")
+  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflow/workflowStepCompletion")
   const warnings = []
 
   const completed = await completeCurrentWorkflowStepAfterGuiAction({
@@ -84,7 +84,7 @@ test("GUI workflow completion reports no active workflow step without failing th
 })
 
 test("GUI workflow completion reports result capture failures without treating the step as completed", async () => {
-  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflowStepCompletion")
+  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflow/workflowStepCompletion")
   const warnings = []
 
   const completed = await completeCurrentWorkflowStepAfterGuiAction({
@@ -98,7 +98,7 @@ test("GUI workflow completion reports result capture failures without treating t
 })
 
 test("GUI workflow completion reports active step mismatches without treating the step as completed", async () => {
-  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflowStepCompletion")
+  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflow/workflowStepCompletion")
   const warnings = []
 
   const completed = await completeCurrentWorkflowStepAfterGuiAction({
@@ -112,7 +112,7 @@ test("GUI workflow completion reports active step mismatches without treating th
 })
 
 test("GUI workflow completion reports command failures without failing the GUI action", async () => {
-  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflowStepCompletion")
+  const { completeCurrentWorkflowStepAfterGuiAction } = require("../out/workflow/workflowStepCompletion")
   const warnings = []
 
   const completed = await completeCurrentWorkflowStepAfterGuiAction({
@@ -128,17 +128,17 @@ test("GUI workflow completion reports command failures without failing the GUI a
 })
 
 test("review GUI only completes the workflow step after Bob context ADD succeeds", () => {
-  const source = fs.readFileSync(path.join(extensionRoot, "src", "reviewGui.ts"), "utf8")
+  const source = fs.readFileSync(path.join(extensionRoot, "src", "ui", "reviewGui.ts"), "utf8")
 
   assert.match(source, /if \(isBobCodeExtensionAvailable\(\)\) \{[\s\S]*addResult = await addPacketToBobContext\(doc\.uri, packet\)/)
   assert.match(source, /addResult === "added"[\s\S]*completeCurrentWorkflowStepAfterGuiAction/)
-  assert.match(source, /import \{ addMarkdownPacketToBobContext \} from "\.\/bobContext"/)
+  assert.match(source, /import \{ addMarkdownPacketToBobContext \} from "\.\.\/bob\/bobContext"/)
 })
 
 test("review GUI stops after markdown creation when IBM Bob is absent", () => {
-  const source = fs.readFileSync(path.join(extensionRoot, "src", "reviewGui.ts"), "utf8")
+  const source = fs.readFileSync(path.join(extensionRoot, "src", "ui", "reviewGui.ts"), "utf8")
 
-  assert.match(source, /import \{ isBobCodeExtensionAvailable \} from "\.\/bobCodeExtension"/)
+  assert.match(source, /import \{ isBobCodeExtensionAvailable \} from "\.\.\/bob\/bobCodeExtension"/)
   assert.match(source, /if \(isBobCodeExtensionAvailable\(\)\) \{[\s\S]*await addPacketToBobContext\(doc\.uri, packet\)[\s\S]*\} else \{[\s\S]*IBM Bob 拡張機能が見つからないため/)
   assert.match(source, /bobContextAvailable:/)
 })

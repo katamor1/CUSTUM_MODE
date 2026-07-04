@@ -11,8 +11,14 @@ test("bob-bazaar-review dependency policy requires a committed lockfile with pro
   assert.ok(fs.existsSync(lockPath), "package-lock.json must be committed for reproducible VSIX builds")
   assert.equal(packageJson.scripts["dependency:policy"], "node --test test/dependencyPolicy.test.js")
   assert.equal(packageJson.scripts["architecture:policy"], "node ../../scripts/check-import-cycles.js src")
+  assert.equal(packageJson.scripts["source:policy"], "node ../../scripts/check-export-star-policy.js src")
+  assert.equal(packageJson.scripts["unused:report"], "node ../../scripts/run-unused-checks.js")
+  assert.equal(packageJson.scripts["artifact:policy"], "node ../../scripts/check-artifact-size-policy.js --max-bytes 12000 templates")
   assert.equal(packageJson.scripts["audit:prod"], "npm audit --omit=dev --audit-level=high")
   assert.equal(packageJson.scripts["package:policy"], "node ../../scripts/check-vsix-policy.js --max-bytes 200000")
+  assert.equal(packageJson.devDependencies.knip, "^5.0.0")
+  assert.equal(packageJson.devDependencies.depcheck, "^1.4.7")
+  assert.equal(packageJson.devDependencies["ts-prune"], "^0.10.3")
 
   const gitignore = fs.readFileSync(repoPath(".gitignore"), "utf8").split(/\r?\n/)
   assert.ok(!gitignore.includes("extensions/bob-bazaar-review/package-lock.json"), "package-lock.json must not be ignored")
@@ -45,9 +51,43 @@ test("bob-bazaar-review CI uses npm ci, dependency policy, production audit, tes
   assert.match(job, /run: npm ci/)
   assert.match(job, /run: npm run dependency:policy/)
   assert.match(job, /run: npm run architecture:policy/)
+  assert.match(job, /run: npm run source:policy/)
+  assert.match(job, /run: npm run unused:report/)
+  assert.match(job, /run: npm run artifact:policy/)
   assert.match(job, /run: npm run audit:prod/)
   assert.match(job, /run: npm test/)
   assert.match(job, /run: npm run package/)
   assert.match(job, /run: npm run package:policy/)
   assert.doesNotMatch(job, /run: npm install/)
+})
+
+test("bob-bazaar-review README documents generated artifacts, package budget, dependencies, CLI, and trust boundary", () => {
+  const packageJson = readJson("package.json")
+  const readme = fs.readFileSync(path.join(extensionRoot, "README.md"), "utf8")
+  const packageBudget = packageJson.scripts["package:policy"].match(/--max-bytes\s+(\d+)/)?.[1]
+
+  for (const phrase of [
+    "生成物",
+    ".bob/mcp.json",
+    ".bob/review",
+    "review-result",
+    "VSIX サイズ",
+    packageBudget,
+    "暗黙依存",
+    "IBM.bob-code",
+    "workflow-register",
+    "必要 CLI",
+    "Node.js",
+    "npm ci",
+    "bzr --no-aliases",
+    "npm run dependency:policy",
+    "npm run architecture:policy",
+    "npm run unused:report",
+    "npm run artifact:policy",
+    "npm run audit:prod",
+    "npm run package:policy",
+    "Trusted Workspace"
+  ]) {
+    assert.ok(readme.includes(phrase), `README must document: ${phrase}`)
+  }
 })

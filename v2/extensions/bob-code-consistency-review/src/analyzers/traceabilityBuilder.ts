@@ -1,4 +1,8 @@
-import type { CodeAnalysisResult, DiffSummary, DocumentExtractionResult, ReviewInput, TraceabilityResult } from "../core/types"
+import type { CodeAnalysisResult } from "../core/analysisTypes"
+import type { DiffSummary } from "../core/diffTypes"
+import type { DocumentExtractionResult } from "../core/documentTypes"
+import type { ReviewInput } from "../core/reviewTypes"
+import type { TraceabilityResult } from "../core/traceabilityResultTypes"
 
 export async function buildTraceability(input: {
   reviewInput: ReviewInput

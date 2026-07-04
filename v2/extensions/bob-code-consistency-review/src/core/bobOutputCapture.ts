@@ -4,7 +4,7 @@ import { pathExists, readTextFile, resolveWorkspacePathStrict, writeTextFile } f
 import { canonicalizeBobOutputWithReport, type CanonicalizationIssue, type EvidenceIndexItem, type EvidenceLookup } from "./bobOutputCanonicalizer"
 import { validateParsedBobOutput } from "./bobOutputValidator"
 import { extractSingleYamlDocumentText } from "./structuredTextExtractor"
-import type { ValidationReport } from "./types"
+import type { ValidationReport } from "./validationTypes"
 
 export type CaptureBobOutputResult = {
   status: "ok" | "error"

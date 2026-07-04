@@ -2,7 +2,7 @@ const assert = require("node:assert/strict")
 const { test } = require("node:test")
 
 test("review GUI CSP nonce is generated from random bytes and reused consistently", () => {
-  const { createNonce, renderHtml } = require("../out/reviewGuiHtml")
+const { createNonce, renderHtml } = require("../out/ui/reviewGuiHtml")
 
   const nonce = createNonce()
   assert.equal(Buffer.from(nonce, "base64").length, 16)

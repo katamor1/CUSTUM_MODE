@@ -3,7 +3,7 @@ import * as path from "node:path"
 import YAML from "yaml"
 import { pathExists, resolveWorkspacePath, toPosixPath, writeTextFile } from "./fileSystem"
 import { formatSchemaErrors, loadSchemaValidator } from "./schemaLoader"
-import type { ReviewInput } from "./types"
+import type { ReviewInput } from "./reviewTypes"
 
 export const REVIEW_FOCUS_VALUES = [
   "requirement-code-consistency",

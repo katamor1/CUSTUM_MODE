@@ -3,7 +3,7 @@ import * as path from "node:path"
 import { readTextFile, relativePosix, resolveWorkspacePathStrict } from "./fileSystem"
 import type { ArtifactKind, ReviewInputArtifactDraft } from "./reviewInputBuilder"
 
-type XlsxModule = typeof import("xlsx")
+type ExcelFileModule = typeof import("read-excel-file/node")
 
 export type ReviewInputDiscoveryOptions = {
   docsRoot?: string
@@ -25,7 +25,7 @@ export type ReviewInputDiscoveryResult = {
 const DOCUMENT_EXTENSIONS = new Set([".md", ".markdown", ".docx", ".xlsx"])
 const SKIPPED_DIRECTORY_NAMES = new Set(["node_modules", ".git", ".bzr", ".bob-review", ".bob-trace", "out", "dist"])
 const KNOWN_ID_PATTERN = /\b(?:REQ|BD|DD|TC|QA|RV|ERR|ISSUE|TICKET|LEDGER)(?:[-_][A-Za-z0-9]+)+\b/g
-let xlsxModulePromise: Promise<XlsxModule> | undefined
+let excelFileModulePromise: Promise<ExcelFileModule> | undefined
 
 export async function discoverReviewInputCandidates(workspaceRoot: string, options: ReviewInputDiscoveryOptions = {}): Promise<ReviewInputDiscoveryResult> {
   const warnings: string[] = []
@@ -100,15 +100,13 @@ async function discoverMarkdownCandidate(filePath: string, relativePath: string,
 }
 
 async function discoverXlsxCandidate(filePath: string, relativePath: string, kind: ArtifactKind, maxIds: number): Promise<ReviewInputDocumentCandidate> {
-  const XLSX = await loadXlsx()
-  const workbook = XLSX.readFile(filePath, { cellDates: false, sheetRows: 80 })
+  const readExcelFile = await loadExcelFile()
+  const workbook = await readExcelFile.default(filePath)
   const ids: string[] = []
-  for (const sheetName of workbook.SheetNames) {
-    const sheet = workbook.Sheets[sheetName]
-    if (!sheet) continue
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: "" }) as unknown[][]
-    for (const row of rows) {
-      ids.push(...uniqueMatches(row.map((cell) => String(cell ?? "")).join(" "), maxIds - ids.length))
+  const sheetNames = workbook.map((sheet) => sheet.sheet)
+  for (const sheet of workbook) {
+    for (const row of sheet.data.slice(0, 80)) {
+      ids.push(...uniqueMatches(row.map(cellText).join(" "), maxIds - ids.length))
       if (ids.length >= maxIds) break
     }
     if (ids.length >= maxIds) break
@@ -117,11 +115,17 @@ async function discoverXlsxCandidate(filePath: string, relativePath: string, kin
   return {
     kind,
     path: relativePath,
-    sheets: workbook.SheetNames.length > 0 ? workbook.SheetNames : undefined,
+    sheets: sheetNames.length > 0 ? sheetNames : undefined,
     rows: ids.length > 0 ? ids : undefined,
     label: relativePath,
-    description: descriptionText(kind, ids.length > 0 ? ids : workbook.SheetNames)
+    description: descriptionText(kind, ids.length > 0 ? ids : sheetNames)
   }
+}
+
+function cellText(cell: unknown): string {
+  if (cell === null || cell === undefined) return ""
+  if (cell instanceof Date) return cell.toISOString()
+  return String(cell).trim()
 }
 
 function inferArtifactKind(relativePath: string): ArtifactKind {
@@ -157,7 +161,7 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return typeof error === "object" && error !== null && "code" in error
 }
 
-function loadXlsx(): Promise<XlsxModule> {
-  xlsxModulePromise ??= import("xlsx")
-  return xlsxModulePromise
+function loadExcelFile(): Promise<ExcelFileModule> {
+  excelFileModulePromise ??= import("read-excel-file/node")
+  return excelFileModulePromise
 }

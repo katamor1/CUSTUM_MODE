@@ -1,6 +1,6 @@
 import * as vscode from "vscode"
-import type { CaptureReviewResultOptions } from "./projectRules/resultCaptureTypes"
-import type { BazaarReviewInitialTarget } from "./reviewGuiTypes"
+import type { CaptureReviewResultOptions } from "../projectRules/resultCaptureTypes"
+import type { BazaarReviewInitialTarget } from "../ui/reviewGuiTypes"
 
 export const WORKFLOW_REGISTER_EXTENSION_ID = "local.workflow-register"
 

@@ -3,38 +3,14 @@ import * as path from "node:path"
 import { resolveWorkspacePathStrict, toPosixPath } from "../core/fileSystem"
 import { decodeTextBuffer } from "../core/textEncoding"
 import { normalizeReviewProcessingLimits, truncateUtf8Text, type ReviewProcessingLimits } from "../core/limits"
-import type { DocumentExtractionResult, EvidenceRef, ReviewInput } from "../core/types"
-
-type CheerioAPI = import("cheerio").CheerioAPI
-type CheerioModule = typeof import("cheerio")
-type MammothModule = typeof import("mammoth")
-type XlsxModule = typeof import("xlsx")
-
-type ArtifactRef = {
-  path?: string
-  version?: string
-  updated_at?: string
-  sections?: string[]
-  sheets?: string[]
-  rows?: string[]
-  cases?: string[]
-  note?: string
-}
-
-type ExtractedChunk = {
-  evidenceType: string
-  ref: string
-  title?: string
-  location?: string
-  headingPath?: string[]
-  text: string
-}
+import type { DocumentExtractionResult, EvidenceRef } from "../core/documentTypes"
+import type { ReviewInput } from "../core/reviewTypes"
+import { extractDocxChunks } from "./documentDocxExtractor"
+import type { ArtifactRef, ExtractedChunk } from "./documentExtractionCommon"
+import { extractMarkdownChunks } from "./documentMarkdownExtractor"
+import { extractXlsxChunks } from "./documentXlsxExtractor"
 
 type DocumentMeta = DocumentExtractionResult["documents"][number]
-
-let cheerioModulePromise: Promise<CheerioModule> | undefined
-let mammothModulePromise: Promise<MammothModule> | undefined
-let xlsxModulePromise: Promise<XlsxModule> | undefined
 
 const ARTIFACT_TYPES: Record<string, { evidenceType: string; prefix: string; documentPrefix: string }> = {
   requirements: { evidenceType: "requirement", prefix: "REQ", documentPrefix: "REQ" },
@@ -157,143 +133,12 @@ async function assertDocumentWithinByteLimit(filePath: string, sourcePath: strin
   throw new Error(`document exceeds maxDocumentBytes (${stat.size} > ${limits.maxDocumentBytes})`)
 }
 
-function extractMarkdownChunks(markdown: string, evidenceType: string, selectors: string[]): ExtractedChunk[] {
-  const blocks: Array<{ heading: string; headingPath: string[]; text: string }> = []
-  const lines = markdown.split(/\r?\n/)
-  let headingPath: string[] = []
-  let currentHeading = "document"
-  let current: string[] = []
-
-  const flush = () => {
-    const text = current.join("\n").trim()
-    if (text) blocks.push({ heading: currentHeading, headingPath: [...headingPath], text })
-    current = []
-  }
-
-  for (const line of lines) {
-    const heading = line.match(/^(#{1,6})\s+(.+?)\s*$/)
-    if (heading) {
-      flush()
-      const level = heading[1].length
-      currentHeading = heading[2].trim()
-      headingPath = [...headingPath.slice(0, level - 1), currentHeading]
-    }
-    current.push(line)
-  }
-  flush()
-
-  return matchingChunks(blocks.map((block) => ({
-    evidenceType,
-    ref: firstKnownId(block.text) ?? block.heading,
-    title: block.heading,
-    location: block.headingPath.join(" > "),
-    headingPath: block.headingPath,
-    text: block.text
-  })), selectors)
-}
-
-async function extractDocxChunks(filePath: string, evidenceType: string, selectors: string[]): Promise<ExtractedChunk[]> {
-  const [mammoth, cheerio] = await Promise.all([loadMammoth(), loadCheerio()])
-  const html = (await mammoth.convertToHtml({ path: filePath })).value
-  const $ = cheerio.load(html)
-  const chunks: ExtractedChunk[] = []
-  const headingPath: string[] = []
-
-  $("body").children().each((_, element) => {
-    const tag = element.tagName?.toLowerCase()
-    if (/^h[1-6]$/.test(tag)) {
-      const level = Number(tag.slice(1))
-      headingPath.splice(level - 1, headingPath.length, $(element).text().trim())
-      return
-    }
-
-    if (tag === "table") {
-      const markdown = htmlTableToMarkdown($, element)
-      if (markdown.trim()) {
-        chunks.push({
-          evidenceType,
-          ref: firstKnownId(markdown) ?? headingPath.at(-1) ?? "table",
-          title: headingPath.at(-1),
-          location: headingPath.join(" > "),
-          headingPath: [...headingPath],
-          text: markdown
-        })
-      }
-      return
-    }
-
-    const text = $(element).text().replace(/\s+/g, " ").trim()
-    if (text) {
-      chunks.push({
-        evidenceType,
-        ref: firstKnownId(text) ?? headingPath.at(-1) ?? "paragraph",
-        title: headingPath.at(-1),
-        location: headingPath.join(" > "),
-        headingPath: [...headingPath],
-        text
-      })
-    }
-  })
-
-  return matchingChunks(chunks, selectors)
-}
-
-async function extractXlsxChunks(filePath: string, item: ArtifactRef, evidenceType: string, selectors: string[], warnings: string[], limits: ReviewProcessingLimits): Promise<ExtractedChunk[]> {
-  const XLSX = await loadXlsx()
-  const workbook = XLSX.readFile(filePath, { cellDates: false })
-  const allSelectedSheets = item.sheets && item.sheets.length > 0 ? item.sheets : workbook.SheetNames
-  const selectedSheets = allSelectedSheets.slice(0, limits.maxWorkbookSheets)
-  if (allSelectedSheets.length > selectedSheets.length) {
-    warnings.push(`${toPosixPath(item.path ?? filePath)} exceeded maxWorkbookSheets (${allSelectedSheets.length} > ${limits.maxWorkbookSheets}); remaining sheets skipped.`)
-  }
-  const chunks: ExtractedChunk[] = []
-
-  for (const sheetName of selectedSheets) {
-    const sheet = workbook.Sheets[sheetName]
-    if (!sheet) continue
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: "" }) as unknown[][]
-    if (rows.length === 0) continue
-    const headers = rows[0].map((cell) => String(cell || "").trim())
-    const dataRows = rows.slice(1)
-    if (dataRows.length > limits.maxRowsPerSheet) {
-      warnings.push(`${toPosixPath(item.path ?? filePath)} sheet ${sheetName} exceeded maxRowsPerSheet (${dataRows.length} > ${limits.maxRowsPerSheet}); remaining rows skipped.`)
-    }
-    for (let index = 1; index <= Math.min(dataRows.length, limits.maxRowsPerSheet); index += 1) {
-      const row = rows[index].map((cell) => String(cell || "").trim())
-      if (row.every((cell) => !cell)) continue
-      const rowText = [sheetName, ...row].join(" ")
-      const rowId = firstKnownId(rowText) ?? `${sheetName}!${index + 1}`
-      const table = rowsToMarkdown([headers, row])
-      chunks.push({
-        evidenceType,
-        ref: rowId,
-        title: sheetName,
-        location: `${sheetName}!${index + 1}`,
-        text: table
-      })
-    }
-  }
-
-  return matchingChunks(chunks, selectors)
-}
-
 function limitChunkText(chunk: ExtractedChunk, sourcePath: string, warnings: string[], limits: ReviewProcessingLimits): ExtractedChunk {
   const suffix = "\n\n[truncated: maxExcerptBytesPerDocument]\n"
   const limited = truncateUtf8Text(chunk.text, limits.maxExcerptBytesPerDocument, suffix)
   if (!limited.truncated) return chunk
   warnings.push(`${toPosixPath(sourcePath)} ${chunk.ref} exceeded maxExcerptBytesPerDocument (${limited.originalBytes} > ${limits.maxExcerptBytesPerDocument}); excerpt truncated.`)
   return { ...chunk, text: limited.text }
-}
-
-function matchingChunks(chunks: ExtractedChunk[], selectors: string[]): ExtractedChunk[] {
-  if (selectors.length === 0) return chunks
-  const selected = chunks.filter((chunk) => selectors.some((selector) => containsSelector(chunk, selector)))
-  return selected.length > 0 ? selected : chunks.filter((chunk) => selectors.some((selector) => chunk.ref.includes(selector)))
-}
-
-function containsSelector(chunk: ExtractedChunk, selector: string): boolean {
-  const haystack = `${chunk.ref}\n${chunk.title ?? ""}\n${chunk.location ?? ""}\n${chunk.text}`.toLowerCase()
-  return haystack.includes(selector.toLowerCase())
 }
 
 function nextEvidenceId(prefix: string, counters: Map<string, number>): string {
@@ -317,50 +162,3 @@ function renderExcerpt(evidenceId: string, sourcePath: string, version: string |
   ].filter((line): line is string => line !== undefined).join("\n")
 }
 
-function htmlTableToMarkdown($: CheerioAPI, table: any): string {
-  const rows: string[][] = []
-  $(table).find("tr").each((_, tr) => {
-    const cells: string[] = []
-    $(tr).find("th,td").each((__, cell) => {
-      cells.push($(cell).text().replace(/\s+/g, " ").trim())
-    })
-    if (cells.some(Boolean)) rows.push(cells)
-  })
-  return rowsToMarkdown(rows)
-}
-
-function rowsToMarkdown(rows: string[][]): string {
-  if (rows.length === 0) return ""
-  const width = Math.max(...rows.map((row) => row.length))
-  const normalized = rows.map((row) => Array.from({ length: width }, (_, index) => escapeCell(row[index] ?? "")))
-  const header = normalized[0]
-  const separator = header.map(() => "---")
-  return [
-    `| ${header.join(" | ")} |`,
-    `| ${separator.join(" | ")} |`,
-    ...normalized.slice(1).map((row) => `| ${row.join(" | ")} |`)
-  ].join("\n")
-}
-
-function escapeCell(value: string): string {
-  return value.replace(/\|/g, "\\|").trim()
-}
-
-function firstKnownId(text: string): string | undefined {
-  return text.match(/\b(?:REQ|BD|DD|TC|ERR|ISSUE|TICKET|LEDGER)(?:[-_][A-Za-z0-9]+)+\b/)?.[0]
-}
-
-function loadCheerio(): Promise<CheerioModule> {
-  cheerioModulePromise ??= import("cheerio")
-  return cheerioModulePromise
-}
-
-function loadMammoth(): Promise<MammothModule> {
-  mammothModulePromise ??= import("mammoth")
-  return mammothModulePromise
-}
-
-function loadXlsx(): Promise<XlsxModule> {
-  xlsxModulePromise ??= import("xlsx")
-  return xlsxModulePromise
-}

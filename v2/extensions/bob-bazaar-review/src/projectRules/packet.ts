@@ -1,5 +1,5 @@
 import { ProjectChecklist } from "./types"
-import { fencedCodeBlock } from "../markdownFence"
+import { fencedCodeBlock } from "../bazaar/markdownFence"
 
 export interface ProjectRulesPacketOptions {
   checklist: ProjectChecklist

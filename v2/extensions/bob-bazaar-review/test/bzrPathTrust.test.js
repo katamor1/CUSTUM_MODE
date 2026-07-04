@@ -14,7 +14,7 @@ function configWithInspection(inspection, fallback = "workspace-malicious-bzr") 
 }
 
 test("resolveBzrPath ignores workspace overrides when the workspace is untrusted", () => {
-  const { resolveBzrPath } = require(path.join(extensionRoot, "out", "bzrPathTrust"))
+  const { resolveBzrPath } = require(path.join(extensionRoot, "out", "bazaar", "bzrPathTrust"))
   const resolved = resolveBzrPath(configWithInspection({
     defaultValue: "bzr",
     globalValue: "user-bzr",
@@ -26,7 +26,7 @@ test("resolveBzrPath ignores workspace overrides when the workspace is untrusted
 })
 
 test("resolveBzrPath uses default bzr in untrusted workspaces without user/global configuration", () => {
-  const { resolveBzrPath } = require(path.join(extensionRoot, "out", "bzrPathTrust"))
+  const { resolveBzrPath } = require(path.join(extensionRoot, "out", "bazaar", "bzrPathTrust"))
   const resolved = resolveBzrPath(configWithInspection({
     defaultValue: "bzr",
     workspaceValue: "workspace-bzr"
@@ -36,7 +36,7 @@ test("resolveBzrPath uses default bzr in untrusted workspaces without user/globa
 })
 
 test("resolveBzrPath allows workspace overrides only when the workspace is trusted", () => {
-  const { resolveBzrPath } = require(path.join(extensionRoot, "out", "bzrPathTrust"))
+  const { resolveBzrPath } = require(path.join(extensionRoot, "out", "bazaar", "bzrPathTrust"))
   const resolved = resolveBzrPath(configWithInspection({
     defaultValue: "bzr",
     globalValue: "user-bzr",
@@ -48,7 +48,7 @@ test("resolveBzrPath allows workspace overrides only when the workspace is trust
 })
 
 test("Bazaar command, GUI, and MCP setup use trust-aware bzrPath resolution", () => {
-  const source = readSourceSet(["bazaarReviewCommands.ts", "reviewGui.ts", "extension.ts"])
+  const source = readSourceSet(["bazaar/bazaarReviewCommands.ts", "ui/reviewGui.ts", "extension.ts"])
 
   assert.match(source, /resolveBzrPath\(config, vscode\.workspace\.isTrusted\)/)
   assert.doesNotMatch(source, /config\.get<string>\("bzrPath", "bzr"\)/)

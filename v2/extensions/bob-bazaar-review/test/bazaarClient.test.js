@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict")
 const test = require("node:test")
 
-const { BazaarClient, validateRevision } = require("../out/bazaar")
+const { BazaarClient, validateRevision } = require("../out/bazaar/bazaar")
 
 test("BazaarClient.cat separates option parsing before relative file paths", async () => {
   const client = new BazaarClient({ bzrPath: "bzr" })

@@ -2,7 +2,7 @@ import * as path from "node:path"
 import YAML from "yaml"
 import { pathExists, readTextFile, resolveWorkspacePathStrict } from "./fileSystem"
 import { formatSchemaErrors, loadSchemaValidator } from "./schemaLoader"
-import type { ReviewInput } from "./types"
+import type { ReviewInput } from "./reviewTypes"
 
 export async function validateReviewInput(inputPath: string, workspaceRoot = process.cwd(), textEncoding = "auto"): Promise<ReviewInput> {
   const resolvedInputPath = resolveWorkspacePathStrict(workspaceRoot, inputPath, "reviewInputPath")

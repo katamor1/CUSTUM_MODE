@@ -11,8 +11,15 @@ test("extension dependency policy requires a committed lockfile with production 
   assert.ok(fs.existsSync(lockPath), "package-lock.json must be committed for reproducible VSIX builds")
   assert.equal(packageJson.scripts["dependency:policy"], "node --test test/dependencyPolicy.test.js")
   assert.equal(packageJson.scripts["architecture:policy"], "node ../../scripts/check-import-cycles.js src")
+  assert.equal(packageJson.scripts["source:policy"], "node ../../scripts/check-export-star-policy.js src")
+  assert.equal(packageJson.scripts["unused:report"], "node ../../scripts/run-unused-checks.js")
   assert.equal(packageJson.scripts["audit:prod"], "npm audit --omit=dev --audit-level=high")
   assert.equal(packageJson.scripts["package:policy"], "node ../../scripts/check-vsix-policy.js --max-bytes 11000000")
+  assert.equal(packageJson.devDependencies.knip, "^5.0.0")
+  assert.equal(packageJson.devDependencies.depcheck, "^1.4.7")
+  assert.equal(packageJson.devDependencies["ts-prune"], "^0.10.3")
+  assert.equal(packageJson.dependencies["read-excel-file"], "^9.2.0")
+  assert.ok(!packageJson.dependencies.xlsx, "xlsx must not be a production dependency because npm audit has no fixed version")
 
   const vscodeignore = fs.readFileSync(path.join(extensionRoot, ".vscodeignore"), "utf8").split(/\r?\n/)
   assert.ok(vscodeignore.includes("out/**/*.map"), "compiled source maps must be excluded from the VSIX")
@@ -38,6 +45,8 @@ test("extension CI uses npm ci, dependency policy, production audit, tests, and 
   assert.match(extensionJob, /run: npm ci/)
   assert.match(extensionJob, /run: npm run dependency:policy/)
   assert.match(extensionJob, /run: npm run architecture:policy/)
+  assert.match(extensionJob, /run: npm run source:policy/)
+  assert.match(extensionJob, /run: npm run unused:report/)
   assert.match(extensionJob, /run: npm run audit:prod/)
   assert.match(extensionJob, /run: npm test/)
   assert.match(extensionJob, /run: npm run package/)
@@ -51,5 +60,38 @@ test("extension CI uses npm ci, dependency policy, production audit, tests, and 
   const sharedJob = sharedWorkflow.slice(sharedJobStart)
   assert.match(sharedJob, /working-directory: extensions\/bob-code-consistency-review/)
   assert.match(sharedJob, /run: npm run architecture:policy/)
+  assert.match(sharedJob, /run: npm run source:policy/)
+  assert.match(sharedJob, /run: npm run unused:report/)
   assert.match(sharedJob, /run: npm run package:policy/)
+})
+
+test("extension README documents generated artifacts, package budget, dependencies, CLI, and trust boundary", () => {
+  const packageJson = readJson("package.json")
+  const readme = fs.readFileSync(path.join(extensionRoot, "README.md"), "utf8")
+  const packageBudget = packageJson.scripts["package:policy"].match(/--max-bytes\s+(\d+)/)?.[1]
+
+  for (const phrase of [
+    "生成物",
+    ".bob-review",
+    ".bob-trace",
+    "review-package",
+    "VSIX サイズ",
+    packageBudget,
+    "暗黙依存",
+    "IBM.bob-code",
+    "workflow-register",
+    "必要 CLI",
+    "Node.js",
+    "npm ci",
+    "git",
+    "bzr --no-aliases",
+    "npm run dependency:policy",
+    "npm run architecture:policy",
+    "npm run unused:report",
+    "npm run audit:prod",
+    "npm run package:policy",
+    "Trusted Workspace"
+  ]) {
+    assert.ok(readme.includes(phrase), `README must document: ${phrase}`)
+  }
 })

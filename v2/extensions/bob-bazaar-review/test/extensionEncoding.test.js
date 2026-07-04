@@ -26,10 +26,12 @@ const binaryExtensions = new Set([
 ])
 
 function gitTrackedExtensionFiles() {
-  return execFileSync("git", ["ls-files", ...extensionRoots], {
+  return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", ...extensionRoots], {
     cwd: repoRoot,
     encoding: "utf8"
-  }).split(/\r?\n/).filter(Boolean)
+  }).split(/\r?\n/)
+    .filter(Boolean)
+    .filter((filePath) => fs.existsSync(path.join(repoRoot, filePath)))
 }
 
 function classifyTextEncoding(filePath) {

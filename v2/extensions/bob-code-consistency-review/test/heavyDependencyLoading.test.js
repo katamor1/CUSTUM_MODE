@@ -4,9 +4,11 @@ const { test } = require("node:test")
 const { readSrc } = require("./helpers/sourceReader")
 
 test("document extraction dependencies are loaded lazily instead of during extension activation", () => {
-  const heavyModules = ["mammoth", "xlsx", "cheerio"]
+  const heavyModules = ["mammoth", "read-excel-file", "cheerio"]
   const sources = [
     ["analyzers/documentExtractor.ts", readSrc("analyzers", "documentExtractor.ts")],
+    ["analyzers/documentDocxExtractor.ts", readSrc("analyzers", "documentDocxExtractor.ts")],
+    ["analyzers/documentXlsxExtractor.ts", readSrc("analyzers", "documentXlsxExtractor.ts")],
     ["core/reviewInputDiscovery.ts", readSrc("core", "reviewInputDiscovery.ts")]
   ]
 
@@ -19,8 +21,11 @@ test("document extraction dependencies are loaded lazily instead of during exten
     }
   }
 
-  assert.match(readSrc("analyzers", "documentExtractor.ts"), /import\("mammoth"\)/)
-  assert.match(readSrc("analyzers", "documentExtractor.ts"), /import\("xlsx"\)/)
-  assert.match(readSrc("analyzers", "documentExtractor.ts"), /import\("cheerio"\)/)
-  assert.match(readSrc("core", "reviewInputDiscovery.ts"), /import\("xlsx"\)/)
+  assert.match(readSrc("analyzers", "documentDocxExtractor.ts"), /import\("mammoth"\)/)
+  assert.match(readSrc("analyzers", "documentDocxExtractor.ts"), /import\("cheerio"\)/)
+  assert.match(readSrc("analyzers", "documentXlsxExtractor.ts"), /import\("read-excel-file\/node"\)/)
+  assert.match(readSrc("core", "reviewInputDiscovery.ts"), /import\("read-excel-file\/node"\)/)
+
+  const combinedSource = sources.map(([, source]) => source).join("\n")
+  assert.doesNotMatch(combinedSource, /import\("xlsx"\)|from\s+["']xlsx["']|require\(["']xlsx["']\)/)
 })

@@ -1,20 +1,5 @@
-import { BazaarError } from "../bazaar"
-
-export interface ToolDef {
-  name: string
-  description: string
-  inputSchema: Record<string, unknown>
-}
-
-export interface BazaarCommandResult {
-  stdout: string
-  stderr: string
-  command: string
-  args: string[]
-  cwd: string
-}
-
-export type RequiredAllowedCwd = (args: unknown, name: string) => Promise<string>
+import { BazaarError } from "../bazaar/bazaar"
+import type { BazaarCommandResult, McpToolResponse } from "./toolTypes"
 
 export function requiredString(args: unknown, name: string): string {
   const value = (args as Record<string, unknown> | undefined)?.[name]
@@ -35,7 +20,7 @@ export function optionalString(args: unknown, name: string): string | undefined 
   return value
 }
 
-export function commandText(result: BazaarCommandResult): unknown {
+export function commandText(result: BazaarCommandResult): McpToolResponse {
   const body = [
     `cwd: ${result.cwd}`,
     `command: ${result.command} ${result.args.join(" ")}`,
@@ -45,11 +30,11 @@ export function commandText(result: BazaarCommandResult): unknown {
   return text(body)
 }
 
-export function text(value: string): unknown {
+export function text(value: string): McpToolResponse {
   return { content: [{ type: "text", text: value }] }
 }
 
-export function jsonText(value: unknown): unknown {
+export function jsonText(value: unknown): McpToolResponse {
   return text(JSON.stringify(value, null, 2))
 }
 

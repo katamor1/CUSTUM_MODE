@@ -4,7 +4,7 @@ import {
   extractJsonFromText
 } from "./resultCaptureCore"
 import type { CandidateText, CaptureReviewResultOptions, CaptureReviewResultResult } from "./resultCaptureTypes"
-import { resolveBobWorkspaceFolder } from "../workspaceResolver"
+import { resolveBobWorkspaceFolder } from "../workspace/workspaceResolver"
 
 export { extractJsonFromText }
 export type { CaptureReviewResultResult } from "./resultCaptureTypes"

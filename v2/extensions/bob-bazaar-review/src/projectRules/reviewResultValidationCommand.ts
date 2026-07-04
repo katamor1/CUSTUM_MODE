@@ -1,7 +1,7 @@
 import * as vscode from "vscode"
-import { renderReviewResultMarkdown } from "./projectRules/markdown"
-import { ReviewResult } from "./projectRules/types"
-import { validateReviewResultJson } from "./projectRules/validator"
+import { renderReviewResultMarkdown } from "./markdown"
+import { ReviewResult } from "./types"
+import { validateReviewResultJson } from "./validator"
 
 export async function validateActiveReviewResultJson(): Promise<void> {
   const editor = vscode.window.activeTextEditor

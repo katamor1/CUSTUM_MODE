@@ -12,7 +12,8 @@ import {
   writeTraceabilityCatalog,
   type WriteTraceabilityCatalogResult
 } from "./traceabilityCatalogStore"
-import type { DiffSummary, ReviewInput } from "./types"
+import type { DiffSummary } from "./diffTypes"
+import type { ReviewInput } from "./reviewTypes"
 import type {
   TraceabilityCatalog,
   TraceabilityDecision,

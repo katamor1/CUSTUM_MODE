@@ -162,6 +162,9 @@
   },
   "scripts": {
     "architecture:policy": "node ../../scripts/check-import-cycles.js src",
+    "source:policy": "node ../../scripts/check-export-star-policy.js src",
+    "unused:report": "node ../../scripts/run-unused-checks.js",
+    "artifact:policy": "node ../../scripts/check-artifact-size-policy.js --max-bytes 12000 templates",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "compile": "tsc -p ./",
     "dependency:policy": "node --test test/dependencyPolicy.test.js",
@@ -174,6 +177,9 @@
   "devDependencies": {
     "@types/node": "^20.11.30",
     "@types/vscode": "^1.106.0",
+    "depcheck": "^1.4.7",
+    "knip": "^5.0.0",
+    "ts-prune": "^0.10.3",
     "typescript": "^5.4.5",
     "@vscode/vsce": "^3.2.1"
   }

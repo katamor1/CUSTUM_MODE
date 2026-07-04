@@ -205,6 +205,9 @@
   },
   "scripts": {
     "architecture:policy": "node ../../scripts/check-import-cycles.js src",
+    "source:policy": "node ../../scripts/check-export-star-policy.js src --allow src/core/model.ts",
+    "schema:policy": "npm run compile && node --test test/workflowAuthoring.test.js",
+    "unused:report": "node ../../scripts/run-unused-checks.js",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "compile": "tsc -p ./",
     "dependency:policy": "node --test test/dependencyPolicy.test.js",
@@ -222,6 +225,9 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.30",
     "@types/vscode": "^1.106.0",
+    "depcheck": "^1.4.7",
+    "knip": "^5.0.0",
+    "ts-prune": "^0.10.3",
     "typescript": "^5.4.5",
     "@vscode/vsce": "^3.2.1"
   }

@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import * as vscode from "vscode"
-import { configureWorkspaceMcpServer } from "./mcpConfig"
+import { configureWorkspaceMcpServer } from "../mcp/mcpConfig"
 import { refreshTemplateFile, type TemplateRefreshOptions, type TemplateRefreshPreview } from "./templateRefresh"
 
 export interface BobWorkspaceStatus {

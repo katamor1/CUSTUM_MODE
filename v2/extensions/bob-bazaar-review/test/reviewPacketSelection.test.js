@@ -23,7 +23,7 @@ test("review packet selection uses the workflow state packet URI before active d
   const {
     REVIEW_PACKET_STATE_KEY,
     selectReviewPacketText
-  } = require("../out/reviewPacketSelection")
+} = require("../out/bazaar/reviewPacketSelection")
 
   const selected = await selectReviewPacketText({
     activeUri: "untitled:old-packet",
@@ -45,7 +45,7 @@ test("review packet selection uses the workflow state packet URI before active d
 })
 
 test("review packet selection prompts when multiple packet candidates remain ambiguous", async () => {
-  const { selectReviewPacketText } = require("../out/reviewPacketSelection")
+  const { selectReviewPacketText } = require("../out/bazaar/reviewPacketSelection")
   const offered = []
 
   const selected = await selectReviewPacketText({
@@ -64,7 +64,7 @@ test("review packet selection prompts when multiple packet candidates remain amb
 })
 
 test("review packet selection reports an explicit missing packet URI", async () => {
-  const { selectReviewPacketText } = require("../out/reviewPacketSelection")
+  const { selectReviewPacketText } = require("../out/bazaar/reviewPacketSelection")
 
   await assert.rejects(
     () => selectReviewPacketText({

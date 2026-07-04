@@ -333,6 +333,40 @@ code --install-extension bob-bazaar-review-0.3.0.vsix
 - `pass` / `fail` の checklist result には evidence が必要です。
 - `fail` の rule には同じ `rule_id` を持つ finding が必要です。
 
+## 保守・配布ポリシー
+
+### 生成物
+
+主な生成物は Bob workspace 側の `.bob/mcp.json`、`.bob/review/checklist.json`、`.bob/review/review-result.schema.json`、`.bob/review/results/*.json`、`.bob/review/results/*.md` です。review-result はレビュー対象や指摘根拠を含むため、共有前に内容を確認してください。
+
+### VSIX サイズ
+
+`npm run package:policy` は VSIX サイズの上限を `200000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` は VSIX に同梱しません。
+
+### 暗黙依存
+
+`IBM.bob-code` と `workflow-register` は任意連携です。どちらも必須 `extensionDependencies` ではありません。`IBM.bob-code` がない場合は Markdown packet 生成で停止し、`workflow-register` がない場合も Bob context 追加までは利用できます。
+
+### 必要 CLI
+
+利用時は Bazaar CLI の `bzr` が必要です。拡張機能と運用手順では alias の影響を避けるため、Bazaar command は `bzr --no-aliases` を前提にします。開発と検証には Node.js と npm が必要です。
+
+```powershell
+npm ci
+npm run dependency:policy
+npm run architecture:policy
+npm run unused:report
+npm run artifact:policy
+npm run audit:prod
+npm test
+npm run package
+npm run package:policy
+```
+
+### Trusted Workspace
+
+`bobBazaar.bzrPath` の workspace override は Trusted Workspace のときだけ利用します。MCP tool は allowed root の内側だけを受け付け、`.bob/mcp.json` と `.bob/review` は選択された Bob workspace 配下へ書き込みます。
+
 ## 関連ドキュメント
 
 - `docs/README-ja.md`

@@ -2,7 +2,7 @@ const assert = require("node:assert/strict")
 const { test } = require("node:test")
 
 test("fencedCodeBlock uses a longer fence than backticks inside content", () => {
-  const { fencedCodeBlock } = require("../out/markdownFence")
+  const { fencedCodeBlock } = require("../out/bazaar/markdownFence")
   const content = [
     "changed text",
     "```text",
@@ -18,7 +18,7 @@ test("fencedCodeBlock uses a longer fence than backticks inside content", () => 
 })
 
 test("Bazaar review packet fences log and diff content safely", () => {
-  const { buildReviewPacket } = require("../out/reviewPacket")
+  const { buildReviewPacket } = require("../out/bazaar/reviewPacket")
   const packet = buildReviewPacket({
     repositoryRoot: "C:\\repo\\sample",
     mode: "singleRevision",
@@ -45,7 +45,7 @@ test("Bazaar review packet fences log and diff content safely", () => {
 })
 
 test("Bazaar review packet redacts local paths by default", () => {
-  const { buildReviewPacket } = require("../out/reviewPacket")
+  const { buildReviewPacket } = require("../out/bazaar/reviewPacket")
   const packet = buildReviewPacket({
     repositoryRoot: "C:\\Users\\alice\\secret-project",
     mode: "singleRevision",
@@ -68,7 +68,7 @@ test("Bazaar review packet redacts local paths by default", () => {
 })
 
 test("Bazaar review packet can include local paths when explicitly requested", () => {
-  const { buildReviewPacket } = require("../out/reviewPacket")
+  const { buildReviewPacket } = require("../out/bazaar/reviewPacket")
   const packet = buildReviewPacket({
     repositoryRoot: "C:\\Users\\alice\\secret-project",
     mode: "singleRevision",
@@ -89,7 +89,7 @@ test("Bazaar review packet can include local paths when explicitly requested", (
 })
 
 test("added file content section fences added files safely", async () => {
-  const { buildAddedFilesContentSection } = require("../out/revisionInfo")
+  const { buildAddedFilesContentSection } = require("../out/bazaar/revisionInfo")
   const client = {
     cat: async () => ({
       command: "bzr",

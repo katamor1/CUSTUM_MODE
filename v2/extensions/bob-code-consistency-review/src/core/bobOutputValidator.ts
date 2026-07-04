@@ -3,7 +3,7 @@ import YAML from "yaml"
 import { readBobOutputText } from "./bobOutputSource"
 import { pathExists, readTextFile } from "./fileSystem"
 import { formatSchemaErrors, loadSchemaValidator } from "./schemaLoader"
-import type { ValidationReport } from "./types"
+import type { ValidationReport } from "./validationTypes"
 
 export async function validateBobOutput(input: { packageDir: string; bobOutputPath: string }): Promise<ValidationReport> {
   const errors: string[] = []

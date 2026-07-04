@@ -1,4 +1,4 @@
-import { BazaarError } from "../bazaar"
+import { BazaarError } from "../bazaar/bazaar"
 import { renderReviewResultMarkdown } from "../projectRules/markdown"
 import { initializeProjectRules, loadProjectChecklist, loadReviewResultSchema } from "../projectRules/io"
 import { getLatestReviewResult, getReviewResult } from "../projectRules/reviewResultsStore"
@@ -6,15 +6,19 @@ import { ReviewResult } from "../projectRules/types"
 import { validateReviewResultJson } from "../projectRules/validator"
 import {
   jsonText,
-  objectSchema,
   optionalString,
-  optionalStringProp,
-  RequiredAllowedCwd,
   requiredString,
-  stringProp,
-  text,
-  ToolDef
+  text
 } from "./toolCommon"
+import {
+  PROJECT_RULES_INIT_INPUT_SCHEMA,
+  PROJECT_RULES_LATEST_RESULT_INPUT_SCHEMA,
+  PROJECT_RULES_OPTIONAL_PATH_INPUT_SCHEMA,
+  PROJECT_RULES_REVIEW_JSON_INPUT_SCHEMA,
+  PROJECT_RULES_SCHEMA_PATH_INPUT_SCHEMA,
+  PROJECT_RULES_STORED_RESULT_INPUT_SCHEMA
+} from "./toolSchemas"
+import type { McpToolResponse, RequiredAllowedCwd, ToolDef } from "./toolTypes"
 
 export const ENABLE_WRITE_TOOLS_ENV = "BOB_BAZAAR_ENABLE_WRITE_TOOLS"
 export const PROJECT_RULES_WRITE_TOOL_NAMES = new Set(["project_rules_init"])
@@ -34,37 +38,37 @@ export function createProjectRulesToolDefinitions(): ToolDef[] {
     {
       name: "project_rules_init",
       description: "Create default .bob/review/checklist.json and review-result.schema.json if they are missing.",
-      inputSchema: objectSchema({ cwd: stringProp("Workspace root") }, ["cwd"])
+      inputSchema: PROJECT_RULES_INIT_INPUT_SCHEMA
     },
     {
       name: "project_rules_get_checklist",
       description: "Return the project-specific review checklist JSON. Falls back to the built-in default checklist when missing.",
-      inputSchema: objectSchema({ cwd: stringProp("Workspace root"), path: optionalStringProp("Optional checklist path, workspace-relative or absolute") }, ["cwd"])
+      inputSchema: PROJECT_RULES_OPTIONAL_PATH_INPUT_SCHEMA
     },
     {
       name: "project_rules_get_schema",
       description: "Return the review result JSON schema. Falls back to the built-in default schema when missing.",
-      inputSchema: objectSchema({ cwd: stringProp("Workspace root"), path: optionalStringProp("Optional schema path, workspace-relative or absolute") }, ["cwd"])
+      inputSchema: PROJECT_RULES_SCHEMA_PATH_INPUT_SCHEMA
     },
     {
       name: "project_rules_validate_review_result",
       description: "Validate normalized review result JSON and return validation issues.",
-      inputSchema: objectSchema({ json: stringProp("Review result JSON text") }, ["json"])
+      inputSchema: PROJECT_RULES_REVIEW_JSON_INPUT_SCHEMA
     },
     {
       name: "project_rules_render_markdown",
       description: "Render normalized review result JSON as a Markdown checklist summary.",
-      inputSchema: objectSchema({ json: stringProp("Review result JSON text") }, ["json"])
+      inputSchema: PROJECT_RULES_REVIEW_JSON_INPUT_SCHEMA
     },
     {
       name: "project_rules_get_latest_review_result",
       description: "Return the newest saved review-result JSON from .bob/review/results.",
-      inputSchema: objectSchema({ cwd: stringProp("Workspace root") }, ["cwd"])
+      inputSchema: PROJECT_RULES_LATEST_RESULT_INPUT_SCHEMA
     },
     {
       name: "project_rules_get_review_result",
       description: "Return a saved review-result JSON from .bob/review/results by review id.",
-      inputSchema: objectSchema({ cwd: stringProp("Workspace root"), reviewId: stringProp("Review id or result file basename") }, ["cwd", "reviewId"])
+      inputSchema: PROJECT_RULES_STORED_RESULT_INPUT_SCHEMA
     }
   ]
 }
@@ -78,7 +82,7 @@ export async function callProjectRulesTool(
   args: unknown,
   requiredAllowedCwd: RequiredAllowedCwd,
   writeToolsEnabled: boolean
-): Promise<unknown> {
+): Promise<McpToolResponse> {
   switch (name) {
     case "project_rules_init":
       requireWriteToolEnabled(name, writeToolsEnabled)

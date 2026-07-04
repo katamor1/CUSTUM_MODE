@@ -2,7 +2,7 @@ const assert = require("node:assert/strict")
 const { test } = require("node:test")
 
 test("addMarkdownPacketToBobContext sends the full packet to Bob with its line range", async () => {
-  const { addMarkdownPacketToBobContext } = require("../out/bobContext")
+  const { addMarkdownPacketToBobContext } = require("../out/bob/bobContext")
   const calls = []
   const uri = { scheme: "untitled", path: "bazaar-review.md" }
   const packet = ["# Bazaar Revision Review Request", "", "## Bazaar diff"].join("\n")
@@ -18,7 +18,7 @@ test("addMarkdownPacketToBobContext sends the full packet to Bob with its line r
 })
 
 test("addMarkdownPacketToBobContext copies the packet when Bob context insertion fails", async () => {
-  const { addMarkdownPacketToBobContext } = require("../out/bobContext")
+  const { addMarkdownPacketToBobContext } = require("../out/bob/bobContext")
   const warnings = []
   let clipboardText = ""
   const packet = "# Bazaar Revision Review Request"

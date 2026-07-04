@@ -13,6 +13,7 @@ function runtimeSource() {
     "bobWorkflowMessages.ts",
     "workflowInputPrompt.ts",
     "workflowRegisterService.ts",
+    "workflowRunCommands.ts",
     "core/engine.ts",
     "core/engine/stepExecutor.ts"
   ])

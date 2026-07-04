@@ -5,7 +5,7 @@ const os = require("node:os")
 const path = require("node:path")
 const { test } = require("node:test")
 
-const { findMarkerRoots, rootHasMarker } = require("../out/workspaceRoots.js")
+const { findMarkerRoots, rootHasMarker } = require("../out/workspace/workspaceRoots.js")
 
 function folder(name, fsPath) {
   return { name, uri: { fsPath } }
@@ -88,7 +88,7 @@ test("Bazaar workspace resolver falls back to a single top folder when no .bzr m
 })
 
 function loadBazaarResolver({ workspaceFolders, showQuickPick = async () => undefined }) {
-  const modulePath = require.resolve("../out/workspaceResolver.js")
+  const modulePath = require.resolve("../out/workspace/workspaceResolver.js")
   delete require.cache[modulePath]
   const originalLoad = Module._load
   Module._load = function load(request, parent, isMain) {

@@ -6,7 +6,7 @@ import { resolveWorkspacePathStrict } from "./fileSystem"
 import { normalizeReviewProcessingLimits, type ReviewProcessingLimits } from "./limits"
 import { buildReviewPackage } from "./reviewPackageBuilder"
 import { validateReviewInput } from "./reviewInputValidator"
-import type { PreprocessResult } from "./types"
+import type { PreprocessResult } from "./preprocessTypes"
 
 export async function preprocessReview(input: { workspaceRoot: string; inputPath: string; outDir: string; diffFixturePath?: string; bzrPath?: string; textEncoding?: string; limits?: Partial<ReviewProcessingLimits> }): Promise<PreprocessResult> {
   const textEncoding = input.textEncoding ?? "auto"

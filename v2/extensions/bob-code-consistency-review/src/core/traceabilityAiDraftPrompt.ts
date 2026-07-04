@@ -1,4 +1,4 @@
-import type { DiffSummary } from "./types"
+import type { DiffSummary } from "./diffTypes"
 import type { TraceabilityCatalog } from "./traceabilityTypes"
 
 export const MAX_TRACEABILITY_CANDIDATE_COUNT = 160

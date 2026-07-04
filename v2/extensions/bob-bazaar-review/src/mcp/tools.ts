@@ -1,4 +1,4 @@
-import { BazaarClient, BazaarError } from "../bazaar"
+import { BazaarClient, BazaarError } from "../bazaar/bazaar"
 import { callBazaarTool, createBazaarToolDefinitions, isBazaarTool } from "./bazaarTools"
 import {
   callProjectRulesTool,
@@ -7,7 +7,7 @@ import {
   isProjectRulesTool,
   PROJECT_RULES_WRITE_TOOL_NAMES
 } from "./projectRulesTools"
-import { RequiredAllowedCwd, ToolDef } from "./toolCommon"
+import type { McpToolResponse, RequiredAllowedCwd, ToolDef } from "./toolTypes"
 
 export interface McpToolRegistryOptions {
   requiredAllowedCwd: RequiredAllowedCwd
@@ -40,7 +40,7 @@ export class McpToolRegistry {
     return this.toolDefinitions.filter((tool) => !PROJECT_RULES_WRITE_TOOL_NAMES.has(tool.name))
   }
 
-  async callTool(name: string, args: unknown): Promise<unknown> {
+  async callTool(name: string, args: unknown): Promise<McpToolResponse> {
     if (isBazaarTool(name)) {
       return callBazaarTool(name, args, this.client, this.options.requiredAllowedCwd)
     }
