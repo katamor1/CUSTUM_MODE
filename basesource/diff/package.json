@@ -1,0 +1,58 @@
+{
+  "name": "diffrepo-report-builder",
+  "version": "0.1.0",
+  "description": "Generate WinMerge HTML reports per text file and merge them into one Excel workbook.",
+  "main": "out/main/index.js",
+  "author": "diffRepo",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit && electron-vite build",
+    "dist": "npm run build && electron-builder --win portable --publish never",
+    "dist:dir": "npm run build && electron-builder --win --dir --publish never",
+    "measure:report": "npm run build && set DIFFREPO_MEASURE_REPORT=1&& vitest run tests/core/reportPipelineTiming.test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@cursorless/tree-sitter-wasms": "0.9.0",
+    "cheerio": "^1.0.0",
+    "docx": "^8.5.0",
+    "exceljs": "^4.4.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "web-tree-sitter": "0.26.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "local.diffrepo.report-builder",
+    "productName": "DiffRepo Report Builder",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
+  }
+}
