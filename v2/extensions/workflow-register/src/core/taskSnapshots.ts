@@ -94,13 +94,14 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
     this.now = options.now ?? (() => new Date().toISOString())
     this.maxBytes = options.maxBytes ?? 262_144
     this.maxPerRun = options.maxPerRun ?? 50
-    this.includeMessages = options.includeMessages ?? true
+    this.includeMessages = options.includeMessages ?? false
     this.pruneOnSave = options.pruneOnSave ?? true
   }
 
   async saveSnapshot(snapshot: TaskSnapshotPayload): Promise<{ path: string }> {
     const pruned = this.prepareSnapshot(snapshot)
     const dir = this.snapshotDir(snapshot.runId)
+    await ensureWorkflowRunsIgnored(this.workspaceRoot)
     await fs.mkdir(dir, { recursive: true })
     const file = path.join(dir, `${safeTimestamp(pruned.createdAt)}-${pruned.reason}.json`)
     await atomicWriteFile(file, `${JSON.stringify(pruned, null, 2)}\n`)
@@ -163,11 +164,11 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
   }
 
   private prepareSnapshot(snapshot: TaskSnapshotPayload): TaskSnapshotPayload {
-    let prepared: TaskSnapshotPayload = {
+    let prepared = redactSnapshot({
       ...snapshot,
       createdAt: this.now(),
       messages: this.includeMessages ? snapshot.messages : undefined
-    }
+    })
     while (Buffer.byteLength(JSON.stringify(prepared), "utf8") > this.maxBytes && prepared.messages && prepared.messages.length > 0) {
       prepared = {
         ...prepared,
@@ -291,6 +292,60 @@ async function atomicWriteFile(file: string, content: string): Promise<void> {
 
 function sanitize(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "run"
+}
+
+const workflowRunsIgnoreEntry = ".bob/workflows/runs/"
+
+async function ensureWorkflowRunsIgnored(workspaceRoot: string): Promise<void> {
+  const file = path.join(workspaceRoot, ".gitignore")
+  let current = ""
+  try {
+    current = await fs.readFile(file, "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+  }
+  if (hasWorkflowRunsIgnoreEntry(current)) return
+  const separator = current.length > 0 && !current.endsWith("\n") ? "\n" : ""
+  await atomicWriteFile(file, `${current}${separator}${workflowRunsIgnoreEntry}\n`)
+}
+
+function hasWorkflowRunsIgnoreEntry(content: string): boolean {
+  return content.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith("#")) return false
+    const normalized = trimmed.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/?$/, "/")
+    return normalized === workflowRunsIgnoreEntry
+  })
+}
+
+function redactSnapshot(snapshot: TaskSnapshotPayload): TaskSnapshotPayload {
+  return redactValue(snapshot) as TaskSnapshotPayload
+}
+
+function redactValue(value: unknown, key?: string, depth = 0): unknown {
+  if (typeof value === "string") return redactString(value, key)
+  if (!value || typeof value !== "object") return value
+  if (depth > 20) return "[REDACTED]"
+  if (Array.isArray(value)) return value.map((item) => redactValue(item, key, depth + 1))
+
+  const output: Record<string, unknown> = {}
+  for (const [childKey, childValue] of Object.entries(value as Record<string, unknown>)) {
+    output[childKey] = redactValue(childValue, childKey, depth + 1)
+  }
+  return output
+}
+
+const sensitiveKeyPattern = /(?:authorization|password|passwd|pwd|secret|token|api[_-]?key|access[_-]?token|refresh[_-]?token)/i
+const secretPatterns: Array<[RegExp, string]> = [
+  [/\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/g, "[REDACTED]"],
+  [/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}\b/gi, "$1[REDACTED]"],
+  [/\b((?:OPENAI_)?API[_-]?KEY\s*=\s*)[^\s"'`]+/gi, "$1[REDACTED]"],
+  [/\b((?:PASSWORD|PASSWD|PWD|SECRET|TOKEN)\s*=\s*)[^\s"'`]+/gi, "$1[REDACTED]"]
+]
+
+function redactString(value: string, key?: string): string {
+  if (key && sensitiveKeyPattern.test(key)) return "[REDACTED]"
+  return secretPatterns.reduce((current, [pattern, replacement]) => current.replace(pattern, replacement), value)
 }
 
 function safeTimestamp(value: string): string {

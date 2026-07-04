@@ -48,9 +48,17 @@ test("workflow authoring wrapper wires a configurable AI provider command", () =
 
 test("package contributes standalone workflow launcher commands without a hard Bob dependency", () => {
   const packageJson = readJson("package.json")
-  const source = readSourceSet(["extension.ts", "workflowRuntimeFactory.ts"])
+  const readme = readExtensionFile("README.md")
+  const source = readSourceSet([
+    "extension.ts",
+    "workflowInputPrompt.ts",
+    "workflowRegisterService.ts",
+    "workflowRuntimeFactory.ts"
+  ])
 
   assert.equal(packageJson.extensionDependencies, undefined)
+  assert.match(readme, /authoring \/ validation \/ standalone workflow execution は利用でき/)
+  assert.match(readme, /IBM Bob 拡張: `IBM\.bob-code`（Bob UI 登録時のみ必須）/)
   for (const command of [
     "workflowRegister.runWorkflow",
     "workflowRegister.runWorkflowStep",
@@ -83,13 +91,19 @@ test("package exposes task snapshot retention settings", () => {
   assert.equal(properties["workflowRegister.taskSnapshots.enabled"].default, true)
   assert.equal(properties["workflowRegister.taskSnapshots.maxBytes"].default, 262144)
   assert.equal(properties["workflowRegister.taskSnapshots.maxPerRun"].default, 50)
-  assert.equal(properties["workflowRegister.taskSnapshots.includeMessages"].default, true)
+  assert.equal(properties["workflowRegister.taskSnapshots.includeMessages"].default, false)
   assert.equal(properties["workflowRegister.taskSnapshots.pruneOnSave"].default, true)
 })
 
 test("workflow-register does not silently use the first workspace folder in multi-root paths", () => {
   const sources = [
-    readSourceSet(["extension.ts", "workflowDiscovery.ts", "workflowRuntimeFactory.ts"]),
+    readSourceSet([
+      "extension.ts",
+      "workflowDiscovery.ts",
+      "workflowInputPrompt.ts",
+      "workflowRegisterService.ts",
+      "workflowRuntimeFactory.ts"
+    ]),
     readSrc("commands", "createWorkflow.ts"),
     readSrc("commands", "designWorkflowWithAi.ts"),
     readSrc("commands", "improveWorkflowWithAi.ts"),
@@ -98,6 +112,24 @@ test("workflow-register does not silently use the first workspace folder in mult
 
   assert.doesNotMatch(sources, /workspaceFolders\?\.\[0\]|workspaceFolders\?\[0\]/)
   assert.match(sources, /findWorkflowRootCandidates/)
+})
+
+test("workflow authoring write paths enforce WORKFLOW.md document boundaries", () => {
+  const improve = readSrc("commands", "improveWorkflowWithAi.ts")
+  const edit = readSrc("commands", "editWorkflowInBuilder.ts")
+  const panel = readSrc("webview", "workflowBuilderPanel.ts")
+
+  assert.match(improve, /isWorkflowDocumentPath\(editor\.document\.uri\.fsPath\)/)
+  assert.match(improve, /Open a \.bob\/workflows\/\*\/WORKFLOW\.md file/)
+  assert.match(edit, /isWorkflowDocumentPath\(targetUri\.fsPath\)/)
+  assert.match(panel, /isWorkflowDocumentPath\(targetUri\.fsPath\)/)
+  assert.ok(panel.indexOf("isWorkflowDocumentPath(targetUri.fsPath)") < panel.indexOf("workspace.fs.writeFile(targetUri"))
+})
+
+test("workspace workflow validation uses strict diagnostics", () => {
+  const source = readSrc("commands", "validateWorkflow.ts")
+
+  assert.match(source, /validateWorkflowText\(\{ sourceId: options\.sourceId, filePath, text, strict: true \}\)/)
 })
 
 test("runtime dependencies are not excluded from VSIX packaging", () => {

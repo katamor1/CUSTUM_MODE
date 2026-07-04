@@ -1,6 +1,6 @@
 # Bob Workflow Register（Bob ワークフロー登録）
 
-`workflow-register` は、ワークスペースに置かれた IBM Bob 用のワークフロー定義を読み込み、Bob の Workflow UI に登録するための VS Code 拡張機能です。`.bob/workflows/*/WORKFLOW.md` を対象に、ワークフローの作成、検証、実行、再開、診断、AI 補助、GUI Builder を提供します。
+`workflow-register` は、ワークスペースに置かれた IBM Bob 用のワークフロー定義を読み込み、Bob の Workflow UI に登録するための VS Code 拡張機能です。`.bob/workflows/*/WORKFLOW.md` を対象に、ワークフローの作成、検証、単体実行、再開、診断、AI 補助、GUI Builder を提供します。IBM Bob 拡張がない環境でも authoring / validation / standalone workflow execution は利用でき、Bob UI への登録だけ `IBM.bob-code` を必要とします。
 
 この README では、コマンド名、設定キー、JSON / YAML のフィールド名、ファイル名、識別子は実装上の名称として原文のまま記載します。
 
@@ -18,7 +18,7 @@
 ## 前提
 
 - VS Code / Bob IDE: `^1.106.1`
-- IBM Bob 拡張: `IBM.bob-code`
+- IBM Bob 拡張: `IBM.bob-code`（Bob UI 登録時のみ必須）
 - Node.js / npm
 - TypeScript
 
@@ -49,7 +49,7 @@
 3. 生成された `.bob/workflows/<name>/WORKFLOW.md` を編集する。
 4. `Bob ワークフロー: 現在の定義を検証` で検証する。
 5. `Bob ワークフロー: ファイルを再読み込み` で再読み込みする。
-6. Bob の Workflow UI または `Bob ワークフロー: 実行` から実行する。
+6. Bob UI に登録して使う場合は `IBM.bob-code` を有効にし、Bob の Workflow UI から実行する。Bob なしで使う場合は `Bob ワークフロー: 実行` から単体実行する。
 
 ## 推奨フォーマット
 
@@ -268,6 +268,9 @@ stepReview:
 | `Bob ワークフロー: 現在のステップを完了` | 現在の手動ステップを完了する。 |
 
 実行状態は、ワークスペース内の `.bob/workflows/runs/<runId>/run.json` に保存されます。
+Task snapshot は `.bob/workflows/runs/<runId>/task-snapshots/` に保存され、既定では Bob chat messages を含めません。
+保存前に secret らしい文字列は best-effort で redaction され、snapshot 保存時は `.bob/workflows/runs/` がワークスペース直下の `.gitignore` に冪等に追加されます。
+chat messages まで診断に残したい場合だけ、`workflowRegister.taskSnapshots.includeMessages` を明示的に有効化してください。
 
 ## AI 補助
 

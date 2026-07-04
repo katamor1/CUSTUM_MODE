@@ -1,10 +1,13 @@
 import { BazaarClient, BazaarCommandResult } from "./bazaar"
+import { fencedCodeBlock } from "./markdownFence"
+import { clampMaxAddedFileContentBytes, truncateUtf8 } from "./reviewLimits"
 
 export type BazaarChangedFileStatus = "added" | "modified" | "removed" | "renamed" | "unknown"
 
 export interface BazaarChangedFile {
   path: string
   status: BazaarChangedFileStatus
+  binary?: boolean
 }
 
 export interface BazaarRevisionInfo {
@@ -63,8 +66,9 @@ export async function buildAddedFilesContentSection(
   info: BazaarRevisionInfo,
   maxBytes = 256 * 1024
 ): Promise<string | undefined> {
+  const maxContentBytes = clampMaxAddedFileContentBytes(maxBytes)
   const addedFiles = info.changedFileEntries.filter((entry) => entry.status === "added")
-  if (addedFiles.length === 0 || maxBytes <= 0) return undefined
+  if (addedFiles.length === 0 || maxContentBytes <= 0) return undefined
 
   const lines: string[] = [
     "## 追加ファイル本文",
@@ -72,10 +76,17 @@ export async function buildAddedFilesContentSection(
     "この Bazaar リビジョンで新規追加されたファイルの本文です。diff だけでは十分な文脈が得られない場合があるため、対象リビジョンの内容を明示的に含めます。",
     ""
   ]
-  let remainingBytes = maxBytes
+  let remainingBytes = maxContentBytes
   let truncated = false
 
   for (const entry of addedFiles) {
+    if (entry.binary) {
+      lines.push(`### ${entry.path}`)
+      lines.push("")
+      lines.push("[BINARY: 追加ファイル本文は text として埋め込みません]")
+      lines.push("")
+      continue
+    }
     if (remainingBytes <= 0) {
       truncated = true
       break
@@ -86,15 +97,13 @@ export async function buildAddedFilesContentSection(
       let content = result.stdout
       const contentBytes = Buffer.byteLength(content, "utf8")
       if (contentBytes > remainingBytes) {
-        content = truncateUtf8(content, remainingBytes)
+        content = truncateUtf8(content, remainingBytes, "added file content")
         truncated = true
       }
       remainingBytes -= Buffer.byteLength(content, "utf8")
       lines.push(`### ${entry.path}`)
       lines.push("")
-      lines.push("```text")
-      lines.push(content)
-      lines.push("```")
+      lines.push(fencedCodeBlock("text", content))
       lines.push("")
     } catch (error: any) {
       lines.push(`### ${entry.path}`)
@@ -105,7 +114,7 @@ export async function buildAddedFilesContentSection(
   }
 
   if (truncated) {
-    lines.push(`[TRUNCATED: 追加ファイル本文が ${maxBytes} bytes の上限を超えました。必要に応じて focused read/search tools で追加確認してください。]`)
+    lines.push(`[TRUNCATED: 追加ファイル本文が ${maxContentBytes} bytes の上限を超えました。必要に応じて focused read/search tools で追加確認してください。]`)
   }
 
   return lines.join("\n")
@@ -139,25 +148,36 @@ export function parseChangedFiles(diffText: string): string[] {
 }
 
 export function parseChangedFileEntries(diffText: string): BazaarChangedFile[] {
-  const files = new Map<string, BazaarChangedFileStatus>()
+  const files = new Map<string, BazaarChangedFile>()
   for (const line of diffText.split(/\r?\n/)) {
-    let match = /^===\s+(modified|added|removed|renamed)\s+file\s+'(.+)'\s*$/.exec(line)
+    let match = /^===\s+renamed\s+file\s+'(.+)'\s+=>\s+'(.+)'\s*$/.exec(line)
     if (match) {
-      files.set(match[2], normalizeStatus(match[1]))
+      recordChangedFile(files, match[2], "renamed")
+      continue
+    }
+    match = /^===\s+(modified|added|removed|renamed)\s+file\s+'(.+)'\s*$/.exec(line)
+    if (match) {
+      recordChangedFile(files, match[2], normalizeStatus(match[1]))
       continue
     }
     match = /^diff\s+--git\s+a\/(.+?)\s+b\/(.+?)\s*$/.exec(line)
     if (match) {
-      if (!files.has(match[2])) files.set(match[2], "unknown")
+      recordChangedFile(files, match[2], "unknown")
+      continue
+    }
+    match = /^Binary files\s+(.+?)\s+and\s+(.+?)\s+differ\s*$/i.exec(line)
+    if (match) {
+      const filePath = normalizeDiffFilePath(match[2]) ?? normalizeDiffFilePath(match[1])
+      if (filePath) recordChangedFile(files, filePath, "unknown", true)
       continue
     }
     match = /^\+\+\+\s+(.+?)\s*$/.exec(line)
     if (match) {
       const filePath = normalizeDiffFilePath(match[1])
-      if (filePath && !files.has(filePath)) files.set(filePath, "unknown")
+      if (filePath) recordChangedFile(files, filePath, "unknown")
     }
   }
-  return [...files.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([path, status]) => ({ path, status }))
+  return [...files.values()].sort((a, b) => a.path.localeCompare(b.path))
 }
 
 function normalizeDiffFilePath(rawPath: string): string | undefined {
@@ -181,11 +201,16 @@ function normalizeStatus(status: string): BazaarChangedFileStatus {
   }
 }
 
-function truncateUtf8(value: string, maxBytes: number): string {
-  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value
-  let result = value
-  while (Buffer.byteLength(result, "utf8") > maxBytes) {
-    result = result.slice(0, Math.floor(result.length * 0.9))
+function recordChangedFile(files: Map<string, BazaarChangedFile>, path: string, status: BazaarChangedFileStatus, binary = false): void {
+  const existing = files.get(path)
+  if (!existing) {
+    files.set(path, compactChangedFile({ path, status, binary }))
+    return
   }
-  return `${result}\n\n[TRUNCATED]`
+  if (existing.status === "unknown" && status !== "unknown") existing.status = status
+  if (binary) existing.binary = true
+}
+
+function compactChangedFile(entry: BazaarChangedFile): BazaarChangedFile {
+  return entry.binary ? entry : { path: entry.path, status: entry.status }
 }

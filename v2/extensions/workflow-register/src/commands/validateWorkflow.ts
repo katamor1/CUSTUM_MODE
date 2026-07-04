@@ -30,7 +30,7 @@ export async function validateWorkspaceWorkflows(options: ValidateWorkflowComman
   for (const file of files) {
     const filePath = vscode.workspace.asRelativePath(file, false)
     const text = new TextDecoder("utf-8").decode(await vscode.workspace.fs.readFile(file)).replace(/^\uFEFF/, "")
-    const result = validateWorkflowText({ sourceId: options.sourceId, filePath, text })
+    const result = validateWorkflowText({ sourceId: options.sourceId, filePath, text, strict: true })
     options.diagnostics?.set(file, result)
     errors += result.diagnostics.filter((item) => item.severity === "error").length
     warnings += result.diagnostics.filter((item) => item.severity === "warning").length

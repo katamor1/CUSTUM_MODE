@@ -4,6 +4,7 @@ import {
   ResultSinkDefinition,
   ResultSourceDefinition
 } from "./model"
+import { validateApprovalExpression } from "./approvalGuardrails"
 import { parseWorkflowMarkdown } from "./parser"
 
 export type WorkflowDiagnosticSeverity = "error" | "warning" | "info"
@@ -77,6 +78,7 @@ export function validateCoreWorkflow(
   validateInputs(workflow, diagnostics, filePath)
   validatePreflight(workflow, options, diagnostics, filePath)
   validateGuardrails(workflow, diagnostics, filePath)
+  validateTemplatePlaceholders(workflow, diagnostics, filePath)
   return diagnostics
 }
 
@@ -193,6 +195,57 @@ function validateGuardrails(workflow: CoreWorkflowDefinition, diagnostics: Workf
   for (const denied of workflow.guardrails.deniedCommands ?? []) {
     if (allowed.has(denied)) diagnostics.push(error(filePath, `Guardrail command '${denied}' is both allowed and denied.`))
   }
+  const allowedCommandIds = new Set(workflow.guardrails.allowedCommandIds ?? [])
+  for (const denied of workflow.guardrails.deniedCommandIds ?? []) {
+    if (allowedCommandIds.has(denied)) diagnostics.push(error(filePath, `Guardrail command id '${denied}' is both allowed and denied.`))
+  }
+  for (const rule of workflow.guardrails.requireApproval ?? []) {
+    const issue = validateApprovalExpression(rule.when)
+    if (issue) diagnostics.push(error(filePath, rule.id ? `${issue} (rule: ${rule.id})` : issue))
+  }
+}
+
+function validateTemplatePlaceholders(workflow: CoreWorkflowDefinition, diagnostics: WorkflowDiagnostic[], filePath: string): void {
+  for (const artifact of workflow.artifacts) {
+    warnBareTemplatePlaceholders(artifact.path, `artifact '${artifact.id}' path`, diagnostics, filePath)
+  }
+  for (const step of workflow.engineSteps) {
+    warnBareTemplatePlaceholders(step.prompt, `step '${step.id}' prompt`, diagnostics, filePath)
+    if (step.type === "command") warnBareTemplateValues(step.action.args, `step '${step.id}' action.args`, diagnostics, filePath)
+    if ((step.type === "agent" || step.type === "result") && step.result) {
+      if (step.result.source === "literal") warnBareTemplatePlaceholders(step.result.text, `step '${step.id}' result.text`, diagnostics, filePath)
+      for (const sink of step.result.sinks) {
+        if (sink.type === "file") warnBareTemplatePlaceholders(sink.path, `step '${step.id}' file sink path`, diagnostics, filePath)
+        if (sink.type === "command") warnBareTemplateValues(sink.args, `step '${step.id}' command sink args`, diagnostics, filePath)
+      }
+    }
+  }
+}
+
+function warnBareTemplateValues(value: unknown, location: string, diagnostics: WorkflowDiagnostic[], filePath: string): void {
+  if (typeof value === "string") {
+    warnBareTemplatePlaceholders(value, location, diagnostics, filePath)
+    return
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => warnBareTemplateValues(item, `${location}[${index}]`, diagnostics, filePath))
+    return
+  }
+  if (!value || typeof value !== "object") return
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    warnBareTemplateValues(item, `${location}.${key}`, diagnostics, filePath)
+  }
+}
+
+function warnBareTemplatePlaceholders(value: string | undefined, location: string, diagnostics: WorkflowDiagnostic[], filePath: string): void {
+  if (!value) return
+  const matches = value.matchAll(/\{\{\s*([A-Za-z0-9_-]+)\s*\}\}/g)
+  for (const match of matches) {
+    diagnostics.push(warning(
+      filePath,
+      `Deprecated bare template placeholder '{{${match[1]}}}' in ${location}; use an explicit namespace such as '{{inputs.${match[1]}}}', '{{state.${match[1]}}}', or '{{json state.<resultKey>.${match[1]}}}'.`
+    ))
+  }
 }
 
 function diagnosticFromParserLine(line: string, filePath: string): WorkflowDiagnostic {
@@ -210,6 +263,7 @@ function diagnosticHint(message: string): string | undefined {
   if (message.includes("Duplicate step id")) return "Each step id must be unique within one WORKFLOW.md."
   if (message.includes("select but has no options")) return "Add an options list to the select input."
   if (message.includes("producedBy step")) return "Set producedBy to the id of a step that exists in steps."
+  if (message.includes("command id")) return "Keep each VS Code command id in either allowedCommandIds or deniedCommandIds, not both."
   if (message.includes("both allowed and denied")) return "Keep each command in either allowedCommands or deniedCommands, not both."
   if (message.includes("missing YAML front matter")) return "Start the file with a YAML front matter block delimited by ---."
   if (message.includes("invalid YAML")) return "Check indentation, list markers, and quoted strings in the front matter."

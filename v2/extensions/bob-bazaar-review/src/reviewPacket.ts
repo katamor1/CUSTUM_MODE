@@ -1,4 +1,6 @@
 import { BazaarCommandResult } from "./bazaar"
+import { fencedCodeBlock } from "./markdownFence"
+import { clampMaxDiffBytes, truncateUtf8 } from "./reviewLimits"
 
 export interface ReviewPacketOptions {
   repositoryRoot: string
@@ -10,27 +12,30 @@ export interface ReviewPacketOptions {
   diff: BazaarCommandResult
   maxDiffBytes: number
   extraSections?: string[]
+  includeLocalPaths?: boolean
 }
 
 export function buildReviewPacket(options: ReviewPacketOptions): string {
   const revisionLabel = buildRevisionLabel(options)
-  const diffText = truncateUtf8(options.diff.stdout, options.maxDiffBytes)
-  const logText = options.log ? truncateUtf8(options.log.stdout, 128 * 1024) : ""
+  const diffText = truncateUtf8(options.diff.stdout, clampMaxDiffBytes(options.maxDiffBytes), "diff")
+  const logText = options.log ? truncateUtf8(options.log.stdout, 128 * 1024, "log") : ""
+  const includeLocalPaths = options.includeLocalPaths === true
 
   return [
     "# Bazaar Revision Review Request",
     "",
     `VCS: Bazaar`,
-    `Repository root: ${options.repositoryRoot}`,
+    `Repository root: ${includeLocalPaths ? options.repositoryRoot : "<redacted local path>"}`,
     `Review mode: ${options.mode}`,
     `Revision target: ${revisionLabel}`,
+    includeLocalPaths ? "" : "Privacy: Local absolute paths are redacted from this packet by default.",
     "",
     "## Bazaar commands used",
     "",
-    "```text",
-    `${options.diff.command} ${options.diff.args.join(" ")}`,
-    options.log ? `${options.log.command} ${options.log.args.join(" ")}` : "",
-    "```",
+    fencedCodeBlock("text", [
+      formatCommand(options.diff, includeLocalPaths),
+      options.log ? formatCommand(options.log, includeLocalPaths) : ""
+    ].filter(Boolean).join("\n")),
     "",
     "## Review instruction for Bob",
     "",
@@ -54,15 +59,11 @@ export function buildReviewPacket(options: ReviewPacketOptions): string {
     ...(options.extraSections ?? []).flatMap((section) => [section, ""]),
     logText ? "## Bazaar log" : "",
     logText ? "" : "",
-    logText ? "```text" : "",
-    logText,
-    logText ? "```" : "",
+    logText ? fencedCodeBlock("text", logText) : "",
     logText ? "" : "",
     "## Bazaar diff",
     "",
-    "```diff",
-    diffText,
-    "```"
+    fencedCodeBlock("diff", diffText)
   ].filter((line) => line !== undefined).join("\n")
 }
 
@@ -76,16 +77,7 @@ function buildRevisionLabel(options: ReviewPacketOptions): string {
   return `working tree since ${options.baseRevision ?? "current basis"}`
 }
 
-function truncateUtf8(value: string, maxBytes: number): string {
-  const bytes = Buffer.byteLength(value, "utf8")
-  if (bytes <= maxBytes) {
-    return value
-  }
-
-  let result = value
-  while (Buffer.byteLength(result, "utf8") > maxBytes) {
-    result = result.slice(0, Math.floor(result.length * 0.9))
-  }
-
-  return `${result}\n\n[TRUNCATED: original output was ${bytes} bytes, limit is ${maxBytes} bytes]`
+function formatCommand(result: BazaarCommandResult, includeLocalPaths: boolean): string {
+  const command = includeLocalPaths ? result.command : "bzr"
+  return [command, ...result.args].join(" ")
 }

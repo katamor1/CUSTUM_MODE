@@ -1,14 +1,13 @@
 import * as vscode from "vscode"
 import {
-  CandidateText,
-  CaptureReviewResultOptions,
-  CaptureReviewResultResult,
   captureReviewResultFromCandidates,
   extractJsonFromText
 } from "./resultCaptureCore"
+import type { CandidateText, CaptureReviewResultOptions, CaptureReviewResultResult } from "./resultCaptureTypes"
 import { resolveBobWorkspaceFolder } from "../workspaceResolver"
 
-export { CaptureReviewResultResult, extractJsonFromText }
+export { extractJsonFromText }
+export type { CaptureReviewResultResult } from "./resultCaptureTypes"
 
 export async function captureReviewResult(inputText?: string, options: CaptureReviewResultOptions = {}): Promise<CaptureReviewResultResult> {
   const explicitInput = typeof inputText === "string" && inputText.trim().length > 0

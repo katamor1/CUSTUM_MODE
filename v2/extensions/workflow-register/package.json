@@ -134,8 +134,8 @@
         },
         "workflowRegister.taskSnapshots.includeMessages": {
           "type": "boolean",
-          "default": true,
-          "description": "task snapshot に Bob chat messages を含めます。無効時も metadata と lastAssistantText は保存対象です。"
+          "default": false,
+          "description": "task snapshot に Bob chat messages を含めます。必要な場合のみ明示的に有効化してください。無効時も metadata と lastAssistantText は redaction 後に保存対象です。"
         },
         "workflowRegister.taskSnapshots.pruneOnSave": {
           "type": "boolean",
@@ -204,11 +204,15 @@
     }
   },
   "scripts": {
+    "architecture:policy": "node ../../scripts/check-import-cycles.js src",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
     "compile": "tsc -p ./",
+    "dependency:policy": "node --test test/dependencyPolicy.test.js",
     "test": "npm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "package": "vsce package",
+    "package:policy": "node ../../scripts/check-vsix-policy.js --max-bytes 1200000"
   },
   "dependencies": {
     "ajv": "^8.17.1",

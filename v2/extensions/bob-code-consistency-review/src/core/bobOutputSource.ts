@@ -5,7 +5,7 @@ export type BobOutputTextResult =
   | { ok: true; text: string; sourcePath: string; usedFallback: boolean }
   | { ok: false; error: string; checkedPaths: string[] }
 
-export async function readBobOutputText(input: { bobOutputPath: string; packageDir?: string; includePrimary?: boolean }): Promise<BobOutputTextResult> {
+export async function readBobOutputText(input: { bobOutputPath: string; packageDir?: string; includePrimary?: boolean; allowPackageFallback?: boolean }): Promise<BobOutputTextResult> {
   const candidates = bobOutputCandidatePaths(input)
   const checkedPaths: string[] = []
   const readErrors: string[] = []
@@ -30,10 +30,10 @@ export async function readBobOutputText(input: { bobOutputPath: string; packageD
   return { ok: false, error: `Bob output YAML not found. Checked: ${checked}.${suffix}`, checkedPaths }
 }
 
-export function bobOutputCandidatePaths(input: { bobOutputPath: string; packageDir?: string; includePrimary?: boolean }): string[] {
+export function bobOutputCandidatePaths(input: { bobOutputPath: string; packageDir?: string; includePrimary?: boolean; allowPackageFallback?: boolean }): string[] {
   const candidates: string[] = []
   if (input.includePrimary !== false) candidates.push(input.bobOutputPath)
-  if (input.packageDir) candidates.push(path.join(input.packageDir, "bob-output.yaml"))
+  if (input.packageDir && input.allowPackageFallback === true) candidates.push(path.join(input.packageDir, "bob-output.yaml"))
   return uniqueResolvedPaths(candidates)
 }
 

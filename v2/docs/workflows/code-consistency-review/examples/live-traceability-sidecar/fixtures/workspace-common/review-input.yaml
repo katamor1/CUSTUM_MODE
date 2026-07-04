@@ -1,0 +1,83 @@
+schema_version: 1
+
+review:
+  id: REVIEW-LIVE-TRACE-001
+  title: "traceability sidecar 実機検証"
+  change_type: bugfix
+  purpose: "traceability sidecar から生成した review-input で決済コード変更の整合性を確認する。"
+  base: main
+  head: feature/live-traceability-sidecar
+  vcs: git
+  ticket_ids:
+    - TICKET-LIVE-001
+  author_note: "実機検証用に OK、NG、確認質問、RT/TS ルール指摘を含めた固定 fixture。"
+  out_of_scope:
+    - "実行時性能測定"
+
+artifacts:
+  requirements:
+    - path: docs/requirements-live.md
+      version: "1.0"
+      sections:
+        - REQ-RS001-PAY-0001
+        - REQ-RS001-PAY-0002
+        - REQ-RS001-FRAUD-0001
+        - REQ-RS001-RT-0001
+  basic_design:
+    - path: docs/basic-design-live.md
+      version: "1.0"
+      sections:
+        - BD-BD001-PAY-0001
+        - BD-BD001-PAY-0002
+        - BD-BD001-FRAUD-0001
+        - BD-BD001-RT-0001
+  detailed_design:
+    - path: docs/detailed-design-live.md
+      version: "1.0"
+      sections:
+        - DD-DD001-PAY-0001
+        - DD-DD001-PAY-0002
+        - DD-DD001-FRAUD-0001
+        - DD-DD001-RT-0001
+  test_spec:
+    - path: docs/test-spec-live.md
+      version: "1.0"
+      cases:
+        - TC-TS001-PAY-0001
+        - TC-TS001-PAY-0002
+  ledgers:
+    - path: docs/error-ledger-live.md
+      version: "1.0"
+      rows:
+        - ERR_TIMEOUT
+        - QA-QA001-FRAUD-0001
+  tickets:
+    - path: docs/review-findings-live.md
+      version: "2026-07-03"
+      rows:
+        - RV-RV001-RT-0001
+
+review_focus:
+  - requirement-code-consistency
+  - design-code-consistency
+  - test-gap
+  - rt-ts-rule
+
+analysis_options:
+  include_callers: true
+  include_callees: true
+  include_global_access: true
+  include_struct_impact: true
+  include_ledgers: true
+  max_call_depth: 2
+  max_code_context_lines: 80
+  language:
+    - c
+    - h
+
+bob_options:
+  prompt_template: consistency-review-v1
+  output_format: yaml
+  require_evidence: true
+  allow_questions: true
+  forbid_final_approval: true

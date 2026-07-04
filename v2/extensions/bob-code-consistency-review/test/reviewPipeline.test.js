@@ -17,7 +17,9 @@ const {
 const aiMatrixRoot = path.join(sampleRoot, "examples", "ai-verification-matrix")
 
 test("preprocessReview builds a review package with document and code evidence", async () => {
-  const outDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bob-review-package-")), "review-package")
+  const outRoot = path.join(repoRoot, ".bob-review")
+  fs.mkdirSync(outRoot, { recursive: true })
+  const outDir = fs.mkdtempSync(path.join(outRoot, "review-package-"))
   const result = await preprocessReview({ workspaceRoot: repoRoot, inputPath: reviewInputPath, outDir, diffFixturePath })
 
   for (const file of [

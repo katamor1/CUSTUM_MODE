@@ -4,6 +4,7 @@ import { createAuthoringModelFromTemplate } from "../core/workflowAuthoringDefau
 import { WorkflowAuthoringModel, WorkflowAuthoringStep } from "../core/workflowAuthoringModel"
 import { serializeAuthoringModelToMarkdown } from "../core/workflowAuthoringSerializer"
 import { validateStepDraft } from "../core/workflowAuthoringStepDraftValidation"
+import { isWorkflowDocumentPath } from "../core/workflowDocumentPath"
 import { WorkflowTemplateKind, workflowTemplates } from "../core/workflowScaffold"
 import { formatWorkflowDiagnostics, validateWorkflowText } from "../core/workflowValidator"
 import { renderWorkflowBuilderHtml } from "./workflowBuilderHtml"
@@ -118,6 +119,10 @@ export class WorkflowBuilderPanel {
     const rendered = serializeAuthoringModelToMarkdown(model)
     const targetUri = this.targetUri(rendered.filePath)
     const targetPath = this.displayPathForUri(targetUri, rendered.filePath)
+    if (this.options.mode === "edit" && !isWorkflowDocumentPath(targetUri.fsPath)) {
+      await vscode.window.showErrorMessage("GUI Builder edit mode can only overwrite .bob/workflows/*/WORKFLOW.md files.")
+      return
+    }
     const validation = validateWorkflowText({ sourceId: this.options.sourceId, filePath: targetPath, text: rendered.markdown })
     if (!validation.ok) {
       await this.panel.webview.postMessage({ type: "previewResult", markdown: rendered.markdown, ok: false, diagnostics: formatWorkflowDiagnostics(validation), filePath: targetPath })

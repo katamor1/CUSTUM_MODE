@@ -74,9 +74,11 @@ export function shouldPauseForStepReview(workflow: CoreWorkflowDefinition, step:
 export function blockedPreviousStep(workflow: CoreWorkflowDefinition, run: WorkflowRunState, targetIndex: number, options: RunWorkflowOptionsLike): RunStepState | undefined {
   if (options.executionMode !== "singleStep") return undefined
   const allowOutOfOrder = options.allowOutOfOrder ?? workflowStepExecution(workflow).allowOutOfOrder
-  if (allowOutOfOrder) return undefined
   for (let index = 0; index < targetIndex && index < run.steps.length; index += 1) {
-    if (run.steps[index]?.status !== "completed") return run.steps[index]
+    const step = run.steps[index]
+    if (step?.status === "completed") continue
+    if (step?.status === "reviewing") return step
+    if (!allowOutOfOrder) return step
   }
   return undefined
 }

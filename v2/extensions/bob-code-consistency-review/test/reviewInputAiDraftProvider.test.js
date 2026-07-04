@@ -35,6 +35,13 @@ test("parseAiReviewInputDraft extracts fenced JSON only", () => {
   assert.deepEqual(draft.artifact_candidates, [])
 })
 
+test("parseAiReviewInputDraft rejects ambiguous or oversized JSON candidates", () => {
+  const first = JSON.stringify({ review: { id: "first" }, artifact_candidates: [] })
+  const second = JSON.stringify({ review: { id: "second" }, artifact_candidates: [] })
+  assert.throws(() => parseAiReviewInputDraft(`\`\`\`json\n${first}\n\`\`\`\n\`\`\`json\n${second}\n\`\`\``), /multiple JSON candidates/)
+  assert.throws(() => parseAiReviewInputDraft(`${"x".repeat(1100 * 1024)}\n${first}`), /exceeds maximum/)
+})
+
 test("applyAiReviewInputDraft rejects invalid artifact paths before writing", async () => {
   const workspaceRoot = await makeWorkspace()
   const outputPath = path.join(workspaceRoot, "review-input.yaml")
@@ -60,6 +67,37 @@ test("applyAiReviewInputDraft rejects invalid artifact paths before writing", as
 
   assert.equal(result.status, "error")
   assert.match(result.errors.join("\n"), /artifact path does not exist: docs\/missing\.md/)
+  await assert.rejects(fs.readFile(outputPath, "utf8"), /ENOENT/)
+})
+
+test("applyAiReviewInputDraft rejects artifact paths outside the workspace before writing", async () => {
+  const workspaceRoot = await makeWorkspace()
+  const outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-review-input-outside-"))
+  const outsidePath = path.join(outsideRoot, "requirements.md")
+  await fs.writeFile(outsidePath, "# Outside\n\n## REQ-OUTSIDE-001\n\nMust not be captured.\n", "utf8")
+  const outputPath = path.join(workspaceRoot, "review-input.yaml")
+  const result = await applyAiReviewInputDraft({
+    workspaceRoot,
+    reviewInputPath: outputPath,
+    text: JSON.stringify({
+      review: {
+        id: "outside-doc",
+        title: "outside doc",
+        change_type: "bugfix",
+        purpose: "verify workspace guard",
+        base: "HEAD~1",
+        head: "HEAD",
+        vcs: "git"
+      },
+      artifact_candidates: [
+        { kind: "requirements", path: outsidePath, sections: ["REQ-OUTSIDE-001"] }
+      ],
+      review_focus: ["requirement-code-consistency"]
+    })
+  })
+
+  assert.equal(result.status, "error")
+  assert.match(result.errors.join("\n"), /artifact path escapes workspace:/)
   await assert.rejects(fs.readFile(outputPath, "utf8"), /ENOENT/)
 })
 

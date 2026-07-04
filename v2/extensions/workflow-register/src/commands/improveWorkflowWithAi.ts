@@ -4,6 +4,7 @@ import { formatWorkflowRepairProposal, WorkflowAiProvider } from "../core/workfl
 import { createWorkflowReplacementCandidate, previewFileNameForWorkflow, WorkflowReplacementCandidate } from "../core/workflowReplacementPreview"
 import { buildWorkflowRepairContext, formatWorkflowRepairContext } from "../core/workflowRepairContext"
 import { formatWorkflowDiagnostics, validateWorkflowText } from "../core/workflowValidator"
+import { isWorkflowDocumentPath } from "../core/workflowDocumentPath"
 import { pickWorkflowRootForUri, workflowRelativePath } from "./workspaceRootPicker"
 
 export interface ImproveWorkflowWithAiOptions {
@@ -16,6 +17,10 @@ export async function improveWorkflowWithAi(options: ImproveWorkflowWithAiOption
   const editor = vscode.window.activeTextEditor
   if (!editor) {
     await vscode.window.showErrorMessage("No active editor is open.")
+    return
+  }
+  if (!isWorkflowDocumentPath(editor.document.uri.fsPath)) {
+    await vscode.window.showErrorMessage("Open a .bob/workflows/*/WORKFLOW.md file before running AI workflow repair.")
     return
   }
   const filePath = workflowRelativePath(editor.document.uri)
@@ -72,6 +77,7 @@ async function previewAndMaybeApplyReplacement(originalUri: vscode.Uri, candidat
 }
 
 async function writeBackupAndReplacement(originalUri: vscode.Uri, candidate: WorkflowReplacementCandidate): Promise<void> {
+  if (!isWorkflowDocumentPath(originalUri.fsPath)) throw new Error("AI workflow repair can only overwrite .bob/workflows/*/WORKFLOW.md files.")
   const workflowRoot = await pickWorkflowRootForUri(originalUri, "Select workflow workspace for replacement backup")
   if (!workflowRoot) throw new Error("No workspace folder is open.")
   const parts = candidate.backupRelativePath.split("/").filter(Boolean)

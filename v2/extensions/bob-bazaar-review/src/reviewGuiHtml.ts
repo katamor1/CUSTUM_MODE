@@ -1,7 +1,8 @@
+import { randomBytes } from "node:crypto"
 import type { BazaarReviewInitialTarget } from "./reviewGuiTypes"
 
 export function renderHtml(cspSource: string, initialTarget?: BazaarReviewInitialTarget): string {
-  const nonce = String(Date.now())
+  const nonce = createNonce()
   const initialTargetJson = JSON.stringify(initialTarget ?? {}).replace(/</g, "\\u003c")
 
   return `<!DOCTYPE html>
@@ -352,4 +353,8 @@ export function renderHtml(cspSource: string, initialTarget?: BazaarReviewInitia
   </script>
 </body>
 </html>`
+}
+
+export function createNonce(): string {
+  return randomBytes(16).toString("base64")
 }

@@ -114,6 +114,8 @@ export const workflowV1Schema = {
       properties: {
         allowedCommands: { type: "array", items: { type: "string" } },
         deniedCommands: { type: "array", items: { type: "string" } },
+        allowedCommandIds: { type: "array", items: { type: "string" } },
+        deniedCommandIds: { type: "array", items: { type: "string" } },
         requireApproval: {
           type: "array",
           items: {

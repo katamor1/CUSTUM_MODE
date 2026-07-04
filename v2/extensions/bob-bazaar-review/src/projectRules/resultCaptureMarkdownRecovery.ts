@@ -1,5 +1,5 @@
 import { loadProjectChecklist } from "./io"
-import type { CandidateText, CaptureReviewResultOptions } from "./resultCaptureCore"
+import type { CandidateText, CaptureReviewResultOptions } from "./resultCaptureTypes"
 import type { ProjectChecklist, ProjectRule, ReviewResult, ReviewStatus } from "./types"
 
 interface MarkdownChecklistDecision {

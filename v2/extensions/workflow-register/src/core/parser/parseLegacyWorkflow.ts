@@ -1,3 +1,4 @@
+import { createHash } from "crypto"
 import * as path from "path"
 import { CoreWorkflowDefinition, ParseWorkflowRequest, ParseWorkflowResult } from "../model"
 import { legacyStepsFromMarkdown, legacyTodosFromMarkdown } from "./legacyMarkdown"
@@ -5,7 +6,7 @@ import { removeMarkdownSection, removeMarkdownStepSections } from "./markdownSec
 import { normalizeStepExecution, normalizeStepReview, stepCompletion, stepMessage } from "./normalizers"
 import { arrayField, listField, optionalBoolean, optionalString } from "./yamlFields"
 
-export function parseLegacyWorkflow(request: ParseWorkflowRequest, fields: Record<string, unknown>, body: string): ParseWorkflowResult {
+export function parseLegacyWorkflow(request: ParseWorkflowRequest, fields: Record<string, unknown>, body: string, fullText: string): ParseWorkflowResult {
   const name = optionalString(fields, "name") ?? path.basename(path.dirname(request.filePath))
   const description = optionalString(fields, "description")
   const diagnostics: string[] = []
@@ -23,6 +24,7 @@ export function parseLegacyWorkflow(request: ParseWorkflowRequest, fields: Recor
     menuLabel: optionalString(fields, "menuLabel") ?? optionalString(fields, "label") ?? optionalString(fields, "title") ?? name,
     description: description ?? "",
     schemaVersion: "legacy",
+    definitionHash: `sha256:${createHash("sha256").update(fullText).digest("hex")}`,
     filePath: request.filePath,
     prompt,
     promptWithoutTodo: removeMarkdownStepSections(removeMarkdownSection(prompt, "Todo")).trim(),

@@ -1,35 +1,19 @@
+import { randomUUID } from "node:crypto"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { renderReviewResultMarkdown } from "./markdown"
 import { recoverReviewResultFromMarkdown } from "./resultCaptureMarkdownRecovery"
-import { ReviewResult, ReviewStatus, ValidationIssue } from "./types"
+import type {
+  CandidateText,
+  CaptureReviewResultOptions,
+  CaptureReviewResultResult,
+  SavedReviewResultArtifacts
+} from "./resultCaptureTypes"
+import { validateJsonAgainstSchema } from "./schemaValidator"
+import type { ReviewResult, ReviewStatus, ValidationIssue } from "./types"
 import { validateReviewResultJson } from "./validator"
 
 const STATUSES: ReviewStatus[] = ["pass", "fail", "unknown", "not_applicable", "blocked"]
-
-export interface CaptureReviewResultResult {
-  status: "ok" | "error"
-  source: string
-  reviewId?: string
-  jsonPath?: string
-  markdownPath?: string
-  jsonText?: string
-  valid: boolean
-  issueCount: number
-  issues?: ValidationIssue[]
-  summary?: ReviewResult["summary"]
-}
-
-export interface CandidateText {
-  source: string
-  text: string
-}
-
-export interface CaptureReviewResultOptions {
-  expectedChecklistItems?: number
-  workspaceRoot?: string
-  workflowState?: Record<string, string>
-}
 
 export async function captureReviewResultText(
   workspaceRoot: string,
@@ -83,13 +67,15 @@ export async function handleReviewResultJson(
 
   const result = JSON.parse(normalizedJsonText) as ReviewResult
   const completionIssues = validateChecklistCompletion(result, options)
-  if (completionIssues.length > 0) {
+  const projectContractIssues = validateProjectContract(result, options)
+  const issues = [...completionIssues, ...projectContractIssues]
+  if (issues.length > 0) {
     return {
       status: "error",
       source,
       valid: false,
-      issueCount: completionIssues.length,
-      issues: completionIssues
+      issueCount: issues.length,
+      issues
     }
   }
 
@@ -150,6 +136,55 @@ function validateChecklistCompletion(result: ReviewResult, options: CaptureRevie
     : [{ path: "$.checklist_results", message: `expected ${expected} checklist result(s), got ${actual}` }]
 }
 
+function validateProjectContract(result: ReviewResult, options: CaptureReviewResultOptions): ValidationIssue[] {
+  return [
+    ...validateExpectedRuleIds(result, options.expectedRuleIds),
+    ...validateReviewResultSchema(result, options.reviewResultSchema)
+  ]
+}
+
+function validateExpectedRuleIds(result: ReviewResult, expectedRuleIds: string[] | undefined): ValidationIssue[] {
+  const expected = normalizeRuleIds(expectedRuleIds)
+  if (!expected) return []
+
+  const issues: ValidationIssue[] = []
+  const expectedSet = new Set(expected)
+  const seen = new Map<string, number>()
+
+  result.checklist_results.forEach((item, index) => {
+    const previous = seen.get(item.rule_id)
+    if (previous !== undefined) {
+      issues.push({
+        path: `$.checklist_results[${index}].rule_id`,
+        message: `duplicate rule_id ${item.rule_id}; first seen at checklist_results[${previous}]`
+      })
+    } else {
+      seen.set(item.rule_id, index)
+    }
+    if (!expectedSet.has(item.rule_id)) {
+      issues.push({ path: `$.checklist_results[${index}].rule_id`, message: `unexpected rule_id ${item.rule_id}` })
+    }
+  })
+
+  for (const ruleId of expected) {
+    if (!seen.has(ruleId)) {
+      issues.push({ path: "$.checklist_results", message: `missing expected rule_id ${ruleId}` })
+    }
+  }
+
+  return issues
+}
+
+function validateReviewResultSchema(result: ReviewResult, schema: unknown): ValidationIssue[] {
+  return schema === undefined ? [] : validateJsonAgainstSchema(result, schema)
+}
+
+function normalizeRuleIds(ruleIds: string[] | undefined): string[] | undefined {
+  if (!Array.isArray(ruleIds)) return undefined
+  const normalized = ruleIds.map((ruleId) => typeof ruleId === "string" ? ruleId.trim() : "").filter(Boolean)
+  return normalized.length > 0 ? normalized : undefined
+}
+
 function countChecklistStatuses(items: unknown[]): Record<ReviewStatus, number> {
   const counts: Record<ReviewStatus, number> = {
     pass: 0,
@@ -173,16 +208,49 @@ function isReviewStatus(value: unknown): value is ReviewStatus {
   return typeof value === "string" && STATUSES.includes(value as ReviewStatus)
 }
 
-export async function saveReviewResultArtifacts(workspaceRoot: string, result: ReviewResult): Promise<{ jsonPath: string; markdownPath: string }> {
+export async function saveReviewResultArtifacts(workspaceRoot: string, result: ReviewResult): Promise<SavedReviewResultArtifacts> {
   const resultsDir = path.join(workspaceRoot, ".bob", "review", "results")
   await fs.mkdir(resultsDir, { recursive: true })
 
   const baseName = sanitizeFilename(result.review_id || buildFallbackReviewId(result))
   const jsonPath = path.join(resultsDir, `${baseName}.json`)
   const markdownPath = path.join(resultsDir, `${baseName}.md`)
-  await fs.writeFile(jsonPath, `${JSON.stringify(result, null, 2)}\n`, "utf8")
-  await fs.writeFile(markdownPath, `${renderReviewResultMarkdown(result)}\n`, "utf8")
-  return { jsonPath, markdownPath }
+  const backupPaths = [
+    await backupExistingFile(jsonPath),
+    await backupExistingFile(markdownPath)
+  ].filter((backupPath): backupPath is string => Boolean(backupPath))
+  await writeFileAtomic(jsonPath, `${JSON.stringify(result, null, 2)}\n`)
+  await writeFileAtomic(markdownPath, `${renderReviewResultMarkdown(result)}\n`)
+  return { jsonPath, markdownPath, backupPaths }
+}
+
+async function backupExistingFile(filePath: string): Promise<string | undefined> {
+  if (!(await fileExists(filePath))) return undefined
+  const suffix = new Date().toISOString().replace(/[:.]/g, "-")
+  const backupPath = `${filePath}.bak-${suffix}-${randomUUID()}`
+  await fs.copyFile(filePath, backupPath)
+  return backupPath
+}
+
+async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+  const tempPath = `${filePath}.tmp-${process.pid}-${randomUUID()}`
+  try {
+    await fs.writeFile(tempPath, content, "utf8")
+    await fs.rename(tempPath, filePath)
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => undefined)
+    throw error
+  }
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.stat(filePath)
+    return true
+  } catch (error: any) {
+    if (error?.code === "ENOENT") return false
+    throw error
+  }
 }
 
 export function extractJsonFromText(text: string): string | undefined {

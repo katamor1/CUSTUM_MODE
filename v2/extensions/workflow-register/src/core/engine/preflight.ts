@@ -64,12 +64,32 @@ async function evaluatePreflightEntry(input: EvaluateWorkflowPreflightInput, pre
 }
 
 async function checkFile(relativePath: string, fileExists: EvaluateWorkflowPreflightInput["fileExists"], errors: string[], warnings: string[], required: boolean, prefix?: string): Promise<void> {
+  const pathProblem = validateWorkspaceRelativeFilePath(relativePath)
+  if (pathProblem) {
+    const message = `${prefix ? `${prefix}: ` : ""}${pathProblem}`
+    if (required) errors.push(message)
+    else warnings.push(message)
+    return
+  }
   if (!fileExists) return
   const exists = await Promise.resolve(fileExists(relativePath))
   if (exists) return
   const message = `${prefix ? `${prefix}: ` : ""}Required workflow file is missing: ${relativePath}`
   if (required) errors.push(message)
   else warnings.push(message)
+}
+
+export function validateWorkspaceRelativeFilePath(relativePath: string): string | undefined {
+  if (typeof relativePath !== "string" || relativePath.trim().length === 0) {
+    return "Workflow file path must be a non-empty relative path inside the workspace."
+  }
+  if (relativePath.includes("\0")) {
+    return `Workflow file path must stay inside the workspace: ${relativePath}`
+  }
+  if (isAbsoluteOrDrivePath(relativePath) || hasParentTraversal(relativePath)) {
+    return `Workflow file path must stay inside the workspace: ${relativePath}`
+  }
+  return undefined
 }
 
 export async function exists(file: string): Promise<boolean> {
@@ -86,4 +106,19 @@ function formatPreflightCheckFailure(result: WorkflowPreflightCheckResult): stri
   if (result === false) return "check returned false"
   if (typeof result === "string") return result
   return result.ok ? undefined : result.error ?? "check failed"
+}
+
+function isAbsoluteOrDrivePath(rawPath: string): boolean {
+  return path.isAbsolute(rawPath)
+    || path.win32.isAbsolute(rawPath)
+    || path.posix.isAbsolute(rawPath)
+    || /^[a-zA-Z]:/.test(rawPath)
+}
+
+function hasParentTraversal(rawPath: string): boolean {
+  return escapesWorkspace(path.win32.normalize(rawPath), "\\") || escapesWorkspace(path.posix.normalize(rawPath), "/")
+}
+
+function escapesWorkspace(normalizedPath: string, separator: string): boolean {
+  return normalizedPath === ".." || normalizedPath.startsWith(`..${separator}`)
 }

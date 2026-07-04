@@ -1,6 +1,7 @@
 # Source and build configuration not needed at runtime
 src/**
 *.ts
+out/**/*.map
 *.tsbuildinfo
 tsconfig.json
 

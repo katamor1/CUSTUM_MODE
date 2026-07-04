@@ -46,6 +46,11 @@ async function loadWorkflowFile(
   const parsed = parseWorkflowMarkdown({ sourceId, filePath: candidate.relativePath, text })
   diagnostics.push(...parsed.diagnostics)
   if (!parsed.ok) return { diagnostics }
+  const parserWarnings = parsed.diagnostics.filter(isParserWarning)
+  if (parserWarnings.length > 0) {
+    diagnostics.push(`- fail: ${candidate.relativePath}: workflow registration is strict; resolve parser warnings before registration.`)
+    return { diagnostics }
+  }
   const coreWorkflow = {
     ...parsed.workflow,
     logicalWorkflowId: parsed.workflow.id,
@@ -63,4 +68,8 @@ async function loadWorkflowFile(
   diagnostics.push(...workflowDiagnostics.diagnostics)
   if (!workflowDiagnostics.ok) return { diagnostics }
   return { workflow, coreWorkflow, diagnostics }
+}
+
+function isParserWarning(line: string): boolean {
+  return line.trimStart().startsWith("- warn:")
 }

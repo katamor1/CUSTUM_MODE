@@ -5,14 +5,36 @@ export interface WorkflowStepCompletionDeps {
   showWarningMessage?: (message: string) => Promise<unknown> | unknown
 }
 
-export async function completeCurrentWorkflowStepAfterGuiAction(deps: WorkflowStepCompletionDeps): Promise<boolean> {
+export interface WorkflowStepCompletionOptions {
+  runId?: string
+  stepId?: string
+  stateUpdates?: Record<string, string>
+}
+
+export async function completeCurrentWorkflowStepAfterGuiAction(
+  deps: WorkflowStepCompletionDeps,
+  options: WorkflowStepCompletionOptions = {}
+): Promise<boolean> {
   try {
-    const result = await Promise.resolve(deps.executeCommand(COMPLETE_WORKFLOW_STEP_COMMAND, { silent: true }))
+    const commandOptions: {
+      silent: true
+      expectedRunId?: string
+      expectedStepId?: string
+      stateUpdates?: Record<string, string>
+    } = { silent: true }
+    if (options.runId) commandOptions.expectedRunId = options.runId
+    if (options.stepId) commandOptions.expectedStepId = options.stepId
+    if (options.stateUpdates) commandOptions.stateUpdates = options.stateUpdates
+    const result = await Promise.resolve(deps.executeCommand(COMPLETE_WORKFLOW_STEP_COMMAND, commandOptions))
     if (typeof result === "string" && /^No active Bob workflow step\./.test(result)) {
       await warn(deps, `Could not complete the current Bob workflow step automatically. ${result}`)
       return false
     }
     if (typeof result === "string" && /^Could not capture Bob workflow step result:/.test(result)) {
+      await warn(deps, `Could not complete the current Bob workflow step automatically. ${result}`)
+      return false
+    }
+    if (typeof result === "string" && /^Active Bob workflow step mismatch:/.test(result)) {
       await warn(deps, `Could not complete the current Bob workflow step automatically. ${result}`)
       return false
     }

@@ -13,6 +13,7 @@ export interface InitializeCodeConsistencyWorkspaceResult {
   workspaceRoot: string
   workflowPath: string
   reviewInputPath: string
+  gitignorePath: string
   placeholderDocumentPath?: string
   backupPath?: string
   reviewInputBackupPath?: string
@@ -30,6 +31,8 @@ const WORKFLOW_RELATIVE_PATH = path.join(".bob", "workflows", "code-consistency-
 const WORKFLOW_TEMPLATE_RELATIVE_PATH = path.join("templates", ".bob", "workflows", "code-consistency-review", "WORKFLOW.md")
 const REVIEW_INPUT_RELATIVE_PATH = "review-input.yaml"
 const REVIEW_PLACEHOLDER_DOCUMENT_RELATIVE_PATH = path.join("docs", "review-input-placeholder.md")
+const GENERATED_ARTIFACT_IGNORE_LINES = [".bob-review/", ".bob-trace/ai-traceability-draft/", ".bob/workflows/runs/"]
+const GENERATED_ARTIFACT_IGNORE_HEADER = "# Bob code consistency generated review artifacts"
 
 const REVIEW_INPUT_TEMPLATE = `# Bob Code Consistency Review input skeleton.
 # 実レビュー前に id/title/purpose/base/head、artifact path、section ID を実案件向けに更新してください。
@@ -123,20 +126,51 @@ export async function initializeCodeConsistencyWorkspace(options: InitializeCode
     : path.join(options.workspaceRoot, options.reviewInputPath ?? REVIEW_INPUT_RELATIVE_PATH)
   const reviewInputResult = await createReviewInputSkeletonIfMissing(reviewInputPath)
   const placeholderDocumentResult = await createPlaceholderDocumentIfNeeded(options.workspaceRoot, reviewInputResult)
+  const gitignoreResult = await ensureGeneratedArtifactGitignore(options.workspaceRoot)
 
-  const status = mergeStatus([workflowResult.status, reviewInputResult.status, placeholderDocumentResult?.status ?? "unchanged"])
-  const message = [workflowResult.message, reviewInputResult.message, placeholderDocumentResult?.message].filter(Boolean).join("\n")
+  const status = mergeStatus([workflowResult.status, reviewInputResult.status, placeholderDocumentResult?.status ?? "unchanged", gitignoreResult.status])
+  const message = [workflowResult.message, reviewInputResult.message, placeholderDocumentResult?.message, gitignoreResult.message].filter(Boolean).join("\n")
 
   return {
     status,
     workspaceRoot: options.workspaceRoot,
     workflowPath,
     reviewInputPath,
+    gitignorePath: gitignoreResult.path,
     placeholderDocumentPath: placeholderDocumentResult?.path,
     backupPath: workflowResult.backupPath,
     reviewInputBackupPath: reviewInputResult.backupPath,
     message
   }
+}
+
+async function ensureGeneratedArtifactGitignore(workspaceRoot: string): Promise<FileInitializationResult> {
+  const gitignorePath = path.join(workspaceRoot, ".gitignore")
+  const current = await readIfExists(gitignorePath)
+  const missing = GENERATED_ARTIFACT_IGNORE_LINES.filter((line) => !hasGitignoreLine(current ?? "", line))
+  if (missing.length === 0) {
+    return {
+      status: "unchanged",
+      path: gitignorePath,
+      message: `生成物 ignore は既に .gitignore に設定済みです: ${gitignorePath}`
+    }
+  }
+
+  await fs.mkdir(path.dirname(gitignorePath), { recursive: true })
+  const block = [GENERATED_ARTIFACT_IGNORE_HEADER, ...missing].join("\n")
+  const next = current && current.trim()
+    ? `${current.trimEnd()}\n\n${block}\n`
+    : `${block}\n`
+  await fs.writeFile(gitignorePath, next, "utf8")
+  return {
+    status: current === undefined ? "created" : "updated",
+    path: gitignorePath,
+    message: `.gitignore に生成物 ignore を追加しました: ${gitignorePath}\n生成物は機密情報を含む可能性があります: .bob-review/ と .bob-trace/ai-traceability-draft/ を確認してください。`
+  }
+}
+
+function hasGitignoreLine(text: string, expected: string): boolean {
+  return text.split(/\r?\n/).some((line) => line.trim() === expected)
 }
 
 async function writeOrUpdateTemplateFile(

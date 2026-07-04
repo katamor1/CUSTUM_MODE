@@ -18,6 +18,7 @@ import { createDefaultResultSinkRegistry, ResultSinkRegistry } from "./core/resu
 import { FileRunStateStore, RunStateStore } from "./core/runStateStore"
 import { FileTaskSnapshotStore, TaskSnapshotStore } from "./core/taskSnapshots"
 import { findMarkerRoots, rootHasMarker } from "./core/workspaceRoots"
+import { requireTrustedCommandExecution } from "./workspaceTrust"
 
 export interface TaskSnapshotSettings {
   enabled: boolean
@@ -79,14 +80,21 @@ export class WorkflowRuntimeFactory {
     const config = vscode.workspace.getConfiguration("workflowRegister")
     return createCommandAgentProvider({
       command: config.get<string>("agentCommand", ""),
-      executeCommand: (command, input) => vscode.commands.executeCommand(command, input)
+      executeCommand: (command, input) => {
+        requireTrustedCommandExecution("run configured agent command")
+        return vscode.commands.executeCommand(command, input)
+      }
     })
   }
 
   private createResultSinks(workspaceRoot: string): ResultSinkRegistry {
     const registry = createDefaultResultSinkRegistry({
       workspaceRoot,
-      executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args)
+      isWorkspaceTrusted: () => vscode.workspace.isTrusted,
+      executeCommand: (command, ...args) => {
+        requireTrustedCommandExecution("write command result sink")
+        return vscode.commands.executeCommand(command, ...args)
+      }
     })
     for (const sink of this.options.customResultSinks) registry.register(sink.type, sink.handler)
     return registry
@@ -124,7 +132,7 @@ export class WorkflowRuntimeFactory {
       enabled: config.get<boolean>("taskSnapshots.enabled", true),
       maxBytes: config.get<number>("taskSnapshots.maxBytes", 262_144),
       maxPerRun: config.get<number>("taskSnapshots.maxPerRun", 50),
-      includeMessages: config.get<boolean>("taskSnapshots.includeMessages", true),
+      includeMessages: config.get<boolean>("taskSnapshots.includeMessages", false),
       pruneOnSave: config.get<boolean>("taskSnapshots.pruneOnSave", true)
     }
   }

@@ -43,3 +43,17 @@ test("capture workflow options preserve raw text args while keeping workflow inp
   assert.equal(options.text, "schema_version: 1\nfrom: raw args\n")
   assert.equal(options.bobOutputPath, ".custom/bob-output.yaml")
 })
+
+test("capture workflow options reject dangerous workflow execution keys", () => {
+  assert.throws(
+    () => buildCaptureWorkflowOptions({
+      args: { text: "schema_version: 1\n", diffFixturePath: "fixtures/diff.json" },
+      inputs: {
+        bobOutputPath: ".custom/bob-output.yaml",
+        workspaceRoot: "C:/outside"
+      },
+      state: {}
+    }),
+    /bobCodeConsistency\.captureBobOutput workflow options are not allowed: diffFixturePath, workspaceRoot/
+  )
+})

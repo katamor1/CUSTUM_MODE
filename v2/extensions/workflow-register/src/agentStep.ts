@@ -1,4 +1,8 @@
-import { appendWorkflowContext, type WorkflowStateEntry } from "./workflowPromptContext"
+import {
+  appendWorkflowContext,
+  appendWorkflowStateDataBlock,
+  type WorkflowStateEntry
+} from "./workflowPromptContext"
 
 export interface WorkflowAgentPromptInput {
   workflowId: string
@@ -43,7 +47,7 @@ export function buildWorkflowAgentPrompt(input: WorkflowAgentPromptInput): strin
     input.workflowInstructions,
     "</workflow_instructions>"
   )
-  appendWorkflowState(lines, input.stateEntries)
+  appendWorkflowStateDataBlock(lines, input.stateEntries)
   return lines.join("\n")
 }
 
@@ -57,16 +61,6 @@ function trimToResult(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
-}
-
-function appendWorkflowState(lines: string[], stateEntries: WorkflowStateEntry[]): void {
-  if (stateEntries.length === 0) return
-  lines.push("", "<workflow_state>")
-  for (const entry of stateEntries) {
-    lines.push(`<state key="${escapeXmlAttribute(entry.key)}">`, entry.value, "</state>", "")
-  }
-  if (lines[lines.length - 1] === "") lines.pop()
-  lines.push("</workflow_state>")
 }
 
 function escapeXmlAttribute(value: string): string {

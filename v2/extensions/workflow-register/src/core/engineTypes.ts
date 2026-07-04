@@ -61,7 +61,7 @@ export interface RecoverResultTextInput {
   workflow: CoreWorkflowDefinition
   run: WorkflowRunState
   step: EngineStep
-  reason: "retry-agent-result" | "missing-result-text"
+  reason: "handoff-failed" | "retry-agent-result" | "missing-result-text"
 }
 
 export interface WorkflowEngineOptions {

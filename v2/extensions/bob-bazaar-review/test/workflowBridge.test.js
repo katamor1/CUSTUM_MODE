@@ -85,6 +85,15 @@ test("workspace initialization tracks the WORKFLOW.md directory layout", () => {
   assert.doesNotMatch(source, /\.bob\/workflows\/bazaar-project-rule-review\.md/)
 })
 
+test("workspace initialization previews and confirms template refresh before overwriting existing workflow files", () => {
+  const source = require("node:fs").readFileSync(path.join(extensionRoot, "src", "bobWorkspaceInit.ts"), "utf8")
+
+  assert.match(source, /refreshTemplateFiles\(templateRoot,\s*root,\s*\{\s*confirmOverwrite:\s*confirmTemplateRefresh\s*\}\)/s)
+  assert.match(source, /openTextDocument\(\{\s*language:\s*"markdown",\s*content:\s*renderTemplateRefreshPreviewMarkdown\(preview\)\s*\}\)/s)
+  assert.match(source, /showWarningMessage\([^)]*\{\s*modal:\s*true\s*\}/s)
+  assert.match(source, /return\s+choice\s*===\s*updateLabel/)
+})
+
 test("Bazaar changed file parser ignores timestamp suffixes on plus-plus-plus paths", () => {
   const { parseChangedFileEntries } = require("../out/revisionInfo")
   const diff = [
@@ -99,4 +108,45 @@ test("Bazaar changed file parser ignores timestamp suffixes on plus-plus-plus pa
   assert.deepEqual(parseChangedFileEntries(diff), [
     { path: "test1.md", status: "modified" }
   ])
+})
+
+test("Bazaar changed file parser handles renamed and binary files", () => {
+  const { parseChangedFileEntries } = require("../out/revisionInfo")
+  const diff = [
+    "=== renamed file 'src/old name.c' => 'src/new name.c'",
+    "=== added file 'assets/logo.png'",
+    "Binary files /dev/null and b/assets/logo.png differ"
+  ].join("\n")
+
+  assert.deepEqual(parseChangedFileEntries(diff), [
+    { path: "assets/logo.png", status: "added", binary: true },
+    { path: "src/new name.c", status: "renamed" }
+  ])
+})
+
+test("added file content section marks binary files without reading them as text", async () => {
+  const { buildAddedFilesContentSection } = require("../out/revisionInfo")
+  let catCalls = 0
+  const client = {
+    cat: async () => {
+      catCalls += 1
+      return { command: "bzr", args: [], stdout: "binary", stderr: "", cwd: "C:\\repo" }
+    }
+  }
+
+  const section = await buildAddedFilesContentSection(client, "C:\\repo", "1", {
+    revision: "1",
+    author: "a",
+    committer: "c",
+    timestamp: "t",
+    message: "",
+    changedFileCount: 1,
+    changedFiles: ["assets/logo.png"],
+    changedFileEntries: [{ path: "assets/logo.png", status: "added", binary: true }],
+    logText: ""
+  })
+
+  assert.equal(catCalls, 0)
+  assert.match(section, /### assets\/logo\.png/)
+  assert.match(section, /\[BINARY: 追加ファイル本文は text として埋め込みません\]/)
 })

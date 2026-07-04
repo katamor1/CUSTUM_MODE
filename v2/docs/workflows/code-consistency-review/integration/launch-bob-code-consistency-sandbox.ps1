@@ -1,7 +1,7 @@
 param(
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..")).Path,
   [string]$SandboxRoot = (Join-Path $env:TEMP ("bob-workflow-integration-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss"))),
-  [ValidateSet("simple-timeout-bugfix", "ai-verification-matrix")]
+  [ValidateSet("simple-timeout-bugfix", "ai-verification-matrix", "live-traceability-sidecar")]
   [string]$Sample = "simple-timeout-bugfix",
   [string]$CodeCommand = "code",
   [switch]$NoLaunch
@@ -58,7 +58,8 @@ function Copy-DirectoryContents {
 
 function Initialize-SimpleTimeoutWorkspace {
   param([string]$RepoRoot, [string]$WorkspaceDir)
-  $SampleSourceDir = Resolve-RequiredPath (Join-Path $RepoRoot "docs\workflows\code-consistency-review\examples\simple-timeout-bugfix") "simple-timeout-bugfix sample"
+  $SamplePath = Join-Path $RepoRoot "docs\workflows\code-consistency-review\examples\simple-timeout-bugfix"
+  $SampleSourceDir = Resolve-RequiredPath $SamplePath "simple-timeout-bugfix sample"
   $SampleTargetDir = Join-Path $WorkspaceDir "docs\workflows\code-consistency-review\examples\simple-timeout-bugfix"
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $SampleTargetDir) | Out-Null
   Copy-Item -LiteralPath $SampleSourceDir -Destination $SampleTargetDir -Recurse -Force
@@ -67,7 +68,8 @@ function Initialize-SimpleTimeoutWorkspace {
 
 function Initialize-AiVerificationMatrixWorkspace {
   param([string]$RepoRoot, [string]$WorkspaceDir)
-  $SampleRoot = Resolve-RequiredPath (Join-Path $RepoRoot "docs\workflows\code-consistency-review\examples\ai-verification-matrix") "ai-verification-matrix sample"
+  $SamplePath = Join-Path $RepoRoot "docs\workflows\code-consistency-review\examples\ai-verification-matrix"
+  $SampleRoot = Resolve-RequiredPath $SamplePath "ai-verification-matrix sample"
   $WorkspaceCommonDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\workspace-common") "ai-verification-matrix workspace-common fixture"
   $BaselineDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\baseline") "ai-verification-matrix baseline fixture"
   $HeadDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\head") "ai-verification-matrix head fixture"
@@ -86,11 +88,34 @@ function Initialize-AiVerificationMatrixWorkspace {
   Invoke-CheckedCommand $GitCommand @("commit", "-m", "ai verification matrix head") $WorkspaceDir
 }
 
+function Initialize-LiveTraceabilitySidecarWorkspace {
+  param([string]$RepoRoot, [string]$WorkspaceDir)
+  $SamplePath = Join-Path $RepoRoot "docs\workflows\code-consistency-review\examples\live-traceability-sidecar"
+  $SampleRoot = Resolve-RequiredPath $SamplePath "live-traceability-sidecar sample"
+  $WorkspaceCommonDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\workspace-common") "live-traceability-sidecar workspace-common fixture"
+  $BaselineDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\baseline") "live-traceability-sidecar baseline fixture"
+  $HeadDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\head") "live-traceability-sidecar head fixture"
+  $GitCommand = Resolve-CommandPath "git"
+
+  Copy-DirectoryContents $WorkspaceCommonDir $WorkspaceDir
+  Copy-DirectoryContents $BaselineDir $WorkspaceDir
+  Invoke-CheckedCommand (Resolve-CommandPath "git") @("init", "-b", "main") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("config", "user.email", "bob-fixture@example.local") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("config", "user.name", "Bob Fixture") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("add", ".") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("commit", "-m", "baseline") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("switch", "-c", "feature/live-traceability-sidecar") $WorkspaceDir
+  Copy-DirectoryContents $HeadDir $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("add", ".") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("commit", "-m", "live traceability sidecar head") $WorkspaceDir
+}
+
 $RepoRoot = Resolve-RequiredPath $RepoRoot "Repository root"
 $BobExtensionPath = Resolve-RequiredPath (Join-Path $RepoRoot "bob2\bob-code") "Expanded IBM Bob extension"
 $WorkflowRegisterVsix = Resolve-RequiredPath (Join-Path $RepoRoot "extensions\workflow-register\workflow-register-0.1.0.vsix") "workflow-register VSIX"
 $BazaarReviewVsix = Resolve-RequiredPath (Join-Path $RepoRoot "extensions\bob-bazaar-review\bob-bazaar-review-0.3.0.vsix") "bob-bazaar-review VSIX"
-$CodeConsistencyVsix = Resolve-RequiredPath (Join-Path $RepoRoot "extensions\bob-code-consistency-review\bob-code-consistency-review-0.1.0.vsix") "bob-code-consistency-review VSIX"
+$CodeConsistencyVsixPath = Join-Path $RepoRoot "extensions\bob-code-consistency-review\bob-code-consistency-review-0.1.0.vsix"
+$CodeConsistencyVsix = Resolve-RequiredPath $CodeConsistencyVsixPath "bob-code-consistency-review VSIX"
 
 $UserDataDir = Join-Path $SandboxRoot "user-data"
 $ExtensionsDir = Join-Path $SandboxRoot "extensions"
@@ -100,6 +125,8 @@ $WorkflowDir = Join-Path $WorkspaceDir ".bob\workflows\code-consistency-review"
 New-Item -ItemType Directory -Force -Path $UserDataDir, $ExtensionsDir, $WorkspaceDir, $WorkflowDir | Out-Null
 if ($Sample -eq "ai-verification-matrix") {
   Initialize-AiVerificationMatrixWorkspace $RepoRoot $WorkspaceDir
+} elseif ($Sample -eq "live-traceability-sidecar") {
+  Initialize-LiveTraceabilitySidecarWorkspace $RepoRoot $WorkspaceDir
 } else {
   Initialize-SimpleTimeoutWorkspace $RepoRoot $WorkspaceDir
 }

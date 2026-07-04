@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises"
+import * as path from "node:path"
 import YAML from "yaml"
 import { pathExists, resolveWorkspacePath, toPosixPath, writeTextFile } from "./fileSystem"
 import { formatSchemaErrors, loadSchemaValidator } from "./schemaLoader"
@@ -167,14 +168,22 @@ async function buildArtifacts(candidates: ReviewInputArtifactDraft[], workspaceR
       if (!artifactPath) errors.push("artifact.path must be a non-empty string")
       continue
     }
-
-    if (strictPaths && !(await pathExists(resolveWorkspacePath(workspaceRoot, artifactPath)))) {
-      errors.push(`artifact path does not exist: ${artifactPath}`)
+    const resolvedPath = resolveWorkspacePath(workspaceRoot, artifactPath)
+    if (!isInsideWorkspace(workspaceRoot, resolvedPath)) {
+      errors.push(`artifact path escapes workspace: ${artifactPath}`)
       continue
     }
 
+    if (strictPaths && !(await pathExists(resolvedPath))) {
+      errors.push(`artifact path does not exist: ${artifactPath}`)
+      continue
+    }
+    const storedPath = path.isAbsolute(artifactPath)
+      ? path.relative(workspaceRoot, resolvedPath)
+      : artifactPath
+
     const item = compactRecord({
-      path: toPosixPath(artifactPath),
+      path: toPosixPath(storedPath),
       version: nonEmpty(candidate.version),
       updated_at: nonEmpty(candidate.updated_at),
       sections: uniqueStrings(candidate.sections),
@@ -263,6 +272,13 @@ async function readIfExists(filePath: string): Promise<string | undefined> {
     if (isNodeError(error) && error.code === "ENOENT") return undefined
     throw error
   }
+}
+
+function isInsideWorkspace(workspaceRoot: string, filePath: string): boolean {
+  const root = path.resolve(workspaceRoot)
+  const target = path.resolve(filePath)
+  const relative = path.relative(root, target)
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

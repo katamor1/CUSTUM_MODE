@@ -1,111 +1,22 @@
 #!/usr/bin/env node
-import { BazaarClient, BazaarError } from "../bazaar"
-import { initializeProjectRules, loadProjectChecklist, loadReviewResultSchema } from "../projectRules/io"
-import { validateReviewResultJson } from "../projectRules/validator"
-import { renderReviewResultMarkdown } from "../projectRules/markdown"
-import { ReviewResult } from "../projectRules/types"
-import { getLatestReviewResult, getReviewResult } from "../projectRules/reviewResultsStore"
-
-interface JsonRpcMessage {
-  jsonrpc?: "2.0"
-  id?: string | number | null
-  method?: string
-  params?: any
-  result?: any
-  error?: any
-}
-
-interface ToolDef {
-  name: string
-  description: string
-  inputSchema: Record<string, unknown>
-}
+import * as fs from "node:fs/promises"
+import * as path from "node:path"
+import { formatError, McpStdioReader, respond, respondError } from "./jsonRpc"
+import type { JsonRpcMessage } from "./jsonRpc"
+import { createMcpToolRegistry } from "./tools"
 
 const SERVER_VERSION = "0.3.0"
+const DEFAULT_MAX_REQUEST_BYTES = 1024 * 1024
+const MAX_REQUEST_BYTES = readPositiveIntegerEnv("BOB_BAZAAR_MCP_MAX_REQUEST_BYTES", DEFAULT_MAX_REQUEST_BYTES)
+const ALLOWED_ROOTS_ENV = "BOB_BAZAAR_ALLOWED_ROOTS"
+const ENABLE_WRITE_TOOLS_ENV = "BOB_BAZAAR_ENABLE_WRITE_TOOLS"
+const allowedRootInputs = readPathListEnv(ALLOWED_ROOTS_ENV)
+let allowedRootsPromise: Promise<string[]> | undefined
 
-const client = new BazaarClient({
-  bzrPath: process.env.BZR_PATH || "bzr",
-  maxBuffer: Number(process.env.BZR_MAX_BUFFER || 10 * 1024 * 1024),
-  textEncoding: process.env.BZR_TEXT_ENCODING || "auto"
+const tools = createMcpToolRegistry({
+  requiredAllowedCwd,
+  writeToolsEnabled: process.env[ENABLE_WRITE_TOOLS_ENV] === "1"
 })
-
-const tools: ToolDef[] = [
-  {
-    name: "bazaar_root",
-    description: "Return the Bazaar repository root for a working directory. The server always executes bzr with --no-aliases.",
-    inputSchema: objectSchema({ cwd: stringProp("Working directory inside the Bazaar repository") }, ["cwd"])
-  },
-  {
-    name: "bazaar_revno",
-    description: "Return the current Bazaar revno for a repository. The server always executes bzr with --no-aliases.",
-    inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root or child directory") }, ["cwd"])
-  },
-  {
-    name: "bazaar_log",
-    description: "Return Bazaar log output. Equivalent to bzr --no-aliases log. When revision is supplied, returns that revision log.",
-    inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), revision: optionalStringProp("Optional Bazaar revision") }, ["cwd"])
-  },
-  {
-    name: "bazaar_diff_revision",
-    description: "Return unified diff for a single Bazaar revision, equivalent to bzr --no-aliases diff -c REV.",
-    inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), revision: stringProp("Bazaar revision to review") }, ["cwd", "revision"])
-  },
-  {
-    name: "bazaar_diff_range",
-    description: "Return unified diff between two Bazaar revisions, equivalent to bzr --no-aliases diff -r BASE..TARGET.",
-    inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), baseRevision: stringProp("Base Bazaar revision"), targetRevision: stringProp("Target Bazaar revision") }, ["cwd", "baseRevision", "targetRevision"])
-  },
-  {
-    name: "bazaar_diff_working_tree",
-    description: "Return unified diff for the current working tree, optionally since a base revision. Equivalent to bzr --no-aliases diff.",
-    inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), baseRevision: optionalStringProp("Optional base Bazaar revision") }, ["cwd"])
-  },
-  {
-    name: "bazaar_cat_revision",
-    description: "Return a file's content at a Bazaar revision, equivalent to bzr --no-aliases cat -r REV PATH.",
-    inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root"), revision: stringProp("Bazaar revision"), path: stringProp("Repository-relative file path") }, ["cwd", "revision", "path"])
-  },
-  {
-    name: "bazaar_status",
-    description: "Return Bazaar status for a repository, equivalent to bzr --no-aliases status.",
-    inputSchema: objectSchema({ cwd: stringProp("Bazaar repository root") }, ["cwd"])
-  },
-  {
-    name: "project_rules_init",
-    description: "Create default .bob/review/checklist.json and review-result.schema.json if they are missing.",
-    inputSchema: objectSchema({ cwd: stringProp("Workspace root") }, ["cwd"])
-  },
-  {
-    name: "project_rules_get_checklist",
-    description: "Return the project-specific review checklist JSON. Falls back to the built-in default checklist when missing.",
-    inputSchema: objectSchema({ cwd: stringProp("Workspace root"), path: optionalStringProp("Optional checklist path, workspace-relative or absolute") }, ["cwd"])
-  },
-  {
-    name: "project_rules_get_schema",
-    description: "Return the review result JSON schema. Falls back to the built-in default schema when missing.",
-    inputSchema: objectSchema({ cwd: stringProp("Workspace root"), path: optionalStringProp("Optional schema path, workspace-relative or absolute") }, ["cwd"])
-  },
-  {
-    name: "project_rules_validate_review_result",
-    description: "Validate normalized review result JSON and return validation issues.",
-    inputSchema: objectSchema({ json: stringProp("Review result JSON text") }, ["json"])
-  },
-  {
-    name: "project_rules_render_markdown",
-    description: "Render normalized review result JSON as a Markdown checklist summary.",
-    inputSchema: objectSchema({ json: stringProp("Review result JSON text") }, ["json"])
-  },
-  {
-    name: "project_rules_get_latest_review_result",
-    description: "Return the newest saved review-result JSON from .bob/review/results.",
-    inputSchema: objectSchema({ cwd: stringProp("Workspace root") }, ["cwd"])
-  },
-  {
-    name: "project_rules_get_review_result",
-    description: "Return a saved review-result JSON from .bob/review/results by review id.",
-    inputSchema: objectSchema({ cwd: stringProp("Workspace root"), reviewId: stringProp("Review id or result file basename") }, ["cwd", "reviewId"])
-  }
-]
 
 async function handleMessage(message: JsonRpcMessage): Promise<void> {
   if (!message.method) return
@@ -124,18 +35,18 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
     }
 
     if (message.method === "tools/list") {
-      respond(message.id, { tools })
+      respond(message.id, { tools: tools.availableTools() })
       return
     }
 
     if (message.method === "tools/call") {
-      const result = await callTool(message.params?.name, message.params?.arguments ?? {})
+      const result = await tools.callTool(message.params?.name, message.params?.arguments ?? {})
       respond(message.id, result)
       return
     }
 
     respondError(message.id, -32601, `Method not found: ${message.method}`)
-  } catch (error: any) {
+  } catch (error: unknown) {
     respond(message.id, {
       isError: true,
       content: [{ type: "text", text: formatError(error) }]
@@ -143,173 +54,46 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
   }
 }
 
-async function callTool(name: string, args: any): Promise<any> {
-  switch (name) {
-    case "bazaar_root":
-      return text(await client.root(requiredString(args, "cwd")))
-    case "bazaar_revno":
-      return text(await client.revno(requiredString(args, "cwd")))
-    case "bazaar_log":
-      return commandText(await client.log(requiredString(args, "cwd"), optionalString(args, "revision")))
-    case "bazaar_diff_revision":
-      return commandText(await client.diffRevision(requiredString(args, "cwd"), requiredString(args, "revision")))
-    case "bazaar_diff_range":
-      return commandText(await client.diffRange(requiredString(args, "cwd"), requiredString(args, "baseRevision"), requiredString(args, "targetRevision")))
-    case "bazaar_diff_working_tree":
-      return commandText(await client.diffWorkingTree(requiredString(args, "cwd"), optionalString(args, "baseRevision")))
-    case "bazaar_cat_revision":
-      return commandText(await client.cat(requiredString(args, "cwd"), requiredString(args, "revision"), requiredString(args, "path")))
-    case "bazaar_status":
-      return commandText(await client.status(requiredString(args, "cwd")))
-    case "project_rules_init":
-      return text(JSON.stringify(await initializeProjectRules(requiredString(args, "cwd")), null, 2))
-    case "project_rules_get_checklist":
-      return jsonText(await loadProjectChecklist(requiredString(args, "cwd"), optionalString(args, "path")))
-    case "project_rules_get_schema":
-      return jsonText(await loadReviewResultSchema(requiredString(args, "cwd"), optionalString(args, "path")))
-    case "project_rules_validate_review_result":
-      return jsonText(validateReviewResultJson(requiredString(args, "json")))
-    case "project_rules_render_markdown": {
-      const parsed = JSON.parse(requiredString(args, "json")) as ReviewResult
-      const validation = validateReviewResultJson(parsed)
-      if (!validation.valid) {
-        return jsonText(validation)
-      }
-      return text(renderReviewResultMarkdown(parsed))
-    }
-    case "project_rules_get_latest_review_result":
-      return jsonText(await readStoredReviewResult(() => getLatestReviewResult(requiredString(args, "cwd"))))
-    case "project_rules_get_review_result":
-      return jsonText(await readStoredReviewResult(() => getReviewResult(requiredString(args, "cwd"), requiredString(args, "reviewId"))))
-    default:
-      throw new BazaarError(`Unknown Bazaar MCP tool: ${name}`)
-  }
-}
-
-async function readStoredReviewResult(read: () => Promise<unknown>): Promise<unknown> {
-  try {
-    return await read()
-  } catch (error) {
-    throw new BazaarError(error instanceof Error ? error.message : String(error))
-  }
-}
-
-function commandText(result: { stdout: string; stderr: string; command: string; args: string[]; cwd: string }): any {
-  const body = [
-    `cwd: ${result.cwd}`,
-    `command: ${result.command} ${result.args.join(" ")}`,
-    result.stderr.trim() ? `stderr:\n${result.stderr}` : "",
-    result.stdout
-  ].filter(Boolean).join("\n\n")
-  return text(body)
-}
-
-function text(value: string): any {
-  return { content: [{ type: "text", text: value }] }
-}
-
-function jsonText(value: unknown): any {
-  return text(JSON.stringify(value, null, 2))
-}
-
-function respond(id: JsonRpcMessage["id"], result: any): void {
-  if (id === undefined) return
-  write({ jsonrpc: "2.0", id, result })
-}
-
-function respondError(id: JsonRpcMessage["id"], code: number, message: string): void {
-  if (id === undefined) return
-  write({ jsonrpc: "2.0", id, error: { code, message } })
-}
-
-function write(message: JsonRpcMessage): void {
-  const payload = Buffer.from(JSON.stringify(message), "utf8")
-  process.stdout.write(`Content-Length: ${payload.byteLength}\r\n\r\n`)
-  process.stdout.write(payload)
-}
-
-function requiredString(args: any, name: string): string {
-  const value = args?.[name]
+async function requiredAllowedCwd(args: unknown, name: string): Promise<string> {
+  const value = (args as Record<string, unknown> | undefined)?.[name]
   if (typeof value !== "string" || !value.trim()) {
-    throw new BazaarError(`Missing required string argument: ${name}`)
+    throw new Error(`Missing required string argument: ${name}`)
   }
-  return value
+  return assertAllowedCwd(value)
 }
 
-function optionalString(args: any, name: string): string | undefined {
-  const value = args?.[name]
-  if (value === undefined || value === null || value === "") {
-    return undefined
-  }
-  if (typeof value !== "string") {
-    throw new BazaarError(`Expected string argument: ${name}`)
-  }
-  return value
-}
+async function assertAllowedCwd(cwd: string): Promise<string> {
+  if (allowedRootInputs.length === 0) return cwd
 
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return `${error.name}: ${error.message}`
-  }
-  return String(error)
-}
-
-function objectSchema(properties: Record<string, unknown>, required: string[]): Record<string, unknown> {
-  return { type: "object", properties, required, additionalProperties: false }
-}
-
-function stringProp(description: string): Record<string, unknown> {
-  return { type: "string", description }
-}
-
-function optionalStringProp(description: string): Record<string, unknown> {
-  return { type: "string", description }
-}
-
-class McpStdioReader {
-  private buffer = Buffer.alloc(0)
-
-  constructor(private readonly onMessage: (message: JsonRpcMessage) => void | Promise<void>) {}
-
-  push(chunk: Buffer): void {
-    this.buffer = Buffer.concat([this.buffer, chunk])
-
-    while (true) {
-      const headerEnd = this.buffer.indexOf("\r\n\r\n")
-      if (headerEnd === -1) return
-
-      const header = this.buffer.slice(0, headerEnd).toString("utf8")
-      const contentLength = parseContentLength(header)
-      if (contentLength === undefined) {
-        this.buffer = this.buffer.slice(headerEnd + 4)
-        continue
-      }
-
-      const bodyStart = headerEnd + 4
-      const bodyEnd = bodyStart + contentLength
-      if (this.buffer.length < bodyEnd) return
-
-      const body = this.buffer.slice(bodyStart, bodyEnd).toString("utf8")
-      this.buffer = this.buffer.slice(bodyEnd)
-
-      void Promise.resolve(this.onMessage(JSON.parse(body))).catch((error) => {
-        process.stderr.write(`message handling error: ${formatError(error)}\n`)
-      })
+  const resolvedCwd = await fs.realpath(cwd)
+  const allowedRoots = await getAllowedRoots()
+  for (const root of allowedRoots) {
+    const relative = path.relative(root, resolvedCwd)
+    if (relative === "" || (relative && !relative.startsWith("..") && !path.isAbsolute(relative))) {
+      return resolvedCwd
     }
   }
+  throw new Error(`cwd is outside allowed roots: ${cwd}`)
 }
 
-function parseContentLength(header: string): number | undefined {
-  for (const line of header.split(/\r?\n/)) {
-    const match = /^Content-Length:\s*(\d+)$/i.exec(line.trim())
-    if (match) {
-      return Number(match[1])
-    }
-  }
-  return undefined
+async function getAllowedRoots(): Promise<string[]> {
+  allowedRootsPromise ??= Promise.all(allowedRootInputs.map((root) => fs.realpath(root)))
+  return allowedRootsPromise
 }
 
-const reader = new McpStdioReader(handleMessage)
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name])
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback
+}
+
+function readPathListEnv(name: string): string[] {
+  return (process.env[name] ?? "")
+    .split(path.delimiter)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+const reader = new McpStdioReader(handleMessage, MAX_REQUEST_BYTES)
 
 process.stdin.on("data", (chunk) => reader.push(chunk))
 process.stdin.on("error", (error) => {

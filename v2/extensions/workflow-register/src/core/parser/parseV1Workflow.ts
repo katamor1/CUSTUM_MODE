@@ -32,11 +32,14 @@ const validateV1 = ajv.compile(workflowV1Schema as object)
 export function parseV1Workflow(request: ParseWorkflowRequest, fields: Record<string, unknown>, body: string, fullText: string): ParseWorkflowResult {
   const valid = validateV1(fields)
   const diagnostics = valid ? [] : formatValidationErrors(request.filePath)
-  const warnings = unknownTopLevelWarnings(request.filePath, fields)
   if (diagnostics.length > 0) return { ok: false, diagnostics }
 
   const hasTypedSteps = Object.prototype.hasOwnProperty.call(fields, "steps")
   const stepRecords = Array.isArray(fields.steps) ? fields.steps.map((step) => asRecord(step)) : []
+  const warnings = [
+    ...unknownTopLevelWarnings(request.filePath, fields),
+    ...(hasTypedSteps ? stepSpecificFieldWarnings(request.filePath, stepRecords) : [])
+  ]
   const engineSteps = hasTypedSteps ? stepRecords.map(normalizeEngineStep) : legacyEngineStepsFromWorkflow(fields, body)
   const todos = workflowTodos(fields, body, engineSteps, hasTypedSteps)
   const todoEnabled = optionalBoolean(fields, "todo") ?? todos.length > 0
@@ -88,8 +91,26 @@ export function parseV1Workflow(request: ParseWorkflowRequest, fields: Record<st
 
 function unknownTopLevelWarnings(filePath: string, fields: Record<string, unknown>): string[] {
   return Object.keys(fields)
-    .filter((key) => !knownWorkflowV1TopLevelFields.has(key))
+    .filter((key) => !knownWorkflowV1TopLevelFields.has(key) && !key.startsWith("x-"))
     .map((key) => `- warn: ${filePath}: unknown top-level field '${key}'.`)
+}
+
+function stepSpecificFieldWarnings(filePath: string, steps: Record<string, unknown>[]): string[] {
+  return steps.flatMap((step, index) => {
+    const type = typeof step.type === "string" ? step.type : "unknown"
+    const id = typeof step.id === "string" && step.id.trim() ? step.id : `#${index + 1}`
+    return ignoredFieldsForStepType(type)
+      .filter((field) => Object.prototype.hasOwnProperty.call(step, field))
+      .map((field) => `- warn: ${filePath}: step '${id}' field '${field}' is ignored for type '${type}'.`)
+  })
+}
+
+function ignoredFieldsForStepType(type: string): string[] {
+  if (type === "command") return ["result"]
+  if (type === "agent") return ["action", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
+  if (type === "manual") return ["action", "result", "resultKey", "includeState", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
+  if (type === "result") return ["action", "prompt", "resultKey", "includeState", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
+  return []
 }
 
 function workflowTodos(fields: Record<string, unknown>, body: string, steps: EngineStep[], hasTypedSteps: boolean): WorkflowTodoDefinition[] {

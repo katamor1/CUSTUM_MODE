@@ -1,3 +1,4 @@
+import * as path from "node:path"
 import * as vscode from "vscode"
 import { captureBobOutput } from "./core/bobOutputCapture"
 import { validateBobOutput } from "./core/bobOutputValidator"
@@ -7,8 +8,11 @@ import {
   firstString,
   notifyError,
   notifyInfo,
+  notifyInfoWithReport,
+  numberOption,
   optionalAbsolute,
   requireBobWorkspaceRoot,
+  resolveTrustedBzrPath,
   stringOption
 } from "./extensionCommandOptions"
 import { generateHumanTriage } from "./triage/humanTriageHelper"
@@ -26,13 +30,21 @@ export async function runPreprocess(options?: unknown): Promise<unknown> {
       config.get<string>("reviewPackagePath", ".bob-review/review-package")
   )
   const diffFixturePath = optionalAbsolute(workspaceRoot, stringOption(record, "diffFixturePath"))
-  const bzrPath = stringOption(record, "bzrPath") ?? config.get<string>("bzrPath", "bzr")
+  const bzrPath = resolveTrustedBzrPath(record, config.get<string>("bzrPath", "bzr"))
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
+  const limits = {
+    maxDocumentBytes: numberOption(record, "maxDocumentBytes") ?? config.get<number>("maxDocumentBytes"),
+    maxWorkbookSheets: numberOption(record, "maxWorkbookSheets") ?? config.get<number>("maxWorkbookSheets"),
+    maxRowsPerSheet: numberOption(record, "maxRowsPerSheet") ?? config.get<number>("maxRowsPerSheet"),
+    maxExcerptBytesPerDocument: numberOption(record, "maxExcerptBytesPerDocument") ?? config.get<number>("maxExcerptBytesPerDocument"),
+    maxRawDiffBytes: numberOption(record, "maxRawDiffBytes") ?? config.get<number>("maxRawDiffBytes"),
+    maxBobInputBytes: numberOption(record, "maxBobInputBytes") ?? config.get<number>("maxBobInputBytes")
+  }
 
   const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "コード整合レビュー用パッケージを作成しています" }, () =>
-    preprocessReview({ workspaceRoot, inputPath, outDir, diffFixturePath, bzrPath, textEncoding })
+    preprocessReview({ workspaceRoot, inputPath, outDir, diffFixturePath, bzrPath, textEncoding, limits })
   )
-  notifyInfo(result.summary)
+  notifyInfoWithReport(result.summary, path.join(result.packageDir, "deterministic-checks.md"))
   return result
 }
 

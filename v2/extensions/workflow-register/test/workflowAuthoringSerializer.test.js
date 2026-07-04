@@ -25,6 +25,28 @@ test("serializes a simple-agent authoring model into a valid workflow", () => {
   assert.equal(validation.ok, true)
 })
 
+test("serializes workflow names to OS-compatible path segments", () => {
+  const cases = [
+    ["CON", "CON-workflow"],
+    ["aux.", "aux-workflow"],
+    ["COM1.report", "COM1-workflow.report"],
+    ["review.", "review"]
+  ]
+  for (const [rawName, expectedName] of cases) {
+    const model = createAuthoringModelFromTemplate({
+      name: rawName,
+      title: "Portable Name",
+      description: "Portable workflow name.",
+      template: "simple-agent"
+    })
+    const { result, validation } = validateAuthoringModel(model)
+
+    assert.equal(result.name, expectedName)
+    assert.equal(result.filePath, `.bob/workflows/${expectedName}/WORKFLOW.md`)
+    assert.equal(validation.ok, true)
+  }
+})
+
 test("serializes an artifact-output authoring model with result handoff", () => {
   const model = createAuthoringModelFromTemplate({
     name: "gui-artifact",

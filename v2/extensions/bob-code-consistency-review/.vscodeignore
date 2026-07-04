@@ -3,6 +3,7 @@ src/**
 test/**
 tests/**
 *.ts
+out/**/*.map
 *.tsbuildinfo
 tsconfig.json
 package-lock.json

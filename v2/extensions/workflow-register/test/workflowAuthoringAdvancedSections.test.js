@@ -60,6 +60,36 @@ test("quotes approval conditions with comparison expressions", () => {
   assert.match(rendered.markdown, /when: "reviewContext\.changedFiles\.count > 100"/)
 })
 
+test("validation rejects unsupported approval guardrail expressions", () => {
+  const text = `---
+schemaVersion: workflow-register/v1
+name: bad-approval
+description: Bad approval expression.
+guardrails:
+  requireApproval:
+    - id: bad
+      when: "run this arbitrary expression"
+      message: Unsupported expression.
+steps:
+  - id: collect
+    title: Collect
+    type: command
+    action:
+      provider: sample.collect
+---
+# Bad Approval
+`
+
+  const validation = validateWorkflowText({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/bad-approval/WORKFLOW.md",
+    text
+  })
+
+  assert.equal(validation.ok, false)
+  assert.ok(validation.diagnostics.some((item) => item.severity === "error" && /Unsupported approval guardrail expression/.test(item.message)))
+})
+
 test("loads advanced sections, approval guardrails, and markdown body back into the authoring model", () => {
   const model = createAuthoringModelFromTemplate({
     name: "advanced-roundtrip",

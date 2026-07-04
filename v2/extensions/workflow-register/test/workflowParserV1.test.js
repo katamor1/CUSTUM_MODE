@@ -196,6 +196,33 @@ commandArgs:
   assert.deepEqual(parsed.workflow.commandArgs, ["first", "second"])
 })
 
+test("legacy workflow parser records a definition hash", () => {
+  const text = `---
+name: legacy
+description: Legacy workflow.
+---
+# Legacy
+
+Do the legacy workflow.
+`
+  const changedText = text.replace("Do the legacy workflow.", "Do the changed legacy workflow.")
+  const parsed = parseWorkflowMarkdown({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/legacy/WORKFLOW.md",
+    text
+  })
+  const changed = parseWorkflowMarkdown({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/legacy/WORKFLOW.md",
+    text: changedText
+  })
+
+  assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
+  assert.equal(changed.ok, true, changed.diagnostics.join("\n"))
+  assert.match(parsed.workflow.definitionHash, /^sha256:[0-9a-f]{64}$/)
+  assert.notEqual(parsed.workflow.definitionHash, changed.workflow.definitionHash)
+})
+
 test("v1 workflow parser keeps legacy todo workflow-step sections executable when front matter steps are absent", () => {
   const parsed = parseWorkflowMarkdown({
     sourceId: "workflow-register",
@@ -294,4 +321,59 @@ steps: []
 
   assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
   assert.match(parsed.diagnostics.join("\n"), /unknown top-level field 'permissons'/)
+})
+
+test("v1 workflow parser allows namespaced extension fields", () => {
+  const parsed = parseWorkflowMarkdown({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/extension-fields/WORKFLOW.md",
+    text: `---
+schemaVersion: workflow-register/v1
+name: extension-fields
+description: Allow x- namespaced fields.
+x-local-note: kept for round-trip metadata
+steps: []
+---
+# Extension Fields
+`
+  })
+
+  assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
+  assert.doesNotMatch(parsed.diagnostics.join("\n"), /unknown top-level field 'x-local-note'/)
+})
+
+test("v1 workflow parser warns when steps use fields for the wrong type", () => {
+  const parsed = parseWorkflowMarkdown({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/warn-step-fields/WORKFLOW.md",
+    text: `---
+schemaVersion: workflow-register/v1
+name: warn-step-fields
+description: Warn step fields.
+steps:
+  - id: manual-review
+    title: Manual review
+    type: manual
+    action:
+      provider: sample.unused
+    resultKey: ignoredResult
+  - id: result-output
+    title: Result output
+    type: result
+    prompt: This prompt is ignored.
+    result:
+      source: literal
+      text: ok
+      sinks:
+        - type: file
+          path: .bob/out.txt
+---
+# Warn
+`
+  })
+
+  assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
+  assert.match(parsed.diagnostics.join("\n"), /manual-review.*field 'action' is ignored for type 'manual'/)
+  assert.match(parsed.diagnostics.join("\n"), /manual-review.*field 'resultKey' is ignored for type 'manual'/)
+  assert.match(parsed.diagnostics.join("\n"), /result-output.*field 'prompt' is ignored for type 'result'/)
 })

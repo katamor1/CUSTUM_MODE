@@ -1,4 +1,5 @@
 import { ProjectChecklist } from "./types"
+import { fencedCodeBlock } from "../markdownFence"
 
 export interface ProjectRulesPacketOptions {
   checklist: ProjectChecklist
@@ -24,15 +25,11 @@ export function buildProjectRulesSection(options: ProjectRulesPacketOptions): st
     "",
     "### checklist.json",
     "",
-    "```json",
-    JSON.stringify(options.checklist, null, 2),
-    "```",
+    fencedCodeBlock("json", JSON.stringify(options.checklist, null, 2)),
     "",
     "### review-result.schema.json",
     "",
-    "```json",
-    JSON.stringify(options.schema, null, 2),
-    "```",
+    fencedCodeBlock("json", JSON.stringify(options.schema, null, 2)),
     "",
     "### Output contract",
     "",

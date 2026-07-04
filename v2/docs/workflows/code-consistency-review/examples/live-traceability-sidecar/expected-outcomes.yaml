@@ -1,0 +1,43 @@
+sample: live-traceability-sidecar
+target_range: "main..feature/live-traceability-sidecar"
+expected_cases:
+  - id: LIVE-OK-001
+    outcome: ok
+    symbol: Payment_CalculateLimit
+    evidence:
+      - REQ-RS001-PAY-0001
+      - BD-BD001-PAY-0001
+      - DD-DD001-PAY-0001
+      - TC-TS001-PAY-0001
+    summary: "プレミアム顧客の上限加算が要求・設計・テスト仕様と一致する。"
+  - id: LIVE-NG-001
+    outcome: ng
+    symbol: Payment_HandleTimeout
+    evidence:
+      - REQ-RS001-PAY-0002
+      - DD-DD001-PAY-0002
+      - TC-TS001-PAY-0002
+      - ERR_TIMEOUT
+    summary: "タイムアウト時に ERR_TIMEOUT ではなく ERR_OK を返している。"
+  - id: LIVE-QUESTION-001
+    outcome: question
+    symbol: Payment_AssessFraudScore
+    evidence:
+      - REQ-RS001-FRAUD-0001
+      - DD-DD001-FRAUD-0001
+      - QA-QA001-FRAUD-0001
+    summary: "不正スコアしきい値が 80 から 95 超へ変わっており、承認状態の確認が必要。"
+  - id: LIVE-RT-001
+    outcome: ng
+    symbol: Payment_UpdateRealtimeCache
+    evidence:
+      - REQ-RS001-RT-0001
+      - DD-DD001-RT-0001
+      - RV-RV001-RT-0001
+    summary: "RT 経路に printf が追加され、RT/TS ルールに反する。"
+  - id: LIVE-NA-001
+    outcome: n/a
+    symbol: "(none)"
+    evidence:
+      - REQ-RS001-OPS-0001
+    summary: "OPS 領域の AI 提案は未承認のため review-input 生成対象外。"

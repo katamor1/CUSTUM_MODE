@@ -5,6 +5,7 @@ const { readSourceSet } = require("./helpers/sourceReader")
 function registrationSource() {
   return readSourceSet([
     "extension.ts",
+    "workflowRegisterService.ts",
     "workflowRegistrationService.ts",
     "bobApi.ts",
     "reports.ts"
@@ -17,8 +18,19 @@ test("Bob registration deactivates the previous source before replacing workflow
   assert.match(source, /interface BobSourceLike \{[\s\S]*deactivate\?: \(\) => unknown[\s\S]*\}/)
   assert.match(source, /private registeredSource\?: BobSourceLike/)
   assert.match(source, /dispose\(\): void \{[\s\S]*void deactivateRegisteredSource\(source\)[\s\S]*\}/)
-  assert.match(source, /if \(loaded\.workflows\.length === 0\) \{[\s\S]*await deactivateRegisteredSource\(input\.previousSource, lines\)[\s\S]*"setContext", "bob-code\.hasWorkflows", false[\s\S]*\}/)
-  assert.match(source, /await deactivateRegisteredSource\(input\.previousSource, lines\)[\s\S]*const sourceResult = await runAttempt\("registerSource\(sourceId, sourceName\)"/)
+  assert.match(
+    source,
+    new RegExp([
+      "if \\(loaded\\.workflows\\.length === 0\\) \\{",
+      "[\\s\\S]*await deactivateRegisteredSource\\(input\\.previousSource, lines\\)",
+      "[\\s\\S]*\"setContext\", \"bob-code\\.hasWorkflows\", false",
+      "[\\s\\S]*\\}"
+    ].join(""))
+  )
+  assert.match(
+    source,
+    /await deactivateRegisteredSource\(input\.previousSource, lines\)[\s\S]*const sourceResult = await runAttempt\("registerSource\(sourceId, sourceName\)"/
+  )
   assert.match(source, /if \(update\.sourceChanged\) this\.registeredSource = update\.registeredSource/)
 })
 

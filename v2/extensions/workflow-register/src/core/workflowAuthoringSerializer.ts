@@ -122,6 +122,8 @@ function guardrailsOrUndefined(guardrails: WorkflowGuardrailsDefinition | undefi
   const next = compactObject({
     allowedCommands: guardrails.allowedCommands && guardrails.allowedCommands.length > 0 ? guardrails.allowedCommands : undefined,
     deniedCommands: guardrails.deniedCommands && guardrails.deniedCommands.length > 0 ? guardrails.deniedCommands : undefined,
+    allowedCommandIds: guardrails.allowedCommandIds && guardrails.allowedCommandIds.length > 0 ? guardrails.allowedCommandIds : undefined,
+    deniedCommandIds: guardrails.deniedCommandIds && guardrails.deniedCommandIds.length > 0 ? guardrails.deniedCommandIds : undefined,
     requireApproval: approvals && approvals.length > 0 ? approvals : undefined
   }) as WorkflowGuardrailsDefinition
   return Object.keys(next).length > 0 ? next : undefined

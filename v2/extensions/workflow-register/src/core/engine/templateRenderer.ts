@@ -25,6 +25,11 @@ export function renderValue(value: unknown, context: WorkflowTemplateContext): u
 
 export function renderTemplate(value: string, context: WorkflowTemplateContext): string {
   return value
+    .replace(/\{\{\s*json\s+state\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_.-]+)\s*\}\}/g, (_match, stateKey, jsonPath) => {
+      const parsed = parseJsonObjectFromText(context.state[stateKey] ?? "")
+      const resolved = parsed ? valueAtPath(parsed, String(jsonPath).split(".")) : undefined
+      return formatTemplateValue(resolved) ?? ""
+    })
     .replace(/\{\{\s*inputs\.([A-Za-z0-9_.-]+)\s*\}\}/g, (_match, key) => String(context.inputs[key] ?? ""))
     .replace(/\{\{\s*state\.([A-Za-z0-9_.-]+)\s*\}\}/g, (_match, key) => String(context.state[key] ?? ""))
     .replace(/\{\{\s*run\.id\s*\}\}/g, context.run.runId)
@@ -42,6 +47,15 @@ function placeholderValue(key: string, context: { inputs: Record<string, unknown
     return formatTemplateValue(parsed[key])
   }
   return undefined
+}
+
+function valueAtPath(value: unknown, path: string[]): unknown {
+  let current = value
+  for (const segment of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined
+    current = (current as Record<string, unknown>)[segment]
+  }
+  return current
 }
 
 function parseJsonObjectFromText(value: string): Record<string, unknown> | undefined {

@@ -11,6 +11,7 @@ import {
   notifyInfo,
   optionalAbsolute,
   requireBobWorkspaceRoot,
+  resolveTrustedBzrPath,
   stringOption,
   stringOrPrompt,
   vcsOrPrompt
@@ -32,6 +33,12 @@ import {
 import { optionRecord, registerWorkflowProviders } from "./workflowProviderRegistration"
 import { initializeCodeConsistencyWorkspace } from "./workspaceInitializer"
 
+/**
+ * Activates the Bob code-consistency review extension and registers command plus workflow entry points.
+ *
+ * @param context VS Code extension context used for command registration and workspace initialization resources.
+ * @returns Nothing.
+ */
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -106,10 +113,22 @@ export function activate(context: vscode.ExtensionContext): void {
   }).catch((error) => console.warn("Bob コード整合ワークフロー provider の登録に失敗しました", error))
 }
 
+/**
+ * Deactivates the Bob code-consistency review extension.
+ *
+ * @returns Nothing.
+ */
 export function deactivate(): void {
   // No background resources are held by this extension.
 }
 
+/**
+ * Initializes workflow definitions and review-input scaffolding for the selected workspace.
+ *
+ * @param context VS Code extension context used to resolve packaged templates.
+ * @param options Optional command or workflow options for workspace and output paths.
+ * @returns Workspace initialization result suitable for command output or workflow chaining.
+ */
 async function runInitializeWorkspace(context: vscode.ExtensionContext, options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)
@@ -121,6 +140,12 @@ async function runInitializeWorkspace(context: vscode.ExtensionContext, options?
   return result
 }
 
+/**
+ * Builds a review-input.yaml file from an interactive review input draft wizard.
+ *
+ * @param options Optional command or workflow options for workspace, output path, and text encoding.
+ * @returns Review-input write result, or a cancelled status when the user aborts the wizard.
+ */
 async function runCreateReviewInput(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)
@@ -152,6 +177,12 @@ async function runCreateReviewInput(options?: unknown): Promise<unknown> {
   return { ...result, discoveryWarnings: discovery.warnings }
 }
 
+/**
+ * Creates an AI prompt package for drafting review-input.yaml from VCS revisions.
+ *
+ * @param options Optional command or workflow options for revisions, VCS, paths, and text encoding.
+ * @returns Prompt-generation result including the written prompt path and warnings.
+ */
 async function runPrepareAiReviewInputDraft(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)
@@ -175,7 +206,7 @@ async function runPrepareAiReviewInputDraft(options?: unknown): Promise<unknown>
       head,
       vcs,
       vcsRoot: stringOption(record, "vcsRoot") ?? stringOption(record, "vcs_root"),
-      bzrPath: stringOption(record, "bzrPath") ?? config.get<string>("bzrPath", "bzr"),
+      bzrPath: resolveTrustedBzrPath(record, config.get<string>("bzrPath", "bzr")),
       diffFixturePath: optionalAbsolute(workspaceRoot, stringOption(record, "diffFixturePath")),
       textEncoding
     })
@@ -188,6 +219,12 @@ async function runPrepareAiReviewInputDraft(options?: unknown): Promise<unknown>
   return result
 }
 
+/**
+ * Applies AI-generated draft JSON to produce or update review-input.yaml.
+ *
+ * @param textOrOptions Draft JSON text, or command/workflow options containing text and path overrides.
+ * @returns Draft-application result including errors, warnings, and output path metadata.
+ */
 async function runApplyAiReviewInputDraft(textOrOptions?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(textOrOptions)
@@ -212,6 +249,12 @@ async function runApplyAiReviewInputDraft(textOrOptions?: unknown): Promise<unkn
   return result
 }
 
+/**
+ * Repairs legacy or invalid review-input.yaml content using the configured diagnostics repair path.
+ *
+ * @param options Optional command or workflow options for workspace, input path, and text encoding.
+ * @returns Repair result including status, message, and optional backup path.
+ */
 async function runRepairReviewInput(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)
@@ -224,6 +267,12 @@ async function runRepairReviewInput(options?: unknown): Promise<unknown> {
   return result
 }
 
+/**
+ * Explains diagnostics found in review-input.yaml for command and workflow consumers.
+ *
+ * @param options Optional command or workflow options for workspace, input path, and text encoding.
+ * @returns Diagnostic explanation result including status, message, and diagnostic details.
+ */
 async function runExplainReviewInputDiagnostics(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)

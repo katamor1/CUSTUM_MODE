@@ -1,54 +1,25 @@
 import * as vscode from "vscode"
-import { BazaarClient, BazaarCommandResult } from "./bazaar"
+import { BazaarClient } from "./bazaar"
 import { isBobCodeExtensionAvailable } from "./bobCodeExtension"
 import { addMarkdownPacketToBobContext } from "./bobContext"
+import { resolveBzrPath } from "./bzrPathTrust"
 import { buildReviewPacket } from "./reviewPacket"
+import { buildReviewPacketState, REVIEW_PACKET_STATE_KEY } from "./reviewPacketSelection"
+import { clampMaxAddedFileContentBytes, clampMaxDiffBytes, maxBufferForDiffBytes } from "./reviewLimits"
 import { buildProjectRulesSection } from "./projectRules/packet"
-import { loadProjectChecklist, loadReviewResultSchema } from "./projectRules/io"
+import { loadProjectChecklistRequired, loadReviewResultSchemaRequired } from "./projectRules/io"
 import {
-  buildAddedFilesContentSection,
-  loadBazaarRevisionPacketInput,
-  parseChangedFileEntries,
-  BazaarRevisionInfo,
-  BazaarChangedFile
-} from "./revisionInfo"
+  buildTargetMetadataSection,
+  parseTargetRequest,
+  prepareTarget,
+  validateTargetRequest
+} from "./reviewTarget"
+import type { TargetRequest } from "./reviewTarget"
 import { getBobWorkspaceStatus, initializeBobWorkspaceFromTemplates } from "./bobWorkspaceInit"
 import { completeCurrentWorkflowStepAfterGuiAction } from "./workflowStepCompletion"
 import { resolveBazaarWorkspaceFolder, resolveBobWorkspaceFolder } from "./workspaceResolver"
 import { renderHtml } from "./reviewGuiHtml"
-import type { BazaarReviewInitialTarget, TargetMode } from "./reviewGuiTypes"
-
-interface TargetRequest {
-  mode: TargetMode
-  revision?: string
-  baseRevision?: string
-  targetRevision?: string
-  withProjectRules?: boolean
-}
-
-interface TargetInfo {
-  mode: TargetMode
-  targetLabel: string
-  revision?: string
-  baseRevision?: string
-  targetRevision?: string
-  revno?: string
-  author: string
-  committer: string
-  timestamp: string
-  message: string
-  changedFileCount: number
-  changedFiles: string[]
-  changedFileEntries: BazaarChangedFile[]
-}
-
-interface PreparedTarget {
-  root: string
-  info: TargetInfo
-  log?: BazaarCommandResult
-  diff: BazaarCommandResult
-  addedFilesSection?: string
-}
+import type { BazaarReviewInitialTarget } from "./reviewGuiTypes"
 
 export function openBazaarReviewGui(context: vscode.ExtensionContext, initialTarget?: BazaarReviewInitialTarget): void {
   const panel = vscode.window.createWebviewPanel("bobBazaarReviewGui", "Bazaar レビュー", vscode.ViewColumn.One, {
@@ -139,8 +110,9 @@ class BazaarReviewGuiController {
     const status = await initializeBobWorkspaceFromTemplates({
       context: this.context,
       workspaceFolder: folder,
-      bzrPath: config.get<string>("bzrPath", "bzr"),
-      serverName: config.get<string>("mcpServerName", "bazaar")
+      bzrPath: resolveBzrPath(config, vscode.workspace.isTrusted),
+      serverName: config.get<string>("mcpServerName", "bazaar"),
+      textEncoding: config.get<string>("textEncoding", "auto")
     })
     this.post({ type: "bobWorkspaceStatus", ...status })
     this.post({ type: "initialized", message: ".bob 初期化が完了しました。Bob MCP サーバーを Refresh / Restart してください。" })
@@ -150,7 +122,10 @@ class BazaarReviewGuiController {
     const folder = await this.requireBazaarWorkspaceFolder()
     validateTargetRequest(request)
     this.post({ type: "loading", message: "対象情報を取得しています..." })
-    const prepared = await prepareTarget(makeBazaarClient(), folder.uri.fsPath, request, false)
+    const prepared = await prepareTarget(makeBazaarClient(), folder.uri.fsPath, request, {
+      includeAddedFiles: false,
+      maxAddedFileContentBytes: getMaxAddedFileContentBytes()
+    })
     this.post({ type: "targetInfo", info: prepared.info })
   }
 
@@ -168,7 +143,10 @@ class BazaarReviewGuiController {
     }
 
     this.post({ type: "loading", message: "レビュー packet を作成して Bob コンテキストへ追加しています..." })
-    const prepared = await prepareTarget(makeBazaarClient(), bazaarFolder.uri.fsPath, request, true)
+    const prepared = await prepareTarget(makeBazaarClient(), bazaarFolder.uri.fsPath, request, {
+      includeAddedFiles: true,
+      maxAddedFileContentBytes: getMaxAddedFileContentBytes()
+    })
     const projectRulesSection = request.withProjectRules && bobFolder ? await buildProjectRulesSectionForWorkspace(bobFolder.uri.fsPath) : undefined
     const extraSections = [
       buildTargetMetadataSection(prepared.info),
@@ -197,6 +175,17 @@ class BazaarReviewGuiController {
         workflowStepCompleted = await completeCurrentWorkflowStepAfterGuiAction({
           executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args),
           showWarningMessage: (message) => vscode.window.showWarningMessage(message)
+        }, {
+          runId: this.initialTarget?.runId,
+          stepId: this.initialTarget?.stepId,
+          stateUpdates: {
+            [REVIEW_PACKET_STATE_KEY]: JSON.stringify(buildReviewPacketState({
+              packetUri: doc.uri.toString(),
+              runId: this.initialTarget?.runId,
+              stepId: this.initialTarget?.stepId,
+              target: prepared.info.targetRevision ?? prepared.info.revision
+            }))
+          }
         })
       }
     } else {
@@ -235,214 +224,30 @@ class BazaarReviewGuiController {
   }
 }
 
-function parseTargetRequest(message: any): TargetRequest {
-  return {
-    mode: String(message.mode ?? "singleRevision") as TargetMode,
-    revision: trimOrUndefined(message.revision),
-    baseRevision: trimOrUndefined(message.baseRevision),
-    targetRevision: trimOrUndefined(message.targetRevision),
-    withProjectRules: Boolean(message.withProjectRules)
-  }
-}
-
-function trimOrUndefined(value: unknown): string | undefined {
-  const text = String(value ?? "").trim()
-  return text ? text : undefined
-}
-
-function validateTargetRequest(request: TargetRequest): void {
-  if (request.mode === "singleRevision" && !request.revision) throw new Error("リビジョンは必須です。")
-  if (request.mode === "revisionRange" && (!request.baseRevision || !request.targetRevision)) throw new Error("基準リビジョンと比較先リビジョンは必須です。")
-}
-
-async function prepareTarget(client: BazaarClient, workspacePath: string, request: TargetRequest, includeAddedFiles: boolean): Promise<PreparedTarget> {
-  const root = await client.root(workspacePath)
-
-  if (request.mode === "singleRevision") {
-    const revision = request.revision ?? ""
-    const input = await loadBazaarRevisionPacketInput(client, root, revision)
-    return {
-      root,
-      log: input.log,
-      diff: input.diff,
-      info: revisionInfoToTargetInfo(input.info),
-      addedFilesSection: includeAddedFiles ? await buildAddedFilesContentSection(client, root, revision, input.info, getMaxAddedFileContentBytes()) : undefined
-    }
-  }
-
-  if (request.mode === "revisionRange") {
-    const baseRevision = request.baseRevision ?? ""
-    const targetRevision = request.targetRevision ?? ""
-    const [diff, log] = await Promise.all([
-      client.diffRange(root, baseRevision, targetRevision),
-      client.log(root, targetRevision).catch(() => undefined)
-    ])
-    const entries = parseChangedFileEntries(diff.stdout)
-    const info = makeRangeTargetInfo(baseRevision, targetRevision, log?.stdout, entries)
-    const syntheticInfo = targetInfoToSyntheticRevisionInfo(info, targetRevision)
-    return {
-      root,
-      log,
-      diff,
-      info,
-      addedFilesSection: includeAddedFiles
-        ? await buildAddedFilesContentSection(
-          client,
-          root,
-          targetRevision,
-          syntheticInfo,
-          getMaxAddedFileContentBytes()
-        )
-        : undefined
-    }
-  }
-
-  const topRevision = request.baseRevision ?? await client.revno(root)
-  const [diff, status] = await Promise.all([
-    client.diffWorkingTree(root, topRevision),
-    client.status(root).catch(() => undefined)
-  ])
-  const entries = parseChangedFileEntries(diff.stdout)
-  return {
-    root,
-    diff,
-    info: {
-      mode: "workingTreeSinceRevision",
-      targetLabel: `${topRevision}..作業ツリー`,
-      baseRevision: topRevision,
-      targetRevision: "作業ツリー",
-      author: "作業ツリー",
-      committer: "作業ツリー",
-      timestamp: "未コミット",
-      message: status?.stdout?.trim() || `リビジョン ${topRevision} 以降の未コミット変更`,
-      changedFileCount: entries.length,
-      changedFiles: entries.map((entry) => entry.path),
-      changedFileEntries: entries
-    }
-  }
-}
-
-function revisionInfoToTargetInfo(info: BazaarRevisionInfo): TargetInfo {
-  return {
-    mode: "singleRevision",
-    targetLabel: info.revision,
-    revision: info.revision,
-    targetRevision: info.revision,
-    revno: info.revno,
-    author: info.author,
-    committer: info.committer,
-    timestamp: info.timestamp,
-    message: info.message,
-    changedFileCount: info.changedFileCount,
-    changedFiles: info.changedFiles,
-    changedFileEntries: info.changedFileEntries
-  }
-}
-
-function makeRangeTargetInfo(baseRevision: string, targetRevision: string, logText: string | undefined, entries: BazaarChangedFile[]): TargetInfo {
-  const parsed = logText ? parseLogMetadataLike(logText) : {}
-  return {
-    mode: "revisionRange",
-    targetLabel: `${baseRevision}..${targetRevision}`,
-    baseRevision,
-    targetRevision,
-    revno: parsed.revno,
-    author: parsed.author || parsed.committer || "range",
-    committer: parsed.committer || parsed.author || "range",
-    timestamp: parsed.timestamp || "unknown",
-    message: parsed.message || `Bazaar リビジョン範囲 ${baseRevision}..${targetRevision}`,
-    changedFileCount: entries.length,
-    changedFiles: entries.map((entry) => entry.path),
-    changedFileEntries: entries
-  }
-}
-
-function targetInfoToSyntheticRevisionInfo(info: TargetInfo, revision: string): BazaarRevisionInfo {
-  return {
-    revision,
-    revno: info.revno,
-    author: info.author,
-    committer: info.committer,
-    timestamp: info.timestamp,
-    message: info.message,
-    changedFileCount: info.changedFileCount,
-    changedFiles: info.changedFiles,
-    changedFileEntries: info.changedFileEntries,
-    logText: ""
-  }
-}
-
-function parseLogMetadataLike(logText: string): { revno?: string; author?: string; committer?: string; timestamp?: string; message?: string } {
-  const result: { revno?: string; author?: string; committer?: string; timestamp?: string; message?: string } = {}
-  const messageLines: string[] = []
-  let inMessage = false
-  for (const line of logText.split(/\r?\n/)) {
-    const trimmed = line.trimEnd()
-    if (/^revno:\s*/i.test(trimmed)) result.revno = trimmed.replace(/^revno:\s*/i, "").trim()
-    else if (/^author:\s*/i.test(trimmed)) result.author = trimmed.replace(/^author:\s*/i, "").trim()
-    else if (/^committer:\s*/i.test(trimmed)) result.committer = trimmed.replace(/^committer:\s*/i, "").trim()
-    else if (/^timestamp:\s*/i.test(trimmed)) result.timestamp = trimmed.replace(/^timestamp:\s*/i, "").trim()
-    else if (/^message:\s*$/i.test(trimmed)) inMessage = true
-    else if (inMessage) {
-      if (/^[-]{5,}$/.test(trimmed)) break
-      messageLines.push(trimmed.replace(/^\s{2,}/, ""))
-    }
-  }
-  result.message = messageLines.join("\n").trim()
-  return result
-}
-
 function makeBazaarClient(): BazaarClient {
   const config = vscode.workspace.getConfiguration("bobBazaar")
   return new BazaarClient({
-    bzrPath: config.get<string>("bzrPath", "bzr"),
-    maxBuffer: Math.max(getMaxDiffBytes() * 2, 2 * 1024 * 1024),
+    bzrPath: resolveBzrPath(config, vscode.workspace.isTrusted),
+    maxBuffer: maxBufferForDiffBytes(getMaxDiffBytes()),
     textEncoding: config.get<string>("textEncoding", "auto")
   })
 }
 
 function getMaxDiffBytes(): number {
-  return vscode.workspace.getConfiguration("bobBazaar").get<number>("maxDiffBytes", 1024 * 1024)
+  return clampMaxDiffBytes(vscode.workspace.getConfiguration("bobBazaar").get<number>("maxDiffBytes", 1024 * 1024))
 }
 
 function getMaxAddedFileContentBytes(): number {
-  return vscode.workspace.getConfiguration("bobBazaar").get<number>("maxAddedFileContentBytes", 256 * 1024)
+  return clampMaxAddedFileContentBytes(vscode.workspace.getConfiguration("bobBazaar").get<number>("maxAddedFileContentBytes", 256 * 1024))
 }
 
 async function buildProjectRulesSectionForWorkspace(workspaceRoot: string): Promise<string> {
   const config = vscode.workspace.getConfiguration("bobBazaar")
   const [checklist, schema] = await Promise.all([
-    loadProjectChecklist(workspaceRoot, config.get<string>("projectRules.checklistPath", ".bob/review/checklist.json")),
-    loadReviewResultSchema(workspaceRoot, config.get<string>("projectRules.schemaPath", ".bob/review/review-result.schema.json"))
+    loadProjectChecklistRequired(workspaceRoot, config.get<string>("projectRules.checklistPath", ".bob/review/checklist.json")),
+    loadReviewResultSchemaRequired(workspaceRoot, config.get<string>("projectRules.schemaPath", ".bob/review/review-result.schema.json"))
   ])
   return buildProjectRulesSection({ checklist, schema })
-}
-
-function buildTargetMetadataSection(info: TargetInfo): string {
-  return [
-    "## Bazaar レビュー対象メタデータ",
-    "",
-    `- mode: ${info.mode}`,
-    `- target: ${info.targetLabel}`,
-    info.revision ? `- revision: ${info.revision}` : undefined,
-    info.baseRevision ? `- base_revision: ${info.baseRevision}` : undefined,
-    info.targetRevision ? `- target_revision: ${info.targetRevision}` : undefined,
-    info.revno ? `- revno: ${info.revno}` : undefined,
-    `- author: ${info.author}`,
-    `- committer: ${info.committer}`,
-    `- timestamp: ${info.timestamp}`,
-    `- changed_files: ${info.changedFileCount}`,
-    "",
-    "### メッセージ / status",
-    "",
-    "```text",
-    info.message || "(メッセージなし)",
-    "```",
-    "",
-    "### 変更ファイル",
-    "",
-    ...(info.changedFileEntries.length > 0 ? info.changedFileEntries.map((entry) => `- ${entry.status}: ${entry.path}`) : ["- (変更ファイルを検出できませんでした)"])
-  ].filter((line): line is string => line !== undefined).join("\n")
 }
 
 async function addPacketToBobContext(uri: vscode.Uri, packet: string) {

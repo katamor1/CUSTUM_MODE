@@ -1,5 +1,6 @@
 import * as vscode from "vscode"
 import { loadAuthoringModelFromMarkdown } from "../core/workflowAuthoringLoader"
+import { isWorkflowDocumentPath } from "../core/workflowDocumentPath"
 import { WorkflowBuilderPanel } from "../webview/workflowBuilderPanel"
 import { pickWorkflowRootForUri, workflowRelativePath } from "./workspaceRootPicker"
 
@@ -19,6 +20,10 @@ export async function editWorkflowInBuilder(options: EditWorkflowInBuilderOption
   const targetUri = uri ?? vscode.window.activeTextEditor?.document.uri ?? await pickWorkflowFile()
   if (!targetUri) {
     await vscode.window.showErrorMessage("Open or select a WORKFLOW.md file to edit in the GUI builder.")
+    return
+  }
+  if (!isWorkflowDocumentPath(targetUri.fsPath)) {
+    await vscode.window.showErrorMessage("Open a .bob/workflows/*/WORKFLOW.md file to edit in the GUI builder.")
     return
   }
 

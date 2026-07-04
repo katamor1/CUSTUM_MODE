@@ -7,6 +7,7 @@ export interface McpServerConfigOptions {
   extensionContext: vscode.ExtensionContext
   serverName: string
   bzrPath: string
+  textEncoding?: string
 }
 
 export interface McpServerConfigResult {
@@ -16,6 +17,7 @@ export interface McpServerConfigResult {
 }
 
 export async function configureWorkspaceMcpServer(options: McpServerConfigOptions): Promise<McpServerConfigResult> {
+  const serverName = validateServerName(options.serverName)
   const workspaceRoot = options.workspaceFolder.uri.fsPath
   const bobDir = path.join(workspaceRoot, ".bob")
   const configPath = path.join(bobDir, "mcp.json")
@@ -26,12 +28,13 @@ export async function configureWorkspaceMcpServer(options: McpServerConfigOption
   const config = await readJsonObject(configPath)
   const mcpServers = isRecord(config.mcpServers) ? config.mcpServers : {}
 
-  mcpServers[options.serverName] = {
+  mcpServers[serverName] = {
     command: process.execPath,
     args: [serverPath],
     env: {
       BZR_PATH: options.bzrPath,
-      BZR_TEXT_ENCODING: "auto"
+      BZR_TEXT_ENCODING: options.textEncoding ?? "auto",
+      BOB_BAZAAR_ALLOWED_ROOTS: workspaceRoot
     },
     disabled: false
   }
@@ -41,13 +44,22 @@ export async function configureWorkspaceMcpServer(options: McpServerConfigOption
     mcpServers
   }
 
-  await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8")
+  await backupExistingFile(configPath)
+  await atomicWriteFile(configPath, `${JSON.stringify(next, null, 2)}\n`)
 
   return {
     configPath,
-    serverName: options.serverName,
+    serverName,
     serverPath
   }
+}
+
+export function validateServerName(serverName: string): string {
+  const trimmed = serverName.trim()
+  if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) {
+    throw new Error(`MCP server name must match ^[A-Za-z0-9._-]+$: ${serverName}`)
+  }
+  return trimmed
 }
 
 async function readJsonObject(filePath: string): Promise<Record<string, unknown>> {
@@ -68,4 +80,40 @@ async function readJsonObject(filePath: string): Promise<Record<string, unknown>
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+async function backupExistingFile(filePath: string): Promise<void> {
+  try {
+    await fs.access(filePath)
+  } catch (error: any) {
+    if (error?.code === "ENOENT") return
+    throw error
+  }
+  await fs.copyFile(filePath, await nextBackupPath(filePath))
+}
+
+async function nextBackupPath(filePath: string): Promise<string> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+  for (let index = 0; index < 1000; index += 1) {
+    const suffix = index === 0 ? "" : `-${index}`
+    const candidate = `${filePath}.bak-${stamp}${suffix}`
+    try {
+      await fs.access(candidate)
+    } catch (error: any) {
+      if (error?.code === "ENOENT") return candidate
+      throw error
+    }
+  }
+  throw new Error(`Unable to allocate backup path for ${filePath}`)
+}
+
+async function atomicWriteFile(filePath: string, content: string): Promise<void> {
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
+  try {
+    await fs.writeFile(tempPath, content, "utf8")
+    await fs.rename(tempPath, filePath)
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => undefined)
+    throw error
+  }
 }

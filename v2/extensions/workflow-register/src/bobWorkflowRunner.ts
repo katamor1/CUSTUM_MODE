@@ -130,8 +130,10 @@ export class BobWorkflowEngineRunner {
         if (completed) manuallyCompleted.add(stepKey(run.runId, step.id))
         return { completed }
       },
-      recoverResultText: async ({ workflow, run, step }) => {
-        const currentTaskText = extractLastAssistantText(task.getMessages?.() ?? [], 0)
+      recoverResultText: async ({ workflow, run, step, reason }) => {
+        if (reason === "retry-agent-result") return undefined
+        const messageStartIndex = messageStartIndexes.get(stepKey(run.runId, step.id)) ?? 0
+        const currentTaskText = extractLastAssistantText(task.getMessages?.() ?? [], messageStartIndex)
         if (currentTaskText) return currentTaskText
         return snapshotStore
           ? recoverResultTextFromSnapshots(snapshotStore, workflow, run, step)

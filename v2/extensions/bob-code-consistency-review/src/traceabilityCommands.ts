@@ -1,3 +1,4 @@
+import * as path from "node:path"
 import * as vscode from "vscode"
 import { applyAiTraceabilityDraft, prepareAiTraceabilityDraftPrompt } from "./core/traceabilityAiDraftProvider"
 import { buildReviewInputDraftFromTraceability } from "./core/traceabilityCatalog"
@@ -7,6 +8,7 @@ import {
   readTraceabilityCatalog,
   validateAndWriteTraceabilityGateReport
 } from "./core/traceabilityCatalogStore"
+import { pathExists, readTextFile } from "./core/fileSystem"
 import { writeReviewInputFromDraft } from "./core/reviewInputBuilder"
 import {
   absolute,
@@ -14,8 +16,10 @@ import {
   firstString,
   notifyError,
   notifyInfo,
+  notifyInfoWithReport,
   optionalAbsolute,
   requireBobWorkspaceRoot,
+  resolveTrustedBzrPath,
   reviewFocusOption,
   stringOption,
   stringOrPrompt,
@@ -24,6 +28,8 @@ import {
 import { collectReviewMetadata } from "./reviewInputWizard"
 import { openTraceabilityPrepWebview } from "./webview/traceabilityPrepWebview"
 import { optionRecord } from "./workflowProviderRegistration"
+
+const TRACEABILITY_DRAFT_FILE_NAMES = ["ai-draft.json", "ai-draft-output.json", "ai-draft-result.json"]
 
 export async function runPrepareAiTraceabilityDraft(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
@@ -53,7 +59,7 @@ export async function runPrepareAiTraceabilityDraft(options?: unknown): Promise<
       head,
       vcs,
       vcsRoot: stringOption(record, "vcsRoot") ?? stringOption(record, "vcs_root"),
-      bzrPath: stringOption(record, "bzrPath") ?? config.get<string>("bzrPath", "bzr"),
+      bzrPath: resolveTrustedBzrPath(record, config.get<string>("bzrPath", "bzr")),
       diffFixturePath: optionalAbsolute(workspaceRoot, stringOption(record, "diffFixturePath")),
       textEncoding
     })
@@ -82,7 +88,8 @@ export async function runApplyAiTraceabilityDraft(textOrOptions?: unknown): Prom
       config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
   )
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
-  const text = firstString(textOrOptions) ?? stringOption(record, "text") ?? await vscode.env.clipboard.readText()
+  const rawText = firstString(textOrOptions) ?? stringOption(record, "text") ?? await vscode.env.clipboard.readText()
+  const text = await resolveTraceabilityDraftText({ workspaceRoot, record, rawText, textEncoding })
   const result = await applyAiTraceabilityDraft({ workspaceRoot, catalogPath, text, textEncoding })
 
   if (result.status === "error") {
@@ -118,7 +125,7 @@ export async function runValidateTraceabilityCatalog(options?: unknown): Promise
   }
   const message = `traceability gate report を生成しました: ${result.reportPath}（error: ${result.report.errors.length} 件, warning: ${result.report.warnings.length} 件）`
   if (result.report.status === "error") notifyError(message)
-  else notifyInfo(message)
+  else notifyInfoWithReport(message, result.reportPath)
   return { ...result, status: result.report.status }
 }
 
@@ -193,5 +200,72 @@ export async function runOpenTraceabilityPrep(context: vscode.ExtensionContext, 
   const result = await openTraceabilityPrepWebview({ context, workspaceRoot, catalogPath, reportPath, textEncoding })
   if (result.status === "error") notifyError(`traceability prep を開けません: ${result.errors.join("; ")}`)
   else notifyInfo(`traceability prep を開きました: ${result.catalogPath}`)
+  return result
+}
+
+async function resolveTraceabilityDraftText(input: {
+  workspaceRoot: string
+  record: Record<string, unknown>
+  rawText: string
+  textEncoding?: string
+}): Promise<string> {
+  if (looksLikeInlineJson(input.rawText)) return input.rawText
+
+  const outputDir = absolute(
+    input.workspaceRoot,
+    stringOption(input.record, "aiTraceabilityDraftPromptPath") ?? ".bob-trace/ai-traceability-draft"
+  )
+  const candidates = uniqueStrings([
+    ...extractTraceabilityDraftJsonPaths(input.rawText),
+    stringOption(input.record, "traceabilityDraftJsonPath"),
+    ...TRACEABILITY_DRAFT_FILE_NAMES.map((fileName) => path.join(outputDir, fileName))
+  ])
+
+  for (const candidate of candidates) {
+    const filePath = resolveWorkspaceContainedPath(input.workspaceRoot, candidate)
+    if (!filePath) continue
+    if (await pathExists(filePath)) return readTextFile(filePath, input.textEncoding)
+  }
+
+  return input.rawText
+}
+
+function looksLikeInlineJson(text: string): boolean {
+  const trimmed = text.trimStart()
+  return trimmed.startsWith("{") || /^```json\s*{/i.test(trimmed)
+}
+
+function extractTraceabilityDraftJsonPaths(text: string): string[] {
+  const candidates: string[] = []
+  for (const match of text.matchAll(/\]\(([^)]+?\.json)\)/gi)) candidates.push(match[1])
+  for (const match of text.matchAll(/[`'"]([^`'"]+?\.json)[`'"]/gi)) candidates.push(match[1])
+  for (const match of text.matchAll(/(?:^|\s)([^\s\])]+?\.json)(?=\s|$|\))/gi)) candidates.push(match[1])
+  return candidates
+    .map(cleanPathCandidate)
+    .filter((candidate): candidate is string => !!candidate && path.basename(candidate).toLowerCase().includes("draft"))
+}
+
+function cleanPathCandidate(value: string): string | undefined {
+  const trimmed = value.trim().replace(/[?#].*$/, "")
+  if (!trimmed) return undefined
+  if (/^file:/i.test(trimmed)) return vscode.Uri.parse(trimmed).fsPath
+  return trimmed
+}
+
+function resolveWorkspaceContainedPath(workspaceRoot: string, value: string): string | undefined {
+  const resolved = path.resolve(path.isAbsolute(value) ? value : path.join(workspaceRoot, value))
+  const relative = path.relative(path.resolve(workspaceRoot), resolved)
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return resolved
+  return undefined
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    result.push(value)
+  }
   return result
 }

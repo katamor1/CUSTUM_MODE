@@ -1,9 +1,18 @@
+import { buildSafeWorkflowOptions } from "./workflowUserOptions"
+
+const CAPTURE_BOB_OUTPUT_WORKFLOW_KEYS = ["bobOutputPath", "reviewPackagePath", "packageDir", "text"] as const
+
 export function buildCaptureWorkflowOptions(input: {
   args: unknown
   inputs: Record<string, unknown>
   state?: Record<string, string>
 }): unknown {
-  const options = mergeOptions(input.inputs, input.args)
+  const options = buildSafeWorkflowOptions({
+    commandId: "bobCodeConsistency.captureBobOutput",
+    inputs: input.inputs,
+    args: input.args,
+    allowedKeys: CAPTURE_BOB_OUTPUT_WORKFLOW_KEYS
+  })
   if (typeof options.text !== "string" || !options.text.trim()) {
     const argText = firstString(input.args)
     if (argText) options.text = argText
@@ -13,15 +22,6 @@ export function buildCaptureWorkflowOptions(input: {
     if (stateText) options.text = stateText
   }
   return options
-}
-
-function mergeOptions(inputs: Record<string, unknown>, args: unknown): Record<string, unknown> {
-  return { ...inputs, ...optionRecord(args) }
-}
-
-function optionRecord(value: unknown): Record<string, unknown> {
-  if (Array.isArray(value)) return optionRecord(value[0])
-  return typeof value === "object" && value !== null ? value as Record<string, unknown> : {}
 }
 
 function firstString(value: unknown): string | undefined {

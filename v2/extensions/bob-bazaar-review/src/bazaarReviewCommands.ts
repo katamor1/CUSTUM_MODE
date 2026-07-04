@@ -2,9 +2,11 @@ import * as vscode from "vscode"
 import { BazaarClient } from "./bazaar"
 import { isBobCodeExtensionAvailable } from "./bobCodeExtension"
 import { addMarkdownPacketToBobContext } from "./bobContext"
-import { loadProjectChecklist, loadReviewResultSchema } from "./projectRules/io"
+import { resolveBzrPath } from "./bzrPathTrust"
+import { loadProjectChecklistRequired, loadReviewResultSchemaRequired } from "./projectRules/io"
 import { buildProjectRulesSection } from "./projectRules/packet"
 import { buildReviewPacket } from "./reviewPacket"
+import { clampMaxAddedFileContentBytes, clampMaxDiffBytes, maxBufferForDiffBytes } from "./reviewLimits"
 import { buildAddedFilesContentSection, loadBazaarRevisionPacketInput } from "./revisionInfo"
 import { isWorkflowRegisterExtensionAvailable } from "./workflowRegisterBridge"
 import { resolveBazaarWorkspaceFolder, resolveBobWorkspaceFolder } from "./workspaceResolver"
@@ -95,8 +97,8 @@ async function buildProjectRulesSectionForWorkspace(workspaceRoot: string): Prom
   const checklistPath = config.get<string>("projectRules.checklistPath", ".bob/review/checklist.json")
   const schemaPath = config.get<string>("projectRules.schemaPath", ".bob/review/review-result.schema.json")
   const [checklist, schema] = await Promise.all([
-    loadProjectChecklist(workspaceRoot, checklistPath),
-    loadReviewResultSchema(workspaceRoot, schemaPath)
+    loadProjectChecklistRequired(workspaceRoot, checklistPath),
+    loadReviewResultSchemaRequired(workspaceRoot, schemaPath)
   ])
   return buildProjectRulesSection({ checklist, schema })
 }
@@ -104,20 +106,20 @@ async function buildProjectRulesSectionForWorkspace(workspaceRoot: string): Prom
 function makeBazaarClient(): BazaarClient {
   const config = vscode.workspace.getConfiguration("bobBazaar")
   return new BazaarClient({
-    bzrPath: config.get<string>("bzrPath", "bzr"),
-    maxBuffer: Math.max(getMaxDiffBytes() * 2, 2 * 1024 * 1024),
+    bzrPath: resolveBzrPath(config, vscode.workspace.isTrusted),
+    maxBuffer: maxBufferForDiffBytes(getMaxDiffBytes()),
     textEncoding: config.get<string>("textEncoding", "auto")
   })
 }
 
 function getMaxDiffBytes(): number {
   const config = vscode.workspace.getConfiguration("bobBazaar")
-  return config.get<number>("maxDiffBytes", 1024 * 1024)
+  return clampMaxDiffBytes(config.get<number>("maxDiffBytes", 1024 * 1024))
 }
 
 function getMaxAddedFileContentBytes(): number {
   const config = vscode.workspace.getConfiguration("bobBazaar")
-  return config.get<number>("maxAddedFileContentBytes", 256 * 1024)
+  return clampMaxAddedFileContentBytes(config.get<number>("maxAddedFileContentBytes", 256 * 1024))
 }
 
 async function pickBazaarWorkspaceFolder(): Promise<vscode.WorkspaceFolder | undefined> {

@@ -2,7 +2,7 @@
 
 ## 1. 文書の位置づけ
 
-本書は `extensions/bob-code-consistency-review` 拡張機能の詳細設計を定義する。基本設計で示した目的とスコープを、実装モジュール、主要データ、処理シーケンス、エラー処理、workflow 初期化、テスト観点へ展開する。
+本書は `extensions/bob-code-consistency-review` 拡張機能の詳細設計を定義する。基本設計で示した目的とスコープを、実装モジュール、command、workflow provider、review-input 生成、traceability sidecar、前処理 pipeline、Bob 出力検証、triage、テスト観点へ展開する。
 
 ## 2. 実装構成
 
@@ -11,7 +11,11 @@ extensions/bob-code-consistency-review/
   package.json
   src/
     extension.ts
-    workflowOptions.ts
+    extensionCommandOptions.ts
+    reviewExecutionCommands.ts
+    reviewInputWizard.ts
+    traceabilityCommands.ts
+    workflowProviderRegistration.ts
     workspaceInitializer.ts
     workspaceResolver.ts
     analyzers/
@@ -24,10 +28,21 @@ extensions/bob-code-consistency-review/
       fileSystem.ts
       gitDiffCollector.ts
       pipeline.ts
+      reviewInputAiDraftProvider.ts
+      reviewInputBuilder.ts
+      reviewInputDiagnostics.ts
+      reviewInputDiscovery.ts
       reviewInputValidator.ts
       reviewPackageBuilder.ts
       schemaLoader.ts
       textEncoding.ts
+      traceabilityAiDraftProvider.ts
+      traceabilityCatalog.ts
+      traceabilityCatalogStore.ts
+      traceabilityIds.ts
+      traceabilityPrepController.ts
+      traceabilityTypes.ts
+      traceabilityValidation.ts
       types.ts
     schemas/
       bob-output.schema.json
@@ -40,6 +55,9 @@ extensions/bob-code-consistency-review/
       templateLoader.ts
     triage/
       humanTriageHelper.ts
+    webview/
+      traceabilityPrepWebview.ts
+      traceabilityPrepWebviewAssets.ts
   templates/
     .bob/
       workflows/
@@ -51,22 +69,25 @@ extensions/bob-code-consistency-review/
 
 ## 3. 起動設計
 
-`package.json` の `main` は `./out/extension.js` である。activation event は次の通りである。
+`package.json` の `main` は `./out/extension.js` である。activation event は `onStartupFinished` と各 `bobCodeConsistency.*` command である。
 
-- `onStartupFinished`
-- `onCommand:bobCodeConsistency.initializeWorkspace`
-- `onCommand:bobCodeConsistency.preprocess`
-- `onCommand:bobCodeConsistency.captureBobOutput`
-- `onCommand:bobCodeConsistency.validateOutput`
-- `onCommand:bobCodeConsistency.triage`
-
-`activate(context)` は VS Code command を登録し、続けて `workflow-register` の `registerActionProvider` API を使って action provider を登録する。
+`activate(context)` は VS Code command を登録し、続けて `workflowProviderRegistration.registerWorkflowProviders()` を呼ぶ。`workflow-register` 取得や provider 登録に失敗した場合は warning log に留め、通常 command 利用は継続する。
 
 ## 4. Command entry
 
 | Command ID | 実装関数 | 概要 |
 | --- | --- | --- |
-| `bobCodeConsistency.initializeWorkspace` | `runInitializeWorkspace` | `.bob/workflows/code-consistency-review/WORKFLOW.md` を作成・更新する。 |
+| `bobCodeConsistency.initializeWorkspace` | `runInitializeWorkspace` | workflow template、review-input 雛形、placeholder document を初期化する。 |
+| `bobCodeConsistency.createReviewInput` | `runCreateReviewInput` | 対話式に `review-input.yaml` を作成する。 |
+| `bobCodeConsistency.prepareAiReviewInputDraft` | `runPrepareAiReviewInputDraft` | AI draft 用 prompt を作成する。 |
+| `bobCodeConsistency.applyAiReviewInputDraft` | `runApplyAiReviewInputDraft` | AI draft JSON から `review-input.yaml` を生成する。 |
+| `bobCodeConsistency.prepareAiTraceabilityDraft` | `runPrepareAiTraceabilityDraft` | traceability AI draft 用 prompt を作成する。 |
+| `bobCodeConsistency.applyAiTraceabilityDraft` | `runApplyAiTraceabilityDraft` | traceability AI draft JSON を catalog に反映する。 |
+| `bobCodeConsistency.openTraceabilityPrep` | `runOpenTraceabilityPrep` | traceability prep Webview を開く。 |
+| `bobCodeConsistency.validateTraceabilityCatalog` | `runValidateTraceabilityCatalog` | catalog を検証し gate report を生成する。 |
+| `bobCodeConsistency.createReviewInputFromTraceability` | `runCreateReviewInputFromTraceability` | accepted traceability item から `review-input.yaml` を生成する。 |
+| `bobCodeConsistency.repairReviewInput` | `runRepairReviewInput` | legacy / 不完全な `review-input.yaml` の修復を試みる。 |
+| `bobCodeConsistency.explainReviewInputDiagnostics` | `runExplainReviewInputDiagnostics` | `review-input.yaml` 診断を説明する。 |
 | `bobCodeConsistency.preprocess` | `runPreprocess` | `review-input.yaml` から review-package を生成する。 |
 | `bobCodeConsistency.captureBobOutput` | `runCaptureBobOutput` | Bob 出力 YAML を抽出・正規化して保存する。 |
 | `bobCodeConsistency.validateOutput` | `runValidateOutput` | Bob 出力 YAML を schema と evidence index で検証する。 |
@@ -78,6 +99,8 @@ extensions/bob-code-consistency-review/
 | --- | --- | --- |
 | `bobCodeConsistency.reviewInputPath` | `review-input.yaml` | 入力 YAML の workspace 相対パス。 |
 | `bobCodeConsistency.reviewPackagePath` | `.bob-review/review-package` | review-package 出力先。 |
+| `bobCodeConsistency.traceabilityCatalogPath` | `.bob-trace/traceability-catalog.json` | sidecar traceability catalog の保存先。 |
+| `bobCodeConsistency.traceabilityGateReportPath` | `.bob-trace/gate-report.md` | traceability gate report の保存先。 |
 | `bobCodeConsistency.bobOutputPath` | `.bob-review/bob-output/bob-output.yaml` | Bob 出力 YAML 保存先。 |
 | `bobCodeConsistency.triagePath` | `.bob-review/human-triage` | 人間 triage 出力先。 |
 | `bobCodeConsistency.bzrPath` | `bzr` | review input が Bazaar / bzr の場合に使う Bazaar 実行ファイル。 |
@@ -87,21 +110,13 @@ workflow や他拡張から呼ぶ場合は、同名 option を `args` / `inputs`
 
 ## 6. Workspace 解決設計
 
-`requireBobWorkspaceRoot()` は `resolveBobWorkspaceRoot()` を使って root を解決する。
+`requireBobWorkspaceRoot()` は `resolveBobWorkspaceRoot()` を使って root を解決する。優先順位は `bobRoot`、`workspaceRoot`、`workflowRoot`、VS Code workspace folder、QuickPick である。
 
-優先順位は次の通り。
-
-1. `bobRoot`
-2. `workspaceRoot`
-3. `workflowRoot`
-4. VS Code workspace folder
-5. QuickPick
-
-`absolute(root, value)` は absolute path ならそのまま、relative path なら workspace root に結合する。現時点では absolute path の完全拒否は行っていないため、今後の安全強化候補である。
+`absolute(root, value)` は absolute path ならそのまま、relative path なら workspace root に結合する。review-input builder や traceability draft path では workspace containment check を行い、artifact path escape や draft JSON path escape を拒否する。
 
 ## 7. Workspace 初期化詳細
 
-`workspaceInitializer.ts` は同梱 workflow template を Bob workspace へ配置する。
+`workspaceInitializer.ts` は同梱 workflow template を Bob workspace へ配置し、必要に応じて `review-input.yaml` 雛形と placeholder document も作成する。
 
 入力:
 
@@ -109,6 +124,7 @@ workflow や他拡張から呼ぶ場合は、同名 option を `args` / `inputs`
 interface InitializeCodeConsistencyWorkspaceOptions {
   context: vscode.ExtensionContext
   workspaceRoot: string
+  reviewInputPath?: string
 }
 ```
 
@@ -119,7 +135,10 @@ interface InitializeCodeConsistencyWorkspaceResult {
   status: "created" | "updated" | "unchanged"
   workspaceRoot: string
   workflowPath: string
+  reviewInputPath: string
+  placeholderDocumentPath?: string
   backupPath?: string
+  reviewInputBackupPath?: string
   message: string
 }
 ```
@@ -128,65 +147,129 @@ interface InitializeCodeConsistencyWorkspaceResult {
 
 ```text
 <workspaceRoot>/.bob/workflows/code-consistency-review/WORKFLOW.md
+<workspaceRoot>/review-input.yaml
+<workspaceRoot>/docs/review-input-placeholder.md
 ```
 
-既存ファイルが template と一致する場合は `unchanged` を返す。既存ファイルがあり内容が異なる場合は `.bak-<timestamp>` を作成してから上書きする。
+workflow template が既存 file と異なる場合は `.bak-<timestamp>` を作成して上書きする。`review-input.yaml` が存在しない場合は雛形を作成する。既存 `review-input.yaml` が雛形と異なる場合は上書きせず、backup のみ作成する。
 
 ## 8. Workflow-register 連携設計
 
-`registerWorkflowProviders()` は `local.workflow-register` を取得し、次の action provider を登録する。
+`workflowProviderRegistration.ts` は `local.workflow-register` を取得し、次の action provider を登録する。
 
 | Provider ID | 実行内容 |
 | --- | --- |
-| `bobCodeConsistency.initializeWorkspace` | `runInitializeWorkspace(context, mergeWorkflowOptions(input))` |
-| `bobCodeConsistency.preprocess` | `runPreprocess(mergeWorkflowOptions(input))` |
-| `bobCodeConsistency.captureBobOutput` | `runCaptureBobOutput(...)` |
-| `bobCodeConsistency.validateOutput` | `runValidateOutput(mergeWorkflowOptions(input))` |
-| `bobCodeConsistency.triage` | `runTriage(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.initializeWorkspace` | `initializeWorkspace(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.createReviewInput` | `createReviewInput(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.prepareAiReviewInputDraft` | `prepareAiReviewInputDraft(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.applyAiReviewInputDraft` | `applyAiReviewInputDraft(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.prepareAiTraceabilityDraft` | `prepareAiTraceabilityDraft(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.applyAiTraceabilityDraft` | `applyAiTraceabilityDraft(buildApplyTraceabilityDraftOptions(input))` |
+| `bobCodeConsistency.openTraceabilityPrep` | `openTraceabilityPrep(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.validateTraceabilityCatalog` | `validateTraceabilityCatalog(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.createReviewInputFromTraceability` | `createReviewInputFromTraceability(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.repairReviewInput` | `repairReviewInput(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.explainReviewInputDiagnostics` | `explainReviewInputDiagnostics(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.preprocess` | `preprocess(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.captureBobOutput` | `captureBobOutput(buildCaptureBobOutputOptions(input))` |
+| `bobCodeConsistency.validateOutput` | `validateOutput(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.triage` | `triage(mergeWorkflowOptions(input))` |
 
-workflow 実行時は、次の情報を統合する。
+workflow 実行時は、`input.inputs`、`input.args`、`workflowRoot`、`workflowFile`、`workflowFolderName`、`bobRoot`、`workspaceRoot` を統合する。`captureBobOutput` は `buildCaptureWorkflowOptions()` を使い、workflow state / inputs / args から text 候補を組み立てる。`applyAiTraceabilityDraft` は option text が無い場合に `state.traceabilityDraftJson` を利用する。
 
-- `input.inputs`
-- `input.args`
-- `workflowRoot`
-- `workflowFile`
-- `workflowFolderName`
-- `bobRoot`
-- `workspaceRoot`
+## 9. Review Input Discovery / Wizard / Builder
 
-`captureBobOutput` は `buildCaptureWorkflowOptions()` を使い、workflow state / inputs / args から取り込み option を組み立てる。
+`reviewInputDiscovery.ts` は既定で `<workspaceRoot>/docs` を走査し、`.md`、`.markdown`、`.docx`、`.xlsx` を候補とする。Markdown と Excel では `REQ`、`BD`、`DD`、`TC`、`QA`、`RV`、`ERR`、`ISSUE`、`TICKET`、`LEDGER` などの ID 候補を抽出する。path 名から artifact kind を推定する。
 
-## 9. Preprocess pipeline 詳細
+`reviewInputWizard.ts` は discovery result を人間に選択させ、`ReviewInputDraft` を作る。
+
+`reviewInputBuilder.ts` は draft を最終 `ReviewInput` に変換する。
+
+- `review.change_type`、`review.vcs`、`artifact.kind`、`review_focus` を enum 検証する。
+- `focus_preset` から review focus を補完する。
+- artifact path が workspace 外へ逃げる場合は error にする。
+- `strictPaths` が true の場合、存在しない artifact path を error にする。
+- `analysis_options` と `bob_options` の既定値を補完する。
+- schema validation 後に YAML を出力する。
+- 既存 file は backup して上書きする。
+
+## 10. Review Input AI Draft / Diagnostics
+
+`reviewInputAiDraftProvider.ts` は `prepareAiReviewInputDraftPrompt()` と `applyAiReviewInputDraft()` を提供する。
+
+`prepareAiReviewInputDraftPrompt()` は次を収集し、`.bob-review/review-input-draft/ai-draft-prompt.md` を生成する。
+
+- document candidates
+- 既存 `review-input.yaml` diagnostics
+- Git / Bazaar diff summary
+- allowed enum
+- required JSON shape
+- discovery warnings
+
+AI への出力制約は、Markdown や YAML ではなく `ReviewInputDraft` JSON object のみとする。
+
+`applyAiReviewInputDraft()` は raw JSON、fenced JSON、clipboard text から JSON を抽出し、builder を通して `review-input.yaml` を生成する。
+
+`reviewInputDiagnostics.ts` は既存 input の schema / path diagnostics、自然言語説明、legacy repair を提供する。
+
+## 11. Traceability Catalog 詳細
+
+Traceability catalog は `.bob-trace/traceability-catalog.json` に保存する。
+
+```ts
+interface TraceabilityCatalog {
+  schema_version: 1
+  documents: TraceabilityDocument[]
+  domains: TraceabilityDomain[]
+  items: TraceabilityItem[]
+  links?: TraceabilityLink[]
+  decisions?: TraceabilityDecision[]
+}
+```
+
+主な enum:
+
+| 種類 | 値 |
+| --- | --- |
+| status | `proposed`, `accepted`, `rejected`, `deprecated` |
+| item type | `requirement`, `basic_design`, `detailed_design`, `test_spec`, `qa_item`, `review_finding` |
+| link type | `satisfies`, `elaborates`, `verified_by`, `clarifies`, `reviewed_by`, `references` |
+| gate | `basic_design`, `detailed_design`, `test` |
+
+`traceabilityCatalogStore.ts` は catalog 読み込み、空 catalog 作成、backup 付き書き込み、gate report 書き込みを行う。`validateAndWriteTraceabilityGateReport()` は validation 結果を Markdown 化して `.bob-trace/gate-report.md` に保存する。
+
+`buildReviewInputDraftFromTraceability()` は accepted item だけを対象に、item type を artifact kind へ変換して `ReviewInputDraft` を作る。
+
+## 12. Traceability Commands / Webview
+
+`traceabilityCommands.ts` は次を提供する。
+
+| 関数 | 処理 |
+| --- | --- |
+| `runPrepareAiTraceabilityDraft` | diff summary と catalog を使い、AI draft prompt を `.bob-trace/ai-traceability-draft` に生成する。 |
+| `runApplyAiTraceabilityDraft` | inline JSON、clipboard、path、既定 `ai-draft*.json` から draft を読み、catalog に反映する。 |
+| `runValidateTraceabilityCatalog` | catalog を検証し gate report を生成する。 |
+| `runCreateReviewInputFromTraceability` | accepted item から `review-input.yaml` を生成する。 |
+| `runOpenTraceabilityPrep` | Webview を開く。 |
+
+`resolveTraceabilityDraftText()` は inline JSON を優先し、次に Markdown link / quoted path / bare `.json` path / `traceabilityDraftJsonPath` / 既定 `ai-draft*.json` を探す。path は workspace 内に限定する。
+
+`traceabilityPrepWebview.ts` は `Traceability Prep` panel を作成する。タブは Domains、Items、Links、Decisions、Gate Report、Review Input Preview である。Save 時は catalog を backup 付きで保存し、gate report を再生成する。
+
+## 13. Preprocess pipeline 詳細
 
 `preprocessReview()` は次の順で処理する。
 
-```mermaid
-sequenceDiagram
-  participant P as preprocessReview
-  participant I as validateReviewInput
-  participant G as collectGitDiff / collect Bazaar diff
-  participant D as extractDocuments
-  participant C as analyzeCppChanges
-  participant T as buildTraceability
-  participant B as buildReviewPackage
-
-  P->>I: inputPath, workspaceRoot
-  I-->>P: ReviewInput
-  P->>G: ReviewInput, workspaceRoot
-  G-->>P: DiffSummary
-  P->>D: ReviewInput, workspaceRoot
-  D-->>P: DocumentExtractionResult
-  P->>C: DiffSummary, ReviewInput, workspaceRoot
-  C-->>P: CodeAnalysisResult
-  P->>T: ReviewInput, documents, codeAnalysis, diff
-  T-->>P: TraceabilityResult
-  P->>B: build package files
-  B-->>P: written
-```
+1. `validateReviewInput(inputPath, workspaceRoot)` で YAML と artifact path を検証する。
+2. `collectGitDiff()` または Bazaar diff 収集を実行する。
+3. `extractDocuments()` で文書 evidence を抽出する。
+4. `analyzeCppChanges()` で C / C++ 変更を軽量解析する。
+5. `buildTraceability()` で対応候補を作る。
+6. `buildReviewPackage()` で成果物を出力する。
 
 `PreprocessResult` は status、reviewId、packageDir、changedFiles、documentEvidence、codeEvidence、warnings、summary を返す。
 
-## 10. Review Input Validation 詳細
+## 14. Review Input Validation 詳細
 
 `validateReviewInput(inputPath, workspaceRoot)` は次を行う。
 
@@ -197,13 +280,9 @@ sequenceDiagram
 5. `artifacts` に指定された文書 path の存在確認を行う。
 6. `ReviewInput` を返す。
 
-`artifacts` の値が array の場合、各 item の `path` を workspace root から解決し、存在しない場合は error にする。
+## 15. VCS Diff Collector 詳細
 
-## 11. VCS Diff Collector 詳細
-
-### 11.1 Git
-
-通常時に次を実行する。
+Git では次を実行する。
 
 ```text
 git diff --name-status <base> <head>
@@ -211,23 +290,15 @@ git diff --numstat <base> <head>
 git diff --unified=80 <base> <head>
 ```
 
-`diffFixturePath` が指定された場合は、Git を実行せず fixture JSON を読み込む。
+`diffFixturePath` が指定された場合は Git を実行せず fixture JSON を読み込む。
 
-### 11.2 Bazaar
-
-review input または option で Bazaar / bzr が指定された場合、`bzrPath` を使い、必ず `--no-aliases` を付けて差分を取得する。
-
-Bazaar 出力も `textEncoding` の decode 対象である。
-
-### 11.3 DiffSummary
+review input または option で Bazaar / bzr が指定された場合、`bzrPath` を使い、必ず `--no-aliases` を付けて差分を取得する。Bazaar 出力も `textEncoding` の decode 対象である。
 
 `DiffSummary` は base、head、files、unifiedDiff、warnings を持つ。`files` は path、status、additions、deletions、language、test file flag、interface candidate flag を持つ。
 
-## 12. Document Extractor 詳細
+## 16. Document Extractor 詳細
 
 `extractDocuments(reviewInput, { workspaceRoot })` は `reviewInput.artifacts` を走査する。
-
-対応 artifact key と evidence prefix:
 
 | artifact key | evidence type | prefix |
 | --- | --- | --- |
@@ -240,52 +311,19 @@ Bazaar 出力も `textEncoding` の decode 対象である。
 
 Markdown は見出しごとに block 化する。`.docx` は `mammoth.convertToHtml()` と `cheerio` で heading、paragraph、table を抽出する。`.xlsx` は `xlsx` で workbook を読み、指定 sheets または全 sheets を走査する。
 
-抽出した chunk ごとに `REQ-0001`、`BD-0001`、`DD-0001`、`TC-0001`、`LEDGER-0001` のような `evidence_id` を付与する。
+## 17. C / C++ Change Analyzer 詳細
 
-## 13. C / C++ Change Analyzer 詳細
+`c` / `cpp` / `h` / `hpp` の変更ファイルを対象とする。`analyzeCppChanges()` は unified diff から変更行と token を抽出し、source file を読み込み、正規表現ベースで関数範囲を検出する。変更行を含む関数を changed function とし、callee / direct caller、`#define`、global、RT 禁止処理候補、code slice、code evidence を生成する。
 
-`c` / `cpp` / `h` / `hpp` の変更ファイルを対象とする。
+関数検出は軽量な正規表現ベースであり、完全な C / C++ 意味解析ではない。
 
-`analyzeCppChanges()` は次を行う。
+## 18. Traceability Builder 詳細
 
-1. unified diff から追加・削除行を抽出する。
-2. 変更識別子 token を抽出する。
-3. 変更ファイルを workspace 内で解決する。
-4. source file を読み込む。
-5. 正規表現ベースで関数範囲を検出する。
-6. 変更行を含む関数を changed function とする。
-7. changed function の callees / direct callers を抽出する。
-8. `#define` 候補、global 候補を抽出する。
-9. RT 禁止処理候補を検出する。
-10. code slice と code evidence を生成する。
+`buildTraceability()` は、review input、document evidence、code evidence、diff summary をもとに、要求・設計・コード・テスト仕様の対応候補を作る。現状は evidence ID、文書種別、変更シンボル、review focus を用いた候補生成であり、AI 判断の代替ではない。
 
-関数検出は軽量な正規表現ベースであり、`if`、`for`、`while`、`switch`、`return` は関数候補から除外する。
+## 19. Review Package Builder 詳細
 
-RT 禁止処理候補:
-
-```text
-fopen, fread, fwrite, fprintf, printf, scanf, sleep, Sleep, malloc, free, system
-```
-
-## 14. Traceability Builder 詳細
-
-`buildTraceability()` は、review input、document evidence、code evidence、diff summary をもとに、要求・設計・コード・テスト仕様の対応候補を作る。
-
-現状は evidence ID、文書種別、変更シンボル、review focus を用いた候補生成であり、AI 判断の代替ではない。Bob が意味的な不整合候補を抽出するための足場である。
-
-## 15. Review Package Builder 詳細
-
-`buildReviewPackage()` は次を行う。
-
-1. output directory を作成する。
-2. prompt template を書き出す。
-3. code slices を `code-slices/` に書き出す。
-4. table evidence を `tables/` に書き出す。
-5. JSON index 群を書き出す。
-6. Markdown summary 群を書き出す。
-7. prompt template を適用し、`bob-input.md` を生成する。
-
-### 15.1 JSON files
+`buildReviewPackage()` は output directory を作成し、prompt template、code slices、table evidence、JSON index 群、Markdown summary 群、`bob-input.md` を書き出す。
 
 | ファイル | 内容 |
 | --- | --- |
@@ -295,11 +333,6 @@ fopen, fread, fwrite, fprintf, printf, scanf, sleep, Sleep, malloc, free, system
 | `document-index.json` | documents と warning。 |
 | `evidence-index.json` | evidence metadata。本文は除外。 |
 | `traceability-map.json` | traceability rows と warning。 |
-
-### 15.2 Markdown files
-
-| ファイル | 内容 |
-| --- | --- |
 | `change-summary.md` | review summary と変更ファイル一覧。 |
 | `diff-context.md` | code slices と raw unified diff。 |
 | `document-excerpts.md` | 文書根拠抜粋。 |
@@ -307,22 +340,9 @@ fopen, fread, fwrite, fprintf, printf, scanf, sleep, Sleep, malloc, free, system
 | `deterministic-checks.md` | warning と evidence duplicate check。 |
 | `bob-input.md` | Bob 投入用の最終 Markdown。 |
 
-`evidence-index.json` には本文を含めず、metadata だけを保存する。Bob 出力検証ではこの file を参照し、存在しない `evidence_id` を検出する。
+`evidence-index.json` には本文を含めず metadata だけを保存する。Bob 出力検証ではこの file を参照し、存在しない `evidence_id` を検出する。
 
-## 16. Prompt Template 詳細
-
-`src/templates` は次の prompt を持つ。
-
-| Template | 用途 |
-| --- | --- |
-| `system.md` | Bob の役割と制約。 |
-| `task.md` | 整合プレレビューの作業指示。 |
-| `output-format.md` | Bob 出力 YAML schema の説明。 |
-| `bob-input.md` | review-package 内容を合成する最終テンプレート。 |
-
-`templateLoader.ts` は template を読み込み、`applyTemplate()` で placeholder を置換する。
-
-## 17. Bob Output Capture 詳細
+## 20. Bob Output Capture / Validator 詳細
 
 `runCaptureBobOutput()` は次の順で text を決める。
 
@@ -331,32 +351,13 @@ fopen, fread, fwrite, fprintf, printf, scanf, sleep, Sleep, malloc, free, system
 3. workflow state / inputs / args から組み立てた text。
 4. clipboard text。
 
-`extractYamlFromText()` は fenced YAML code block、text 全体が `schema_version:` を含む YAML、text 中の `schema_version:` 以降を試す。
+`extractYamlFromText()` は fenced YAML code block、text 全体が `schema_version:` を含む YAML、text 中の `schema_version:` 以降を試す。YAML parse に成功した場合、`YAML.stringify(parsed)` で正規化し、`bobOutputPath` に保存する。
 
-YAML parse に成功した場合、`YAML.stringify(parsed)` で正規化し、`bobOutputPath` に保存する。
+`validateBobOutput()` は `bobOutputPath` を読み、schema を検証し、`packageDir/evidence-index.json` と照合する。`findings[].evidence[]` と `questions[].evidence[]` の `evidence_id` が存在しない場合は error とする。findings / questions が 30 件超の場合は warning を出す。
 
-## 18. Bob Output Validator 詳細
+## 21. Human Triage 詳細
 
-`validateBobOutput()` は次を行う。
-
-1. `bobOutputPath` を読み込む。
-2. YAML parse する。
-3. `bob-output` schema を検証する。
-4. `packageDir/evidence-index.json` を読み込む。
-5. `findings[].evidence[]` と `questions[].evidence[]` の `evidence_id` が存在するか確認する。
-6. findings / questions が 30 件超の場合 warning を出す。
-
-VS Code command としては、error が 0 件なら `status: ok`、1 件以上なら `status: error` を付けて返す。
-
-## 19. Human Triage 詳細
-
-入力:
-
-- `packageDir`
-- `bobOutputPath`
-- `outDir`
-
-生成ファイル:
+`humanTriageHelper.ts` は次のファイルを生成する。
 
 | ファイル | 詳細 |
 | --- | --- |
@@ -368,61 +369,58 @@ VS Code command としては、error が 0 件なら `status: ok`、1 件以上�
 
 triage は最終判断を自動化しない。`triage-result.yaml` の `decision`、`reason`、`owner`、`due` は人間が記入する。
 
-## 20. Schema 詳細
+## 22. File I/O と文字コード
 
-`review-input.schema.json` は `review-input.yaml` の required field、artifact array、review focus、analysis options を検証する。
+`readTextFile()` は `decodeTextBuffer()` を使って file を読み込む。既定は `auto` である。UTF-8 と Shift-JIS / CP932 系日本語テキストを想定する。生成ファイルは UTF-8 で書き込む。`writeTextFile()` は親 directory を recursive に作成してから書き込む。
 
-`bob-output.schema.json` は Bob 出力 YAML の構造を検証する。schema validation だけでは evidence の存在までは確認できないため、`bobOutputValidator` が `evidence-index.json` と照合する。
-
-## 21. File I/O と文字コード
-
-`readTextFile()` は `decodeTextBuffer()` を使って file を読み込む。既定は `auto` である。
-
-想定:
-
-- UTF-8
-- Shift-JIS / CP932 系日本語テキスト
-
-生成ファイルは UTF-8 で書き込む。`writeTextFile()` は親 directory を recursive に作成してから書き込む。
-
-## 22. Error Handling 詳細
+## 23. Error Handling 詳細
 
 | 発生箇所 | エラー処理 |
 | --- | --- |
 | review input parse | YAML parse error または schema error を throw。 |
 | missing artifact | missing file 一覧を含む error を throw。 |
+| AI draft parse | result `status: "error"` と errors を返す。 |
+| traceability catalog parse | read result `status: "error"` と errors を返す。 |
+| traceability gate error | review-input 生成を止め、gate report を更新する。 |
 | Git / Bazaar command failure | preprocess 失敗。 |
 | document extraction failure | warning に追加して続行。 |
 | changed function 未検出 | warning に追加して続行。 |
-| Bob output YAML 不在 | capture result `status: error`。 |
-| Bob output parse error | capture result `status: error` または validation errors。 |
+| Bob output YAML 不在 | capture result `status: "error"`。 |
+| Bob output parse error | capture result `status: "error"` または validation errors。 |
 | evidence-index 不在 | validation error。 |
 | unknown evidence_id | validation error。 |
 | triage output write error | command failure。 |
-| initialize workspace | 既存 workflow を backup してから更新。 |
+| initialize workspace | workflow は backup 後更新、既存 review-input は上書きしない。 |
 
-## 23. セキュリティ詳細
+## 24. セキュリティ詳細
 
 - Bob に渡す情報は、前処理で生成した `review-package` に固定する。
 - Bob が外部ファイルを追加探索する前提にはしない。
 - Bob 出力は `evidence-index.json` に存在する evidence のみを根拠として認める。
-- 通常フローでは Git commit、Git push、PR コメント投稿、ソースコード変更、文書更新、正式承認を行わない。
-- 現状の path 解決は absolute path を許容するため、将来的には明示許可がない限り workspace root 外への参照を拒否する設計が望ましい。
+- 通常フローでは commit、push、PR コメント投稿、ソースコード変更、文書更新、正式承認を行わない。
+- `ReviewInputBuilder` は artifact path escape を拒否する。
+- traceability draft path は workspace 内だけ許可する。
+- catalog path / report path は運用互換のため absolute path も扱うが、既定は workspace 内である。
 
-## 24. 状態と保存先
+## 25. 状態と保存先
 
 | 種類 | 既定保存先 |
 | --- | --- |
 | workflow template | `.bob/workflows/code-consistency-review/WORKFLOW.md` |
 | 入力 | `review-input.yaml` |
+| 初期 placeholder | `docs/review-input-placeholder.md` |
 | review-package | `.bob-review/review-package` |
+| review-input AI draft prompt | `.bob-review/review-input-draft/ai-draft-prompt.md` |
+| traceability catalog | `.bob-trace/traceability-catalog.json` |
+| traceability gate report | `.bob-trace/gate-report.md` |
+| traceability AI draft prompt | `.bob-trace/ai-traceability-draft/ai-draft-prompt.md` |
 | Bob output | `.bob-review/bob-output/bob-output.yaml` |
 | human triage | `.bob-review/human-triage` |
 | prompt template copy | `.bob-review/review-package/prompts` |
 | code slices | `.bob-review/review-package/code-slices` |
 | table excerpts | `.bob-review/review-package/tables` |
 
-## 25. 同梱 workflow 詳細
+## 26. 同梱 workflow 詳細
 
 同梱 workflow:
 
@@ -430,16 +428,7 @@ triage は最終判断を自動化しない。`triage-result.yaml` の `decision
 templates/.bob/workflows/code-consistency-review/WORKFLOW.md
 ```
 
-現行 template は `schemaVersion: workflow-register/v1` を使い、次を持つ。
-
-- `requires.bob.minVersion: "2.0.0"`
-- `guardrails.allowedCommands`
-- `guardrails.requireApproval`
-- `inputs`
-- `tools`
-- `artifacts`
-- `completion`
-- typed `steps`
+現行 template は `schemaVersion: workflow-register/v1` を使い、`requires.bob.minVersion`、`guardrails.allowedCommands`、`guardrails.requireApproval`、`inputs`、`tools`、`artifacts`、`completion`、typed `steps` を持つ。
 
 主な step:
 
@@ -452,13 +441,21 @@ templates/.bob/workflows/code-consistency-review/WORKFLOW.md
 | `human-triage` | command | triage 成果物を生成する。 |
 | `handoff-formal-review` | agent | 正式レビューへの引き継ぎ Markdown を作る。 |
 
-## 26. テスト設計
+## 27. テスト設計
 
 | 対象 | 観点 |
 | --- | --- |
-| `workspaceInitializer` | workflow 作成、更新、backup、unchanged。 |
+| `workspaceInitializer` | workflow 作成、更新、backup、review-input 雛形、placeholder document、既存 input 非上書き。 |
+| `reviewInputDiscovery` | docs 探索、ID 抽出、artifact kind 推定、warning。 |
+| `reviewInputBuilder` | enum、focus preset、path containment、strictPaths、schema validation、backup。 |
+| `reviewInputAiDraftProvider` | prompt 内容、diff summary、JSON parse、draft 適用。 |
+| `reviewInputDiagnostics` | diagnostics、repair、説明。 |
+| `traceabilityCatalogStore` | read、empty catalog、backup write、gate report。 |
+| `traceabilityValidation` | required field、link 整合、decision、status。 |
+| `traceabilityPrepController` | action apply、model build、preview。 |
+| `traceabilityCommands` | AI draft prompt、draft text resolution、catalog 反映、review-input 生成。 |
 | `reviewInputValidator` | schema error、missing artifact。 |
-| `gitDiffCollector` | name-status / numstat parse、language 判定、fixture 利用。 |
+| `gitDiffCollector` | name-status / numstat parse、language 判定、fixture 利用、Bazaar mode。 |
 | `documentExtractor` | Markdown / docx / xlsx 抽出、selector、evidence ID。 |
 | `cCppChangeAnalyzer` | function range、changed function、callee / caller、RT 禁止候補。 |
 | `traceabilityBuilder` | evidence と code symbol の対応候補。 |
@@ -466,15 +463,18 @@ templates/.bob/workflows/code-consistency-review/WORKFLOW.md
 | `bobOutputCapture` | fenced YAML、schema_version 開始、parse error。 |
 | `bobOutputValidator` | schema error、unknown evidence_id、warning 上限。 |
 | `humanTriageHelper` | triage-result と Markdown 出力。 |
-| `extension` | workflow-register provider 登録、option merge。 |
+| `workflowProviderRegistration` | 15 provider 登録、option merge、state handoff。 |
 | workflow template | requires、guardrails、artifacts、steps、prompt 制約。 |
+| 実機 | VS Code / IBM Bob / workflow-register / Bob Workflow UI / Webview / 実ファイルでの結合動作。 |
+
+詳細な単体テスト仕様は `unit-test-spec-ja.md`、実機テスト仕様は `real-machine-test-spec-ja.md` に定義する。
 
 ## 27. 変更時の注意点
 
-- `review-input.schema.json` を変えた場合は README、設計書、テスト fixture を同期する。
+- `review-input.schema.json` を変えた場合は README、設計書、テスト fixture、builder を同期する。
 - `bob-output.schema.json` を変えた場合は prompt `output-format.md` と validator test を同期する。
+- traceability model を変えた場合は catalog store、validation、Webview、review-input 生成を同期する。
 - evidence ID 形式を変えた場合は document extractor、code analyzer、validator、triage を確認する。
 - C / C++ 解析を強化する場合は、正規表現ベースの限界と false positive / false negative を docs に明記する。
-- workspace path 制約を強化する場合は、絶対 path を使う既存利用との互換性を確認する。
-- `workspaceInitializer` を変更する場合は、既存 workflow backup と template refresh の挙動を確認する。
-- workflow-register の `ActionExecutionInput` 変更時は `workflowOptions.ts` と provider 登録を確認する。
+- workspace path 制約を強化する場合は、absolute path を使う既存利用との互換性を確認する。
+- `workspaceInitializer` を変更する場合は、既存 workflow backup、review-input 非上書き、placeholder 作成を確認する。

@@ -1,0 +1,349 @@
+{
+  "schema_version": 1,
+  "documents": [
+    {
+      "document_id": "RS001",
+      "display_id": "要求仕様 LIVE-001",
+      "source_path": "docs/requirements-live.md",
+      "id_source": "extracted"
+    },
+    {
+      "document_id": "BD001",
+      "display_id": "基本設計 LIVE-001",
+      "source_path": "docs/basic-design-live.md",
+      "id_source": "extracted"
+    },
+    {
+      "document_id": "DD001",
+      "display_id": "詳細設計 LIVE-001",
+      "source_path": "docs/detailed-design-live.md",
+      "id_source": "extracted"
+    },
+    {
+      "document_id": "TS001",
+      "display_id": "テスト仕様 LIVE-001",
+      "source_path": "docs/test-spec-live.md",
+      "id_source": "extracted"
+    },
+    {
+      "document_id": "QA001",
+      "display_id": "課題台帳 LIVE-001",
+      "source_path": "docs/error-ledger-live.md",
+      "id_source": "extracted"
+    },
+    {
+      "document_id": "RV001",
+      "display_id": "レビュー指摘 LIVE-001",
+      "source_path": "docs/review-findings-live.md",
+      "id_source": "extracted"
+    }
+  ],
+  "domains": [
+    {
+      "code": "PAY",
+      "label": "決済",
+      "description": "支払限度額とタイムアウト処理",
+      "status": "proposed"
+    },
+    {
+      "code": "FRAUD",
+      "label": "不正審査",
+      "description": "不正スコア判定と審査遷移",
+      "status": "proposed"
+    },
+    {
+      "code": "RT",
+      "label": "リアルタイム",
+      "description": "RT/TS 制約を受けるキャッシュ更新",
+      "status": "proposed"
+    }
+  ],
+  "items": [
+    {
+      "proposed_id": "REQ-RS001-PAY-0001",
+      "type": "requirement",
+      "source_document_id": "RS001",
+      "domain": "PAY",
+      "sequence": 1,
+      "source_path": "docs/requirements-live.md",
+      "text_summary": "プレミアム顧客の一日利用上限は基本上限に 10000 を加算する。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "REQ-RS001-PAY-0002",
+      "type": "requirement",
+      "source_document_id": "RS001",
+      "domain": "PAY",
+      "sequence": 2,
+      "source_path": "docs/requirements-live.md",
+      "text_summary": "タイムアウト時は ERR_TIMEOUT を返し、正常完了として扱わない。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "REQ-RS001-FRAUD-0001",
+      "type": "requirement",
+      "source_document_id": "RS001",
+      "domain": "FRAUD",
+      "sequence": 1,
+      "source_path": "docs/requirements-live.md",
+      "text_summary": "不正スコア 80 以上は ERR_FRAUD_REVIEW を返す。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "REQ-RS001-RT-0001",
+      "type": "requirement",
+      "source_document_id": "RS001",
+      "domain": "RT",
+      "sequence": 1,
+      "source_path": "docs/requirements-live.md",
+      "text_summary": "RT 経路では printf などの同期 I/O を行わない。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "BD-BD001-PAY-0001",
+      "type": "basic_design",
+      "source_document_id": "BD001",
+      "domain": "PAY",
+      "sequence": 1,
+      "source_path": "docs/basic-design-live.md",
+      "text_summary": "プレミアム上限加算は Payment_CalculateLimit に集約する。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "BD-BD001-PAY-0002",
+      "type": "basic_design",
+      "source_document_id": "BD001",
+      "domain": "PAY",
+      "sequence": 2,
+      "source_path": "docs/basic-design-live.md",
+      "text_summary": "タイムアウトは ERR_TIMEOUT を呼び出し元へ返却する。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "BD-BD001-FRAUD-0001",
+      "type": "basic_design",
+      "source_document_id": "BD001",
+      "domain": "FRAUD",
+      "sequence": 1,
+      "source_path": "docs/basic-design-live.md",
+      "text_summary": "不正スコア判定は Payment_AssessFraudScore で行う。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "BD-BD001-RT-0001",
+      "type": "basic_design",
+      "source_document_id": "BD001",
+      "domain": "RT",
+      "sequence": 1,
+      "source_path": "docs/basic-design-live.md",
+      "text_summary": "RT キャッシュ更新は副作用をメモリ更新に限定する。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "DD-DD001-PAY-0001",
+      "type": "detailed_design",
+      "source_document_id": "DD001",
+      "domain": "PAY",
+      "sequence": 1,
+      "source_path": "docs/detailed-design-live.md",
+      "text_summary": "プレミアム顧客は baseLimit + 10000 を上限とする。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "DD-DD001-PAY-0002",
+      "type": "detailed_design",
+      "source_document_id": "DD001",
+      "domain": "PAY",
+      "sequence": 2,
+      "source_path": "docs/detailed-design-live.md",
+      "text_summary": "timeoutDetected が真なら ERR_TIMEOUT を即時返却する。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "DD-DD001-FRAUD-0001",
+      "type": "detailed_design",
+      "source_document_id": "DD001",
+      "domain": "FRAUD",
+      "sequence": 1,
+      "source_path": "docs/detailed-design-live.md",
+      "text_summary": "fraudScore が 80 以上の場合に ERR_FRAUD_REVIEW を返す。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "DD-DD001-RT-0001",
+      "type": "detailed_design",
+      "source_document_id": "DD001",
+      "domain": "RT",
+      "sequence": 1,
+      "source_path": "docs/detailed-design-live.md",
+      "text_summary": "Payment_UpdateRealtimeCache は printf を使わない。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "TC-TS001-PAY-0001",
+      "type": "test_spec",
+      "source_document_id": "TS001",
+      "domain": "PAY",
+      "sequence": 1,
+      "source_path": "docs/test-spec-live.md",
+      "text_summary": "プレミアム上限加算のテスト。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "TC-TS001-PAY-0002",
+      "type": "test_spec",
+      "source_document_id": "TS001",
+      "domain": "PAY",
+      "sequence": 2,
+      "source_path": "docs/test-spec-live.md",
+      "text_summary": "タイムアウト時 ERR_TIMEOUT 返却のテスト。",
+      "status": "proposed"
+    },
+    {
+      "proposed_id": "QA-QA001-FRAUD-0001",
+      "type": "qa_item",
+      "source_document_id": "QA001",
+      "domain": "FRAUD",
+      "sequence": 1,
+      "source_path": "docs/error-ledger-live.md",
+      "text_summary": "不正スコアしきい値変更の承認要否を確認する。",
+      "status": "proposed",
+      "qa": {
+        "question": "不正スコアしきい値 80 は今回も有効か。",
+        "answer": "",
+        "status": "open"
+      }
+    },
+    {
+      "proposed_id": "RV-RV001-RT-0001",
+      "type": "review_finding",
+      "source_document_id": "RV001",
+      "domain": "RT",
+      "sequence": 1,
+      "source_path": "docs/review-findings-live.md",
+      "text_summary": "RT 経路に printf を入れない過去指摘。",
+      "status": "proposed",
+      "review": {
+        "severity": "major",
+        "action_plan": "RT 経路では非同期 trace buffer を使う。",
+        "status": "closed"
+      }
+    }
+  ],
+  "links": [
+    {
+      "proposed_from": "REQ-RS001-PAY-0001",
+      "proposed_to": "BD-BD001-PAY-0001",
+      "link_type": "satisfies",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "REQ-RS001-PAY-0001",
+      "proposed_to": "TC-TS001-PAY-0001",
+      "link_type": "verified_by",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "BD-BD001-PAY-0001",
+      "proposed_to": "DD-DD001-PAY-0001",
+      "link_type": "elaborates",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "DD-DD001-PAY-0001",
+      "proposed_to": "TC-TS001-PAY-0001",
+      "link_type": "verified_by",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "REQ-RS001-PAY-0002",
+      "proposed_to": "BD-BD001-PAY-0002",
+      "link_type": "satisfies",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "REQ-RS001-PAY-0002",
+      "proposed_to": "TC-TS001-PAY-0002",
+      "link_type": "verified_by",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "BD-BD001-PAY-0002",
+      "proposed_to": "DD-DD001-PAY-0002",
+      "link_type": "elaborates",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "DD-DD001-PAY-0002",
+      "proposed_to": "TC-TS001-PAY-0002",
+      "link_type": "verified_by",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "REQ-RS001-FRAUD-0001",
+      "proposed_to": "BD-BD001-FRAUD-0001",
+      "link_type": "satisfies",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "BD-BD001-FRAUD-0001",
+      "proposed_to": "DD-DD001-FRAUD-0001",
+      "link_type": "elaborates",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "QA-QA001-FRAUD-0001",
+      "proposed_to": "REQ-RS001-FRAUD-0001",
+      "link_type": "clarifies",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "REQ-RS001-RT-0001",
+      "proposed_to": "BD-BD001-RT-0001",
+      "link_type": "satisfies",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "BD-BD001-RT-0001",
+      "proposed_to": "DD-DD001-RT-0001",
+      "link_type": "elaborates",
+      "status": "proposed"
+    },
+    {
+      "proposed_from": "DD-DD001-RT-0001",
+      "proposed_to": "RV-RV001-RT-0001",
+      "link_type": "reviewed_by",
+      "status": "proposed"
+    }
+  ],
+  "decisions": [
+    {
+      "subject": "REQ-RS001-FRAUD-0001",
+      "gate": "test",
+      "decision": "n/a",
+      "reason": "不正審査テストは未整備で、今回のレビューでは test-gap として扱う。",
+      "status": "proposed"
+    },
+    {
+      "subject": "DD-DD001-FRAUD-0001",
+      "gate": "test",
+      "decision": "n/a",
+      "reason": "詳細設計に対応するテストがなく、Bob で確認質問化する。",
+      "status": "proposed"
+    },
+    {
+      "subject": "REQ-RS001-RT-0001",
+      "gate": "test",
+      "decision": "n/a",
+      "reason": "RT/TS ルールは静的レビュー指摘として扱い、単体テストを持たない。",
+      "status": "proposed"
+    },
+    {
+      "subject": "DD-DD001-RT-0001",
+      "gate": "test",
+      "decision": "n/a",
+      "reason": "RT 経路の同期 I/O 禁止は Bob プレレビューで静的確認する。",
+      "status": "proposed"
+    }
+  ]
+}

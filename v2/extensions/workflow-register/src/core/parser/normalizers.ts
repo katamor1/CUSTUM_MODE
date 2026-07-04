@@ -115,6 +115,8 @@ export function normalizeGuardrails(record: Record<string, unknown>) {
   return {
     allowedCommands: listField(record, "allowedCommands"),
     deniedCommands: listField(record, "deniedCommands"),
+    allowedCommandIds: listField(record, "allowedCommandIds"),
+    deniedCommandIds: listField(record, "deniedCommandIds"),
     requireApproval: approvals.map((approval) => {
       const approvalRecord = asRecord(approval)
       return { id: optionalString(approvalRecord, "id"), when: optionalString(approvalRecord, "when"), message: optionalString(approvalRecord, "message") }

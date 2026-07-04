@@ -1,12 +1,12 @@
 # bob-code-consistency-review ドキュメント
 
-このディレクトリには、`bob-code-consistency-review` 拡張機能の設計・運用に関するドキュメントを配置します。
+このディレクトリには、`bob-code-consistency-review` 拡張機能の設計・運用・テストに関するドキュメントを配置します。
 
 ## 現在の実装状態
 
 `bob-code-consistency-review` は、コード変更と要求・設計・テスト仕様の整合プレレビューを行う実行可能な VS Code 拡張です。
 
-リファクタリング後は、`src/extensionCommandOptions.ts` に command option / prompt / path / notification helper を、`src/reviewInputWizard.ts` に対話式 `review-input.yaml` 作成 UI を分離しています。`src/extension.ts` には、Command Palette 登録、workflow provider mapping、traceability command、review-input AI draft、preprocess / capture / validate / triage の入口が残っています。
+リファクタリング後は、`src/extensionCommandOptions.ts` に command option / prompt / path / notification helper を、`src/reviewInputWizard.ts` に対話式 `review-input.yaml` 作成 UI を分離しています。workflow provider 登録は `src/workflowProviderRegistration.ts`、実行系 command は `src/reviewExecutionCommands.ts`、traceability sidecar / AI draft / Webview 操作は `src/traceabilityCommands.ts` と `src/webview/traceabilityPrepWebview.ts` が担当します。
 
 ## 設計書
 
@@ -14,7 +14,15 @@
   拡張機能の目的、背景、スコープ、全体構成、入力モデル、traceability sidecar、review-package、workflow-register 連携、Bob にさせること / させないこと、セキュリティ方針、テスト方針をまとめた基本設計書です。
 
 - `detailed-design-ja.md`  
-  VS Code command、workflow-register provider、前処理 pipeline、VCS 差分収集、文書抽出、C / C++ 軽量解析、review-package 生成、Bob 出力検証、human triage、テスト観点を整理した詳細設計書です。現在の実装では `extensionCommandOptions.ts` と `reviewInputWizard.ts` が `extension.ts` から分離済みです。
+  VS Code command、workflow-register provider、workspace 初期化、review-input 生成、AI draft、traceability sidecar / Webview、前処理 pipeline、VCS 差分収集、文書抽出、C / C++ 軽量解析、review-package 生成、Bob 出力検証、human triage、テスト観点を整理した詳細設計書です。
+
+## テスト仕様書
+
+- `unit-test-spec-ja.md`  
+  workspace 初期化、review-input 作成、AI draft、traceability sidecar、前処理、文書抽出、C / C++ 軽量解析、review-package、Bob 出力 capture / validation、triage、workflow-register provider の単体テスト仕様書です。
+
+- `real-machine-test-spec-ja.md`  
+  VS Code、IBM Bob、workflow-register、Bob Workflow UI、Traceability Prep Webview、Git / Bazaar、Markdown / docx / xlsx、C / C++ ソースを含む実機テスト仕様書です。
 
 ## 運用メモ
 

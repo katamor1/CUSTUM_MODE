@@ -160,6 +160,36 @@
           "enum": ["auto", "utf8", "shift_jis", "cp932", "windows-31j"],
           "default": "auto",
           "description": "review-input.yaml、Markdown 文書、C/C++ ソース、Git/Bazaar 差分 stdout、diff fixture の読み取り文字コード。auto は UTF-8 を優先し、文字化けが疑われる場合に Shift-JIS 系へ fallback します。"
+        },
+        "bobCodeConsistency.maxDocumentBytes": {
+          "type": "number",
+          "default": 5242880,
+          "description": "1 文書あたりの読み取り上限 bytes。Markdown は上限まで読み、DOCX/XLSX は上限超過時に抽出を中止します。"
+        },
+        "bobCodeConsistency.maxWorkbookSheets": {
+          "type": "number",
+          "default": 20,
+          "description": "XLSX 抽出時に処理する最大 sheet 数。"
+        },
+        "bobCodeConsistency.maxRowsPerSheet": {
+          "type": "number",
+          "default": 500,
+          "description": "XLSX 抽出時に 1 sheet あたり処理する最大 data row 数。"
+        },
+        "bobCodeConsistency.maxExcerptBytesPerDocument": {
+          "type": "number",
+          "default": 65536,
+          "description": "1 evidence excerpt あたりの最大 UTF-8 bytes。超過分は truncation warning とともに切り詰めます。"
+        },
+        "bobCodeConsistency.maxRawDiffBytes": {
+          "type": "number",
+          "default": 1048576,
+          "description": "review package と Bob input に含める raw unified diff の最大 UTF-8 bytes。"
+        },
+        "bobCodeConsistency.maxBobInputBytes": {
+          "type": "number",
+          "default": 2097152,
+          "description": "生成する bob-input.md の最大 UTF-8 bytes。"
         }
       }
     },
@@ -184,11 +214,15 @@
     }
   },
   "scripts": {
+    "architecture:policy": "node ../../scripts/check-import-cycles.js src",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
     "compile": "tsc -p ./",
+    "dependency:policy": "node --test test/dependencyPolicy.test.js",
     "test": "npm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "package": "vsce package",
+    "package:policy": "node ../../scripts/check-vsix-policy.js --max-bytes 11000000"
   },
   "dependencies": {
     "ajv": "^8.17.1",

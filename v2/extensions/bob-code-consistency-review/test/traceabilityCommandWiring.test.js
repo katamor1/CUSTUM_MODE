@@ -9,7 +9,8 @@ test("traceability commands carry text encoding into catalog and review-input fl
   assert.match(source, /prepareAiTraceabilityDraftPrompt\(\{[\s\S]*textEncoding[\s\S]*\}\)/)
   assert.match(source, /applyAiTraceabilityDraft\(\{ workspaceRoot, catalogPath, text, textEncoding \}\)/)
   assert.match(source, /validateAndWriteTraceabilityGateReport\(\{ workspaceRoot, catalogPath, reportPath, textEncoding \}\)/)
-  assert.match(source, /preprocessReview\(\{ workspaceRoot, inputPath, outDir, diffFixturePath, bzrPath, textEncoding \}\)/)
+  assert.match(source, /const limits = \{/)
+  assert.match(source, /preprocessReview\(\{ workspaceRoot, inputPath, outDir, diffFixturePath, bzrPath, textEncoding, limits \}\)/)
 })
 
 test("traceability commands reuse review metadata and focus options from shared helpers", () => {

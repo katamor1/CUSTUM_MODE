@@ -1,4 +1,5 @@
 import { ActionExecutionInput, ActionExecutionResult } from "./model"
+import { requireWorkspaceTrust, type WorkspaceTrustCheck } from "./workspaceTrust"
 
 export interface ActionProvider {
   id: string
@@ -31,6 +32,7 @@ export class ActionRegistry {
 
 export interface DefaultActionRegistryOptions {
   executeCommand: (command: string, ...args: unknown[]) => Promise<unknown> | unknown
+  isWorkspaceTrusted?: WorkspaceTrustCheck
 }
 
 export function createDefaultActionRegistry(options?: DefaultActionRegistryOptions): ActionRegistry {
@@ -39,6 +41,7 @@ export function createDefaultActionRegistry(options?: DefaultActionRegistryOptio
     registry.register({
       id: "vscode.executeCommand",
       execute: (input) => {
+        requireWorkspaceTrust(options.isWorkspaceTrusted, "running VS Code commands")
         const args = argumentList(input.args)
         const command = args.shift()
         if (typeof command !== "string" || !command.trim()) {

@@ -1,0 +1,86 @@
+schema_version: 1
+review_summary:
+  review_id: REVIEW-LIVE-TRACE-001
+  package_id: PACKAGE-LIVE-TRACE-SAMPLE
+  target_range: "main..feature/live-traceability-sidecar"
+  result_type: pre_review
+  final_approval: not_performed
+  scope_statement: "live-traceability-sidecar fixture の範囲だけを対象にした代表的なプレレビュー結果。"
+  generated_at: "2026-07-03T12:00:00+09:00"
+  prompt_template_id: consistency-review-v1
+
+findings:
+  - id: PRE-001
+    category: requirement-code-consistency
+    severity: high
+    confidence: high
+    summary: "タイムアウト時に ERR_TIMEOUT ではなく ERR_OK を返している。"
+    evidence:
+      - evidence_id: REQ-0002
+        type: requirement
+        ref: REQ-RS001-PAY-0002
+      - evidence_id: DD-0002
+        type: detailed_design
+        ref: DD-DD001-PAY-0002
+      - evidence_id: TC-0002
+        type: test_spec
+        ref: TC-TS001-PAY-0002
+      - evidence_id: SRC-0002
+        type: code
+        ref: Payment_HandleTimeout
+    reason: "要求、詳細設計、テスト仕様はいずれも ERR_TIMEOUT を求めているが、変更後コードは ERR_OK を返す。"
+    impact: "タイムアウトした決済が正常ステータスとして扱われる可能性がある。"
+    recommended_action: "timeoutDetected 分岐で ERR_TIMEOUT を返すよう修正する。"
+    human_check: "仕様変更であれば要求、設計、テスト仕様を承認付きで更新する。"
+
+  - id: PRE-002
+    category: rt-ts-rule
+    severity: medium
+    confidence: high
+    summary: "RT キャッシュ更新経路に printf が追加されている。"
+    evidence:
+      - evidence_id: REQ-0004
+        type: requirement
+        ref: REQ-RS001-RT-0001
+      - evidence_id: DD-0004
+        type: detailed_design
+        ref: DD-DD001-RT-0001
+      - evidence_id: SRC-0004
+        type: code
+        ref: Payment_UpdateRealtimeCache
+    reason: "RT 経路では同期 I/O を禁止しているが、変更後コードは printf を呼び出す。"
+    impact: "リアルタイム経路の応答時間やスケジューリングに影響する可能性がある。"
+    recommended_action: "printf を削除し、必要な計測は非同期 trace buffer に置き換える。"
+    human_check: "Payment_UpdateRealtimeCache が RT タスク上で実行されることを確認する。"
+
+questions:
+  - id: Q-001
+    category: test-policy
+    summary: "不正スコアしきい値の変更が承認済みか確認が必要。"
+    reason: "要求と詳細設計は 80 以上を審査対象としているが、変更後コードは 95 超だけを対象としている。"
+    evidence:
+      - evidence_id: REQ-0003
+        type: requirement
+        ref: REQ-RS001-FRAUD-0001
+      - evidence_id: DD-0003
+        type: detailed_design
+        ref: DD-DD001-FRAUD-0001
+      - evidence_id: LEDGER-0002
+        type: ledger
+        ref: QA-QA001-FRAUD-0001
+    suggested_owner: risk_owner
+    suggested_action: "しきい値 80 が有効か、仕様変更承認があるかを確認する。"
+
+coverage_notes:
+  - id: COV-001
+    type: checked
+    summary: "Payment_CalculateLimit は要求、設計、テスト仕様と整合している。"
+  - id: COV-002
+    type: out_of_scope
+    summary: "OPS 領域の AI 提案 REQ-RS001-OPS-0001 は未承認のため review-input 生成対象外。"
+
+rejected_or_uncertain:
+  - id: UNC-001
+    summary: "不正スコアしきい値変更の承認状態"
+    reason: "課題台帳に QA-QA001-FRAUD-0001 が残っており、承認状態が review-package だけでは確定しない。"
+    next_action: "リスクオーナーの承認履歴を確認し、必要なら要求とテスト仕様を更新する。"

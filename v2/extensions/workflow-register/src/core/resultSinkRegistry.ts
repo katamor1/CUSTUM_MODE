@@ -1,6 +1,7 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import { ResultSinkDefinition, ResultSinkWriteInput, ResultSinkWriteResult } from "./model"
+import { requireWorkspaceTrust, type WorkspaceTrustCheck } from "./workspaceTrust"
 
 type SinkHandler = (sink: ResultSinkDefinition, input: ResultSinkWriteInput) => Promise<ResultSinkWriteResult>
 
@@ -31,6 +32,7 @@ export interface DefaultResultSinkRegistryOptions {
   workspaceRoot: string
   executeCommand: (command: string, ...args: unknown[]) => Promise<unknown> | unknown
   allowedCommandSinks?: string[]
+  isWorkspaceTrusted?: WorkspaceTrustCheck
 }
 
 export function createDefaultResultSinkRegistry(options: DefaultResultSinkRegistryOptions): ResultSinkRegistry {
@@ -39,6 +41,7 @@ export function createDefaultResultSinkRegistry(options: DefaultResultSinkRegist
 
   registry.register("command", async (sink, input) => {
     if (sink.type !== "command") return { ok: false, error: `Invalid command sink: ${sink.type}` }
+    requireWorkspaceTrust(options.isWorkspaceTrusted, "writing command result sink")
     if (!allowedCommandSinks.has(sink.command)) return { ok: false, error: `Unsupported result command: ${sink.command}` }
     const value = await Promise.resolve(options.executeCommand(sink.command, input.text, ...(sink.args ?? []), commandContext(input, options.workspaceRoot)))
     const reportedError = commandReportedError(value)
@@ -48,6 +51,7 @@ export function createDefaultResultSinkRegistry(options: DefaultResultSinkRegist
 
   registry.register("file", async (sink, input) => {
     if (sink.type !== "file") return { ok: false, error: `Invalid file sink: ${sink.type}` }
+    requireWorkspaceTrust(options.isWorkspaceTrusted, "writing file result sink")
     const target = resolveWorkspacePath(options.workspaceRoot, renderTemplate(sink.path, input))
     await fs.mkdir(path.dirname(target), { recursive: true })
     await fs.writeFile(target, input.text, { encoding: sink.encoding ?? "utf8" })

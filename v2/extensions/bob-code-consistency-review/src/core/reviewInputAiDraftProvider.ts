@@ -4,7 +4,8 @@ import { discoverReviewInputCandidates } from "./reviewInputDiscovery"
 import { explainReviewInputDiagnostics } from "./reviewInputDiagnostics"
 import { ARTIFACT_KIND_VALUES, CHANGE_TYPE_VALUES, REVIEW_FOCUS_VALUES, VCS_VALUES, writeReviewInputFromDraft, type ReviewInputDraft } from "./reviewInputBuilder"
 import type { DiffSummary, ReviewInput } from "./types"
-import { writeTextFile } from "./fileSystem"
+import { resolveWorkspacePathStrict, writeTextFile } from "./fileSystem"
+import { extractSingleJsonObjectText } from "./structuredTextExtractor"
 
 export type PrepareAiReviewInputDraftPromptInput = {
   workspaceRoot: string
@@ -43,10 +44,12 @@ const MAX_CANDIDATE_COUNT = 120
 
 export async function prepareAiReviewInputDraftPrompt(input: PrepareAiReviewInputDraftPromptInput): Promise<PrepareAiReviewInputDraftPromptResult> {
   const warnings: string[] = []
+  const outputDir = resolveWorkspacePathStrict(input.workspaceRoot, input.outputDir, "aiDraftPromptPath")
+  const reviewInputPath = resolveWorkspacePathStrict(input.workspaceRoot, input.reviewInputPath, "reviewInputPath")
   const discovery = await discoverReviewInputCandidates(input.workspaceRoot, { textEncoding: input.textEncoding, maxFiles: MAX_CANDIDATE_COUNT })
   warnings.push(...discovery.warnings)
 
-  const diagnostics = await explainReviewInputDiagnostics({ inputPath: input.reviewInputPath, workspaceRoot: input.workspaceRoot, textEncoding: input.textEncoding })
+  const diagnostics = await explainReviewInputDiagnostics({ inputPath: reviewInputPath, workspaceRoot: input.workspaceRoot, textEncoding: input.textEncoding })
   let diff: DiffSummary | undefined
   try {
     diff = await collectGitDiff(minimalReviewInput(input), {
@@ -60,7 +63,7 @@ export async function prepareAiReviewInputDraftPrompt(input: PrepareAiReviewInpu
   }
 
   const prompt = renderPrompt({ input, diagnostics, diff, candidates: discovery.documents, warnings })
-  const promptPath = path.join(input.outputDir, PROMPT_FILE_NAME)
+  const promptPath = path.join(outputDir, PROMPT_FILE_NAME)
   await writeTextFile(promptPath, prompt)
   return { status: "ok", promptPath, prompt, warnings }
 }
@@ -94,21 +97,12 @@ export async function applyAiReviewInputDraft(input: ApplyAiReviewInputDraftInpu
 }
 
 export function parseAiReviewInputDraft(text: string): ReviewInputDraft {
-  const jsonText = extractJsonText(text)
+  const jsonText = extractSingleJsonObjectText(text, { label: "AI draft JSON text" })
   const parsed = JSON.parse(jsonText) as unknown
   if (!isRecord(parsed)) throw new Error("top-level value must be an object")
   if (!isRecord(parsed.review)) throw new Error("review must be an object")
   if (!Array.isArray(parsed.artifact_candidates)) throw new Error("artifact_candidates must be an array")
   return parsed as ReviewInputDraft
-}
-
-function extractJsonText(text: string): string {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced?.[1]?.trim()) return fenced[1].trim()
-  const first = text.indexOf("{")
-  const last = text.lastIndexOf("}")
-  if (first >= 0 && last > first) return text.slice(first, last + 1).trim()
-  return text.trim()
 }
 
 function renderPrompt(input: {

@@ -1,9 +1,14 @@
+import * as fs from "node:fs/promises"
 import * as path from "node:path"
-import * as cheerio from "cheerio"
-import * as mammoth from "mammoth"
-import * as XLSX from "xlsx"
-import { readTextFile, resolveWorkspacePath, toPosixPath } from "../core/fileSystem"
+import { resolveWorkspacePathStrict, toPosixPath } from "../core/fileSystem"
+import { decodeTextBuffer } from "../core/textEncoding"
+import { normalizeReviewProcessingLimits, truncateUtf8Text, type ReviewProcessingLimits } from "../core/limits"
 import type { DocumentExtractionResult, EvidenceRef, ReviewInput } from "../core/types"
+
+type CheerioAPI = import("cheerio").CheerioAPI
+type CheerioModule = typeof import("cheerio")
+type MammothModule = typeof import("mammoth")
+type XlsxModule = typeof import("xlsx")
 
 type ArtifactRef = {
   path?: string
@@ -27,6 +32,10 @@ type ExtractedChunk = {
 
 type DocumentMeta = DocumentExtractionResult["documents"][number]
 
+let cheerioModulePromise: Promise<CheerioModule> | undefined
+let mammothModulePromise: Promise<MammothModule> | undefined
+let xlsxModulePromise: Promise<XlsxModule> | undefined
+
 const ARTIFACT_TYPES: Record<string, { evidenceType: string; prefix: string; documentPrefix: string }> = {
   requirements: { evidenceType: "requirement", prefix: "REQ", documentPrefix: "REQ" },
   basic_design: { evidenceType: "basic_design", prefix: "BD", documentPrefix: "BD" },
@@ -36,12 +45,13 @@ const ARTIFACT_TYPES: Record<string, { evidenceType: string; prefix: string; doc
   tickets: { evidenceType: "ticket", prefix: "TICKET", documentPrefix: "TICKET" }
 }
 
-export async function extractDocuments(reviewInput: ReviewInput, options: { workspaceRoot: string; textEncoding?: string }): Promise<DocumentExtractionResult> {
+export async function extractDocuments(reviewInput: ReviewInput, options: { workspaceRoot: string; textEncoding?: string; limits?: Partial<ReviewProcessingLimits> }): Promise<DocumentExtractionResult> {
   const documents: DocumentMeta[] = []
   const evidence: EvidenceRef[] = []
   const excerpts: string[] = []
   const warnings: string[] = []
   const counters = new Map<string, number>()
+  const limits = normalizeReviewProcessingLimits(options.limits)
 
   for (const [artifactType, value] of Object.entries(reviewInput.artifacts)) {
     const typeInfo = ARTIFACT_TYPES[artifactType] ?? { evidenceType: artifactType, prefix: artifactType.toUpperCase(), documentPrefix: artifactType.toUpperCase() }
@@ -56,12 +66,12 @@ export async function extractDocuments(reviewInput: ReviewInput, options: { work
         continue
       }
 
-      const filePath = resolveWorkspacePath(options.workspaceRoot, item.path)
       const documentId = `DOC-${typeInfo.documentPrefix}-${String(documents.length + 1).padStart(4, "0")}`
       const selectors = selectorList(item)
       let chunks: ExtractedChunk[] = []
       try {
-        chunks = await extractFileChunks(filePath, item, typeInfo.evidenceType, selectors, options.textEncoding)
+        const filePath = resolveWorkspacePathStrict(options.workspaceRoot, item.path, "artifact path")
+        chunks = await extractFileChunks(filePath, item, typeInfo.evidenceType, selectors, warnings, limits, options.textEncoding)
       } catch (error) {
         warnings.push(`failed to extract ${item.path}: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -78,20 +88,21 @@ export async function extractDocuments(reviewInput: ReviewInput, options: { work
       }
 
       for (const chunk of chunks) {
+        const limitedChunk = limitChunkText(chunk, item.path, warnings, limits)
         const evidenceId = nextEvidenceId(typeInfo.prefix, counters)
         const evidenceRef: EvidenceRef = {
           evidence_id: evidenceId,
           type: typeInfo.evidenceType,
-          ref: chunk.ref,
+          ref: limitedChunk.ref,
           document_id: documentId,
           source: toPosixPath(item.path),
           version: item.version,
-          location: chunk.location,
-          text: chunk.text
+          location: limitedChunk.location,
+          text: limitedChunk.text
         }
         evidence.push(evidenceRef)
-        document.sections.push({ id: chunk.ref, title: chunk.title, evidence_id: evidenceId, location: chunk.location })
-        excerpts.push(renderExcerpt(evidenceId, item.path, item.version, typeInfo.evidenceType, chunk))
+        document.sections.push({ id: limitedChunk.ref, title: limitedChunk.title, evidence_id: evidenceId, location: limitedChunk.location })
+        excerpts.push(renderExcerpt(evidenceId, item.path, item.version, typeInfo.evidenceType, limitedChunk))
       }
 
       documents.push(document)
@@ -105,12 +116,45 @@ function selectorList(item: ArtifactRef): string[] {
   return [...(item.sections ?? []), ...(item.cases ?? []), ...(item.rows ?? [])].map((selector) => selector.trim()).filter(Boolean)
 }
 
-async function extractFileChunks(filePath: string, item: ArtifactRef, evidenceType: string, selectors: string[], textEncoding = "auto"): Promise<ExtractedChunk[]> {
+async function extractFileChunks(
+  filePath: string,
+  item: ArtifactRef,
+  evidenceType: string,
+  selectors: string[],
+  warnings: string[],
+  limits: ReviewProcessingLimits,
+  textEncoding = "auto"
+): Promise<ExtractedChunk[]> {
   const extension = path.extname(filePath).toLowerCase()
-  if (extension === ".md" || extension === ".markdown") return extractMarkdownChunks(await readTextFile(filePath, textEncoding), evidenceType, selectors)
+  if (extension === ".md" || extension === ".markdown") {
+    const read = await readLimitedTextFile(filePath, limits.maxDocumentBytes, textEncoding)
+    if (read.truncated) warnings.push(`${toPosixPath(item.path ?? filePath)} exceeded maxDocumentBytes (${read.originalBytes} > ${limits.maxDocumentBytes}); truncated before extraction.`)
+    return extractMarkdownChunks(read.text, evidenceType, selectors)
+  }
+  await assertDocumentWithinByteLimit(filePath, item.path ?? filePath, limits, warnings)
   if (extension === ".docx") return extractDocxChunks(filePath, evidenceType, selectors)
-  if (extension === ".xlsx") return extractXlsxChunks(filePath, item, evidenceType, selectors)
+  if (extension === ".xlsx") return extractXlsxChunks(filePath, item, evidenceType, selectors, warnings, limits)
   throw new Error(`unsupported document extension: ${extension || "(none)"}`)
+}
+
+async function readLimitedTextFile(filePath: string, maxBytes: number, textEncoding: string): Promise<{ text: string; truncated: boolean; originalBytes: number }> {
+  const stat = await fs.stat(filePath)
+  const length = Math.min(stat.size, maxBytes)
+  const handle = await fs.open(filePath, "r")
+  try {
+    const buffer = Buffer.alloc(length)
+    await handle.read(buffer, 0, length, 0)
+    return { text: decodeTextBuffer(buffer, textEncoding), truncated: stat.size > maxBytes, originalBytes: stat.size }
+  } finally {
+    await handle.close()
+  }
+}
+
+async function assertDocumentWithinByteLimit(filePath: string, sourcePath: string, limits: ReviewProcessingLimits, warnings: string[]): Promise<void> {
+  const stat = await fs.stat(filePath)
+  if (stat.size <= limits.maxDocumentBytes) return
+  warnings.push(`${toPosixPath(sourcePath)} exceeded maxDocumentBytes (${stat.size} > ${limits.maxDocumentBytes}); skipped.`)
+  throw new Error(`document exceeds maxDocumentBytes (${stat.size} > ${limits.maxDocumentBytes})`)
 }
 
 function extractMarkdownChunks(markdown: string, evidenceType: string, selectors: string[]): ExtractedChunk[] {
@@ -149,6 +193,7 @@ function extractMarkdownChunks(markdown: string, evidenceType: string, selectors
 }
 
 async function extractDocxChunks(filePath: string, evidenceType: string, selectors: string[]): Promise<ExtractedChunk[]> {
+  const [mammoth, cheerio] = await Promise.all([loadMammoth(), loadCheerio()])
   const html = (await mammoth.convertToHtml({ path: filePath })).value
   const $ = cheerio.load(html)
   const chunks: ExtractedChunk[] = []
@@ -193,9 +238,14 @@ async function extractDocxChunks(filePath: string, evidenceType: string, selecto
   return matchingChunks(chunks, selectors)
 }
 
-function extractXlsxChunks(filePath: string, item: ArtifactRef, evidenceType: string, selectors: string[]): ExtractedChunk[] {
+async function extractXlsxChunks(filePath: string, item: ArtifactRef, evidenceType: string, selectors: string[], warnings: string[], limits: ReviewProcessingLimits): Promise<ExtractedChunk[]> {
+  const XLSX = await loadXlsx()
   const workbook = XLSX.readFile(filePath, { cellDates: false })
-  const selectedSheets = item.sheets && item.sheets.length > 0 ? item.sheets : workbook.SheetNames
+  const allSelectedSheets = item.sheets && item.sheets.length > 0 ? item.sheets : workbook.SheetNames
+  const selectedSheets = allSelectedSheets.slice(0, limits.maxWorkbookSheets)
+  if (allSelectedSheets.length > selectedSheets.length) {
+    warnings.push(`${toPosixPath(item.path ?? filePath)} exceeded maxWorkbookSheets (${allSelectedSheets.length} > ${limits.maxWorkbookSheets}); remaining sheets skipped.`)
+  }
   const chunks: ExtractedChunk[] = []
 
   for (const sheetName of selectedSheets) {
@@ -204,7 +254,11 @@ function extractXlsxChunks(filePath: string, item: ArtifactRef, evidenceType: st
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: "" }) as unknown[][]
     if (rows.length === 0) continue
     const headers = rows[0].map((cell) => String(cell || "").trim())
-    for (let index = 1; index < rows.length; index += 1) {
+    const dataRows = rows.slice(1)
+    if (dataRows.length > limits.maxRowsPerSheet) {
+      warnings.push(`${toPosixPath(item.path ?? filePath)} sheet ${sheetName} exceeded maxRowsPerSheet (${dataRows.length} > ${limits.maxRowsPerSheet}); remaining rows skipped.`)
+    }
+    for (let index = 1; index <= Math.min(dataRows.length, limits.maxRowsPerSheet); index += 1) {
       const row = rows[index].map((cell) => String(cell || "").trim())
       if (row.every((cell) => !cell)) continue
       const rowText = [sheetName, ...row].join(" ")
@@ -221,6 +275,14 @@ function extractXlsxChunks(filePath: string, item: ArtifactRef, evidenceType: st
   }
 
   return matchingChunks(chunks, selectors)
+}
+
+function limitChunkText(chunk: ExtractedChunk, sourcePath: string, warnings: string[], limits: ReviewProcessingLimits): ExtractedChunk {
+  const suffix = "\n\n[truncated: maxExcerptBytesPerDocument]\n"
+  const limited = truncateUtf8Text(chunk.text, limits.maxExcerptBytesPerDocument, suffix)
+  if (!limited.truncated) return chunk
+  warnings.push(`${toPosixPath(sourcePath)} ${chunk.ref} exceeded maxExcerptBytesPerDocument (${limited.originalBytes} > ${limits.maxExcerptBytesPerDocument}); excerpt truncated.`)
+  return { ...chunk, text: limited.text }
 }
 
 function matchingChunks(chunks: ExtractedChunk[], selectors: string[]): ExtractedChunk[] {
@@ -255,7 +317,7 @@ function renderExcerpt(evidenceId: string, sourcePath: string, version: string |
   ].filter((line): line is string => line !== undefined).join("\n")
 }
 
-function htmlTableToMarkdown($: cheerio.CheerioAPI, table: any): string {
+function htmlTableToMarkdown($: CheerioAPI, table: any): string {
   const rows: string[][] = []
   $(table).find("tr").each((_, tr) => {
     const cells: string[] = []
@@ -286,4 +348,19 @@ function escapeCell(value: string): string {
 
 function firstKnownId(text: string): string | undefined {
   return text.match(/\b(?:REQ|BD|DD|TC|ERR|ISSUE|TICKET|LEDGER)(?:[-_][A-Za-z0-9]+)+\b/)?.[0]
+}
+
+function loadCheerio(): Promise<CheerioModule> {
+  cheerioModulePromise ??= import("cheerio")
+  return cheerioModulePromise
+}
+
+function loadMammoth(): Promise<MammothModule> {
+  mammothModulePromise ??= import("mammoth")
+  return mammothModulePromise
+}
+
+function loadXlsx(): Promise<XlsxModule> {
+  xlsxModulePromise ??= import("xlsx")
+  return xlsxModulePromise
 }

@@ -1,4 +1,3 @@
-import * as path from "node:path"
 import * as vscode from "vscode"
 import {
   CHANGE_TYPE_VALUES,
@@ -8,12 +7,23 @@ import {
   type ReviewFocus,
   type VcsKind
 } from "./core/reviewInputBuilder"
+import { resolveWorkspacePathStrict } from "./core/fileSystem"
 import { resolveBobWorkspaceRoot } from "./workspaceResolver"
 
 /** Shared VS Code command option, prompt, path, and notification helpers. */
 export function notifyInfo(message: string): void {
   console.info(message)
   vscode.window.setStatusBarMessage(message, 5000)
+}
+
+export function notifyInfoWithReport(message: string, reportPath: string): void {
+  notifyInfo(message)
+  void vscode.window.showInformationMessage(message, "Open Report").then((selection) => {
+    if (selection !== "Open Report") return undefined
+    return vscode.workspace.openTextDocument(reportPath)
+      .then((document) => vscode.window.showTextDocument(document, { preview: false }))
+      .then(undefined, (error) => console.warn(`Failed to open report: ${reportPath}`, error))
+  })
 }
 
 export function notifyError(message: string): void {
@@ -77,11 +87,18 @@ export function splitCsv(value: string): string[] | undefined {
 }
 
 export function absolute(root: string, value: string): string {
-  return path.isAbsolute(value) ? value : path.join(root, value)
+  return resolveWorkspacePathStrict(root, value)
 }
 
 export function optionalAbsolute(root: string, value: string | undefined): string | undefined {
   return value ? absolute(root, value) : undefined
+}
+
+export function resolveTrustedBzrPath(record: Record<string, unknown>, configuredPath: string | undefined): string {
+  if (stringOption(record, "bzrPath")) {
+    throw new Error("bzrPath cannot be overridden by workflow args. Configure bobCodeConsistency.bzrPath in user or global settings.")
+  }
+  return configuredPath?.trim() || "bzr"
 }
 
 export function stringOption(record: Record<string, unknown>, key: string): string | undefined {
@@ -92,6 +109,16 @@ export function stringOption(record: Record<string, unknown>, key: string): stri
 export function booleanOption(record: Record<string, unknown>, key: string): boolean | undefined {
   const value = record[key]
   return typeof value === "boolean" ? value : undefined
+}
+
+export function numberOption(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key]
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim())
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return undefined
 }
 
 export function firstString(value: unknown): string | undefined {

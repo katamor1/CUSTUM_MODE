@@ -1,20 +1,28 @@
 # bob-bazaar-review ドキュメント
 
-このディレクトリには、`bob-bazaar-review` 拡張機能の設計・運用に関するドキュメントを配置します。
+このディレクトリには、`bob-bazaar-review` 拡張機能の設計・運用・テストに関するドキュメントを配置します。
 
 ## 現在の実装状態
 
 `bob-bazaar-review` は、Bazaar 差分レビュー、project rules、review-result 保存、MCP 連携を提供する実行可能な VS Code 拡張です。
 
-リファクタリング後は、`workflow-register` 連携の薄い bridge と workflow action input helper を `src/workflowRegisterBridge.ts` に分離しています。これにより `src/extension.ts` は、Command Palette 登録、GUI 起動、Bazaar packet 作成、Bob context 連携、review-result 検証の入口に寄せています。
+リファクタリング後は、`workflow-register` 連携の薄い bridge と workflow action input helper を `src/workflowRegisterBridge.ts` に分離しています。直接レビュー command は `src/bazaarReviewCommands.ts`、active editor の review-result JSON 検証は `src/reviewResultValidationCommand.ts`、Bob 拡張の有無判定は `src/bobCodeExtension.ts` が担当します。
 
 ## 設計書
 
 - `basic-design-ja.md`  
-  拡張機能の目的、スコープ、全体構成、主要コンポーネント、workspace モデル、Bazaar 実行方針、workflow-register 連携、MCP、review-result 保存、セキュリティ方針をまとめた基本設計書です。
+  拡張機能の目的、スコープ、全体構成、主要コンポーネント、workspace モデル、Bazaar 実行方針、GUI / 直接レビュー command、workflow-register 連携、MCP、review-result 保存、セキュリティ方針をまとめた基本設計書です。
 
 - `detailed-design-ja.md`  
-  実装モジュール、主要データ、処理シーケンス、workspace 解決、GUI、MCP server、project rules、review-result capture、multi-root 動作、テスト観点を整理した詳細設計書です。現在の実装では `workflowRegisterBridge.ts` が workflow-register API 取得と workflow action input 解釈を担当します。
+  実装モジュール、VS Code command、workspace 解決、BazaarClient、GUI、直接レビュー command、MCP server、workflow-register bridge、project rules、review-result capture、multi-root 動作、テスト観点を整理した詳細設計書です。
+
+## テスト仕様書
+
+- `unit-test-spec-ja.md`  
+  BazaarClient、文字コード、workspace resolver、review packet、直接レビュー command、workflow-register bridge、review-result capture、MCP server、workflow template の単体テスト仕様書です。
+
+- `real-machine-test-spec-ja.md`  
+  VS Code、IBM Bob、workflow-register、Bob Workflow UI、Bazaar Review GUI、Bazaar CLI、MCP server、multi-root workspace を含む実機テスト仕様書です。
 
 ## 既存ドキュメント
 

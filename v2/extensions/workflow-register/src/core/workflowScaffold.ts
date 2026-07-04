@@ -26,6 +26,31 @@ export const workflowTemplates: Array<{ id: WorkflowTemplateKind; label: string;
   { id: "review-workflow", label: "Review Workflow", description: "Collects context and produces a structured review." }
 ]
 
+const WINDOWS_RESERVED_WORKFLOW_NAMES = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  "COM1",
+  "COM2",
+  "COM3",
+  "COM4",
+  "COM5",
+  "COM6",
+  "COM7",
+  "COM8",
+  "COM9",
+  "LPT1",
+  "LPT2",
+  "LPT3",
+  "LPT4",
+  "LPT5",
+  "LPT6",
+  "LPT7",
+  "LPT8",
+  "LPT9"
+])
+
 export function createWorkflowMarkdown(input: WorkflowScaffoldInput): string {
   const name = normalizeWorkflowName(input.name)
   const title = input.title.trim() || titleFromName(name)
@@ -44,8 +69,15 @@ export function createWorkflowMarkdown(input: WorkflowScaffoldInput): string {
 }
 
 export function normalizeWorkflowName(value: string): string {
-  const normalized = value.trim().replace(/\s+/g, "-").replace(/[^A-Za-z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^[._-]+/, "")
-  return normalized || "new-workflow"
+  const normalized = value.trim().replace(/\s+/g, "-").replace(/[^A-Za-z0-9._-]/g, "-").replace(/-+/g, "-").replace(/^[._-]+/, "").replace(/[. ]+$/, "")
+  return avoidWindowsReservedName(normalized || "new-workflow")
+}
+
+function avoidWindowsReservedName(name: string): string {
+  const dotIndex = name.indexOf(".")
+  const base = dotIndex < 0 ? name : name.slice(0, dotIndex)
+  if (!WINDOWS_RESERVED_WORKFLOW_NAMES.has(base.toUpperCase())) return name
+  return dotIndex < 0 ? `${name}-workflow` : `${base}-workflow${name.slice(dotIndex)}`
 }
 
 function quote(value: string): string {

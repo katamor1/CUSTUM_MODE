@@ -54,9 +54,22 @@ rejected_or_uncertain:
   })
 
   assert.equal(capture.status, "ok")
+  assert.ok(fs.existsSync(capture.rawOutputPath), "raw output should be saved beside the canonical output")
+  assert.ok(fs.existsSync(capture.canonicalOutputPath), "canonical output should be saved beside the primary output")
+  assert.ok(capture.rawValidation.errors.some((error) => error.includes("schema_version")))
+  assert.deepEqual(capture.canonicalValidation.errors, [])
+  assert.ok(capture.canonicalizationIssues.some((issue) => issue.code === "raw_validation_error"))
+  assert.ok(capture.canonicalizationIssues.some((issue) => issue.code === "defaulted_field" && issue.path === "$.review_summary.result_type"))
+  assert.ok(capture.canonicalizationIssues.some((issue) => issue.code === "generated_id" && issue.path === "$.findings[0].id"))
+
   const report = await validateBobOutput({ packageDir, bobOutputPath })
   assert.deepEqual(report.errors, [])
+  assert.ok(report.warnings.some((warning) => warning.includes("raw-output.yaml validation before canonicalization")))
+  assert.ok(report.warnings.some((warning) => warning.includes("canonical-output.yaml validation: ok")))
 
+  const rawSaved = YAML.parse(fs.readFileSync(capture.rawOutputPath, "utf8"))
+  assert.equal(rawSaved.schema_version, "1.0")
+  assert.equal(rawSaved.review_summary.result_type, undefined)
   const saved = YAML.parse(fs.readFileSync(bobOutputPath, "utf8"))
   assert.equal(saved.schema_version, 1)
   assert.equal(saved.review_summary.result_type, "pre_review")

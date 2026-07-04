@@ -15,10 +15,11 @@ test("Bazaar companion extension has no required companion extension dependency"
   assert.ok(!extensionDependencies.includes("local.workflow-register"))
   assert.ok(packageJson.activationEvents.includes("onStartupFinished"))
   assert.match(source, /const WORKFLOW_REGISTER_EXTENSION_ID = "local\.workflow-register"/)
-  assert.match(source, /registerWorkflowProviders\(context\)\.catch/)
+  assert.match(source, /registerWorkflowProvidersWithRetry\(context\)/)
   assert.match(source, /id: "bobBazaar\.openReviewGui"/)
   assert.match(source, /initialTargetFromWorkflowInputs\(input\.inputs, input\)/)
   assert.match(source, /id: "bobBazaar\.collectReviewContext"/)
+  assert.match(source, /execute: \(input\) => collectReviewContext\(input\)/)
   assert.match(source, /id: "bobBazaar\.loadReviewRules"/)
   assert.match(source, /execute: \(input\) => loadReviewRules\(input\)/)
   assert.match(source, /id: "bobBazaar\.captureReviewResult"/)
@@ -36,7 +37,19 @@ test("Bazaar capture command accepts workflow context appended by result sinks",
   assert.match(source, /export function captureOptionsFromCommandArgs\(args: unknown\[\]\): CaptureReviewResultOptions/)
   assert.match(source, /const workflowState = recordStringMap\(context\.state\)/)
   assert.match(source, /expectedChecklistItems: expectedChecklistItemsFromState\(workflowState\)/)
+  assert.match(source, /expectedRuleIds: expectedRuleIdsFromState\(workflowState\)/)
+  assert.match(source, /reviewResultSchema: reviewResultSchemaFromState\(workflowState\)/)
   assert.match(source, /workspaceRoot: stringInput\(context\.workflowRoot\)/)
+})
+
+test("Bazaar workflow provider registration retries optional workflow-register integration", () => {
+  const source = readSourceSet(["extension.ts"])
+
+  assert.match(source, /registerWorkflowProvidersWithRetry\(context\)/)
+  assert.match(source, /WORKFLOW_PROVIDER_RETRY_DELAYS_MS/)
+  assert.match(source, /vscode\.extensions\.onDidChange/)
+  assert.match(source, /setTimeout\(\(\) => attempt\(\)/)
+  assert.match(source, /workflowProvidersRegistered/)
 })
 
 test("Bazaar workflow template starts review target selection from the GUI by default", () => {
@@ -60,6 +73,16 @@ test("Bazaar workflow template declares the providers owned by this extension", 
   assertWorkflowProvider(workflow, "review-input", "openReviewGui", "false", undefined, "false")
   assertWorkflowProvider(workflow, "collect-context", "collectReviewContext", "true", "true", "true")
   assertWorkflowProvider(workflow, "load-rules", "loadReviewRules", "true", "true", "true")
+})
+
+test("Bazaar load-rules workflow result exposes project rule ids and schema to result capture", () => {
+  const source = readSourceSet(["extension.ts"])
+
+  assert.match(source, /ruleIds: string\[\]/)
+  assert.match(source, /reviewResultSchema: unknown/)
+  assert.match(source, /const ruleIds = checklist\.rules\.map\(\(rule\) => rule\.id\)/)
+  assert.match(source, /ruleIds,/)
+  assert.match(source, /reviewResultSchema: schema/)
 })
 
 function assertWorkflowProvider(workflow, stepId, provider, sendResult, required, completeOnSuccess) {

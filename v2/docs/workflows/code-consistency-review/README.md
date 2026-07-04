@@ -41,6 +41,7 @@
 | `.github/workflows/code-consistency-review-scaffold.yml` | scaffold の typecheck / unit / smoke CI |
 | `.bob/workflows/code-consistency-review/WORKFLOW.md` | Bob から整合プレレビュー手順を開始する workflow 定義 |
 | `examples/simple-timeout-bugfix/README.md` | E2E 検証用の timeout 不整合サンプル |
+| `examples/live-traceability-sidecar/README.md` | traceability sidecar 作成入力を含む実機検証用サンプル |
 
 ## MVP のゴール
 
@@ -89,7 +90,9 @@ runtime 実装は `extensions/bob-code-consistency-review/` に配置する。
 
 - VS Code 拡張 ID は `local.bob-code-consistency-review`。
 - `workflow-register` の `registerActionProvider` へ、preprocess / capture / validate / triage に加え、traceability-prep 系の provider を登録する。
-- `.bob/workflows/code-consistency-review/WORKFLOW.md` は manual CLI 手順ではなく、provider を使って `collect-document-candidates -> traceability draft -> human approval -> create review-input -> preprocess -> Bob agent -> capture -> validate -> triage -> handoff` を実行する。
+- `.bob/workflows/code-consistency-review/WORKFLOW.md` は manual CLI 手順ではなく、provider を使って次の流れを実行する:
+  `collect-document-candidates -> traceability draft -> human approval -> create review-input`
+  `-> preprocess -> Bob agent -> capture -> validate -> triage -> handoff`
 - `resources/schemas/` と `resources/templates/` は、この docs 配下の schema / template を runtime 用に同梱したもの。
 - `scaffold/` は仕様検証用の雛形として残し、実運用の Bob workflow からは runtime 拡張を呼び出す。
 

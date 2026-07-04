@@ -8,4 +8,6 @@ export interface BazaarReviewInitialTarget {
   bazaarRoot?: string
   repositoryRoot?: string
   workflowRoot?: string
+  runId?: string
+  stepId?: string
 }

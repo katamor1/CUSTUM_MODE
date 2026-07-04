@@ -42,11 +42,13 @@ test("file task snapshot store writes snapshots, latest.json, and summaries", as
 
   assert.match(saved.path, /task-snapshots/)
   assert.equal(latest.reason, "workflow-start")
+  assert.equal(latest.messages, undefined)
   assert.equal(latest.lastAssistantText, "analysis")
   assert.equal(summaries.length, 1)
   assert.equal(summaries[0].reason, "workflow-start")
   assert.equal(summaries[0].hasLastAssistantText, true)
   assert.ok(fs.existsSync(path.join(workspaceRoot, ".bob", "workflows", "runs", "run-1", "task-snapshots", "latest.json")))
+  assert.match(fs.readFileSync(path.join(workspaceRoot, ".gitignore"), "utf8"), /^\.bob\/workflows\/runs\/$/m)
 })
 
 test("file task snapshot store truncates oversized messages and prunes old snapshots", async () => {
@@ -59,6 +61,7 @@ test("file task snapshot store truncates oversized messages and prunes old snaps
     now: () => `2026-06-30T00:00:0${tick++}.000Z`,
     maxBytes: 700,
     maxPerRun: 2,
+    includeMessages: true,
     pruneOnSave: true
   })
 
@@ -72,4 +75,57 @@ test("file task snapshot store truncates oversized messages and prunes old snaps
   assert.equal(summaries.map((item) => item.reason).join(","), "step-start,agent-output")
   assert.equal(latest.reason, "agent-output")
   assert.equal(latest.lastAssistantText, "fresh output")
+})
+
+test("file task snapshot store redacts secret-like values before saving snapshots", async () => {
+  const { FileTaskSnapshotStore } = require("../out/core/taskSnapshots")
+
+  const workspaceRoot = tempDir()
+  const store = new FileTaskSnapshotStore({
+    workspaceRoot,
+    now: () => "2026-06-30T00:00:00.000Z",
+    includeMessages: true
+  })
+  const secret = "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890"
+  const token = "OPENAI_API_KEY=abcdef1234567890abcdef"
+  const password = "password=hunter2"
+
+  const saved = await store.saveSnapshot(snapshot({
+    taskMetadata: { env: token },
+    messages: [
+      { role: "user", content: `token ${secret}` },
+      { role: "assistant", content: password }
+    ],
+    taskExport: { request: { authorization: `Bearer ${secret}` } },
+    lastAssistantText: `done with ${password}`,
+    handoff: { error: `failed with ${token}` }
+  }))
+  const raw = fs.readFileSync(saved.path, "utf8")
+  const latestRaw = fs.readFileSync(path.join(workspaceRoot, ".bob", "workflows", "runs", "run-1", "task-snapshots", "latest.json"), "utf8")
+  const latest = JSON.parse(latestRaw)
+
+  for (const text of [raw, latestRaw]) {
+    assert.doesNotMatch(text, /sk-proj-[A-Za-z0-9_-]+/)
+    assert.doesNotMatch(text, /OPENAI_API_KEY=abcdef/)
+    assert.doesNotMatch(text, /password=hunter2/)
+    assert.match(text, /\[REDACTED\]/)
+  }
+  assert.match(latest.messages[0].content, /\[REDACTED\]/)
+  assert.match(latest.taskMetadata.env, /\[REDACTED\]/)
+  assert.match(latest.taskExport.request.authorization, /\[REDACTED\]/)
+  assert.match(latest.handoff.error, /\[REDACTED\]/)
+})
+
+test("file task snapshot store keeps workflow runs ignored idempotently", async () => {
+  const { FileTaskSnapshotStore } = require("../out/core/taskSnapshots")
+
+  const workspaceRoot = tempDir()
+  fs.writeFileSync(path.join(workspaceRoot, ".gitignore"), "node_modules/\n.bob/workflows/runs/\n", "utf8")
+  const store = new FileTaskSnapshotStore({ workspaceRoot, now: () => "2026-06-30T00:00:00.000Z" })
+
+  await store.saveSnapshot(snapshot({ reason: "workflow-start" }))
+  await store.saveSnapshot(snapshot({ reason: "step-start" }))
+  const gitignore = fs.readFileSync(path.join(workspaceRoot, ".gitignore"), "utf8")
+
+  assert.equal((gitignore.match(/^\.bob\/workflows\/runs\/$/gm) ?? []).length, 1)
 })

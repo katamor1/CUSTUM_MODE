@@ -1,5 +1,5 @@
 import * as vscode from "vscode"
-import type { CaptureReviewResultOptions } from "./projectRules/resultCaptureCore"
+import type { CaptureReviewResultOptions } from "./projectRules/resultCaptureTypes"
 import type { BazaarReviewInitialTarget } from "./reviewGuiTypes"
 
 export const WORKFLOW_REGISTER_EXTENSION_ID = "local.workflow-register"
@@ -65,7 +65,9 @@ export function initialTargetFromWorkflowInputs(inputs: Record<string, unknown>,
     targetRevision: stringInput(inputs.targetRevision),
     bazaarRoot: explicitBazaarRoot,
     repositoryRoot: stringInput(inputs.repositoryRoot),
-    workflowRoot: stringInput(input?.workflowRoot)
+    workflowRoot: stringInput(input?.workflowRoot),
+    runId: stringInput(input?.runId),
+    stepId: stringInput(input?.stepId)
   }
   const hasInitialTarget =
     target.revisionMode ||
@@ -74,7 +76,9 @@ export function initialTargetFromWorkflowInputs(inputs: Record<string, unknown>,
     target.targetRevision ||
     target.bazaarRoot ||
     target.repositoryRoot ||
-    target.workflowRoot
+    target.workflowRoot ||
+    target.runId ||
+    target.stepId
   return hasInitialTarget ? target : undefined
 }
 
@@ -97,6 +101,8 @@ function captureOptionsFromWorkflowContext(context: Record<string, unknown>): Ca
   const workflowState = recordStringMap(context.state)
   return {
     expectedChecklistItems: expectedChecklistItemsFromState(workflowState),
+    expectedRuleIds: expectedRuleIdsFromState(workflowState),
+    reviewResultSchema: reviewResultSchemaFromState(workflowState),
     workspaceRoot: stringInput(context.workflowRoot),
     workflowState
   }
@@ -116,9 +122,26 @@ function recordInput(value: unknown): Record<string, unknown> | undefined {
 }
 
 function expectedChecklistItemsFromState(state: Record<string, string> | undefined): number | undefined {
-  const reviewRules = parseStateObject(state?.reviewRules)
+  const reviewRules = reviewRulesFromState(state)
   const checklistItems = reviewRules?.checklistItems
   return Number.isInteger(checklistItems) && (checklistItems as number) >= 0 ? checklistItems as number : undefined
+}
+
+function expectedRuleIdsFromState(state: Record<string, string> | undefined): string[] | undefined {
+  const reviewRules = reviewRulesFromState(state)
+  const ruleIds = reviewRules?.ruleIds
+  if (!Array.isArray(ruleIds)) return undefined
+  const normalized = ruleIds.map((ruleId) => typeof ruleId === "string" ? ruleId.trim() : "").filter(Boolean)
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function reviewResultSchemaFromState(state: Record<string, string> | undefined): unknown | undefined {
+  const reviewRules = reviewRulesFromState(state)
+  return reviewRules?.reviewResultSchema
+}
+
+function reviewRulesFromState(state: Record<string, string> | undefined): Record<string, unknown> | undefined {
+  return parseStateObject(state?.reviewRules)
 }
 
 function parseStateObject(value: string | undefined): Record<string, unknown> | undefined {

@@ -28,6 +28,18 @@ export function resolveWorkspacePath(workspaceRoot: string, value: string): stri
   return path.isAbsolute(value) ? value : path.join(workspaceRoot, value)
 }
 
+export function resolveWorkspacePathStrict(workspaceRoot: string, value: string, label = "path"): string {
+  const root = path.resolve(workspaceRoot)
+  const resolved = path.resolve(path.isAbsolute(value) ? value : path.join(root, value))
+  if (!isInsidePath(root, resolved)) throw new Error(`${label} escapes workspace: ${value}`)
+  return resolved
+}
+
+export function isInsidePath(root: string, target: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(target))
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+}
+
 export function toPosixPath(value: string): string {
   return value.replace(/\\/g, "/")
 }

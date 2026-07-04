@@ -1,0 +1,11 @@
+{
+  "workspaceRoot": ".",
+  "outputDir": ".bob-trace/ai-traceability-draft",
+  "catalogPath": ".bob-trace/traceability-catalog.json",
+  "docsRoot": "docs",
+  "base": "main",
+  "head": "feature/live-traceability-sidecar",
+  "vcs": "git",
+  "textEncoding": "utf8",
+  "aiDraftOutput": "traceability-ai-draft.proposed.json"
+}

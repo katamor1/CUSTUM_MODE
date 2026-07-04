@@ -1,4 +1,4 @@
-﻿import * as fs from "node:fs/promises"
+import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { decodeTextBuffer } from "../textEncoding"
 import { DEFAULT_CHECKLIST, REVIEW_RESULT_SCHEMA } from "./defaults"

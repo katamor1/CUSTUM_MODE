@@ -6,12 +6,39 @@ import type { CodeAnalysisResult, DiffSummary, EvidenceRef, ReviewInput } from "
 
 type FunctionRange = { name: string; start: number; end: number; body: string[] }
 type DiffLine = { file: string; line: number; text: string; kind: "add" | "delete" }
+type AnalyzeCppChangesOptions = { workspaceRoot: string; textEncoding?: string }
+type SourceResolution = { filePath?: string; warning?: string }
 
 const C_LIKE_LANGUAGES = new Set(["c", "cpp", "h", "hpp"])
 const CALL_EXCLUDES = new Set(["if", "for", "while", "switch", "return", "sizeof", "case"])
 const RT_FORBIDDEN = ["fopen", "fread", "fwrite", "fprintf", "printf", "scanf", "sleep", "Sleep", "malloc", "free", "system"]
+const FUNCTION_SIGNATURE_PATTERN = new RegExp(
+  "^\\s*(?:"
+    + "static\\s+|"
+    + "inline\\s+|"
+    + "extern\\s+|"
+    + "const\\s+|"
+    + "volatile\\s+|"
+    + "unsigned\\s+|"
+    + "signed\\s+|"
+    + "long\\s+|"
+    + "short\\s+|"
+    + "struct\\s+\\w+\\s+|"
+    + "enum\\s+\\w+\\s+|"
+    + "[A-Za-z_][\\w\\s*]+?\\s+"
+    + ")+([A-Za-z_]\\w*)\\s*\\([^;]*\\)\\s*(?:\\{|$)"
+)
+const GLOBAL_CANDIDATE_PATTERN = new RegExp(
+  "^\\s*(?:static\\s+)?(?:const\\s+)?"
+    + "(?:int|long|short|char|bool|float|double|uint\\d+_t|size_t)\\s+"
+    + "([A-Za-z_]\\w*)\\b.*;"
+)
 
-export async function analyzeCppChanges(diff: DiffSummary, reviewInput: ReviewInput, options: { workspaceRoot: string; textEncoding?: string }): Promise<CodeAnalysisResult> {
+export async function analyzeCppChanges(
+  diff: DiffSummary,
+  reviewInput: ReviewInput,
+  options: AnalyzeCppChangesOptions
+): Promise<CodeAnalysisResult> {
   const warnings: string[] = []
   const changedSymbols: CodeAnalysisResult["changedSymbols"] = []
   const functions: CodeAnalysisResult["functions"] = []
@@ -31,12 +58,12 @@ export async function analyzeCppChanges(diff: DiffSummary, reviewInput: ReviewIn
     const language = file.language ?? languageFromPath(file.path)
     if (!C_LIKE_LANGUAGES.has(language)) continue
     const resolved = await resolveSourceFile(sourceRoot, file.path)
-    if (!resolved) {
-      warnings.push(`変更された C/C++ ファイルがワークスペース内で見つかりません: ${file.path}`)
+    if (!resolved.filePath) {
+      warnings.push(resolved.warning ?? `変更された C/C++ ファイルがワークスペース内で見つかりません: ${file.path}`)
       continue
     }
 
-    const source = await readTextFile(resolved, options.textEncoding)
+    const source = await readTextFile(resolved.filePath, options.textEncoding)
     const lines = source.split(/\r?\n/)
     const ranges = detectFunctions(lines)
     const fileDiffLines = diffLinesForFile(diffLines, file.path)
@@ -50,15 +77,60 @@ export async function analyzeCppChanges(diff: DiffSummary, reviewInput: ReviewIn
       const evidenceId = `SRC-${String(codeEvidenceIndex++).padStart(4, "0")}`
       const callees = detectCallees(range.body.join("\n"), range.name)
       const callers = detectDirectCallers(ranges, range.name)
-      for (const callee of callees) callGraph.push({ from: range.name, to: callee, confidence: "high", reason: "direct call in changed function" })
-      for (const caller of callers) callGraph.push({ from: caller, to: range.name, confidence: "high", reason: "direct call to changed function in changed file" })
+      for (const callee of callees) {
+        callGraph.push({
+          from: range.name,
+          to: callee,
+          confidence: "high",
+          reason: "direct call in changed function"
+        })
+      }
+      for (const caller of callers) {
+        callGraph.push({
+          from: caller,
+          to: range.name,
+          confidence: "high",
+          reason: "direct call to changed function in changed file"
+        })
+      }
 
       const ref = `${toPosixPath(file.path)}:${range.start}-${range.end}`
       const markdown = renderCodeSlice(evidenceId, file.path, range, fileDiffLines)
-      codeSlices.push({ evidence_id: evidenceId, file: toPosixPath(file.path), ref, functionName: range.name, markdown, text: range.body.join("\n") })
-      evidence.push({ evidence_id: evidenceId, type: "code", ref, source: toPosixPath(file.path), location: `${range.name}:${range.start}-${range.end}`, text: range.body.join("\n") })
-      changedSymbols.push({ id: functionId, name: range.name, kind: "function", file: toPosixPath(file.path), confidence: "high", change_type: file.status, line_after: `${range.start}-${range.end}`, evidence_id: evidenceId })
-      functions.push({ id: functionId, name: range.name, file: toPosixPath(file.path), line_after: `${range.start}-${range.end}`, evidence_id: evidenceId, callees, callers })
+      codeSlices.push({
+        evidence_id: evidenceId,
+        file: toPosixPath(file.path),
+        ref,
+        functionName: range.name,
+        markdown,
+        text: range.body.join("\n")
+      })
+      evidence.push({
+        evidence_id: evidenceId,
+        type: "code",
+        ref,
+        source: toPosixPath(file.path),
+        location: `${range.name}:${range.start}-${range.end}`,
+        text: range.body.join("\n")
+      })
+      changedSymbols.push({
+        id: functionId,
+        name: range.name,
+        kind: "function",
+        file: toPosixPath(file.path),
+        confidence: "high",
+        change_type: file.status,
+        line_after: `${range.start}-${range.end}`,
+        evidence_id: evidenceId
+      })
+      functions.push({
+        id: functionId,
+        name: range.name,
+        file: toPosixPath(file.path),
+        line_after: `${range.start}-${range.end}`,
+        evidence_id: evidenceId,
+        callees,
+        callers
+      })
     }
 
     for (const candidate of detectRtForbidden(fileDiffLines, file.path)) rtForbiddenCandidates.push(candidate)
@@ -158,7 +230,7 @@ function detectFunctions(lines: string[]): FunctionRange[] {
 function functionSignature(line: string): string | undefined {
   if (/^\s*(if|for|while|switch|return)\b/.test(line)) return undefined
   if (line.includes(";")) return undefined
-  const match = line.match(/^\s*(?:static\s+|inline\s+|extern\s+|const\s+|volatile\s+|unsigned\s+|signed\s+|long\s+|short\s+|struct\s+\w+\s+|enum\s+\w+\s+|[A-Za-z_][\w\s*]+?\s+)+([A-Za-z_]\w*)\s*\([^;]*\)\s*(?:\{|$)/)
+  const match = line.match(FUNCTION_SIGNATURE_PATTERN)
   return match?.[1]
 }
 
@@ -195,7 +267,7 @@ function detectGlobalCandidates(lines: string[], changedTokens: Set<string>): st
   const result = new Set<string>()
   let depth = 0
   for (const line of lines) {
-    const global = depth === 0 ? line.match(/^\s*(?:static\s+)?(?:const\s+)?(?:int|long|short|char|bool|float|double|uint\d+_t|size_t)\s+([A-Za-z_]\w*)\b.*;/) : undefined
+    const global = depth === 0 ? line.match(GLOBAL_CANDIDATE_PATTERN) : undefined
     if (global && (changedTokens.size === 0 || changedTokens.has(global[1]) || /g_|Count|State/i.test(global[1]))) result.add(global[1])
     depth += braceDelta(line)
   }
@@ -232,12 +304,17 @@ function changedIdentifierTokens(diffLines: DiffLine[]): Set<string> {
   return result
 }
 
-async function resolveSourceFile(workspaceRoot: string, filePath: string): Promise<string | undefined> {
+async function resolveSourceFile(workspaceRoot: string, filePath: string): Promise<SourceResolution> {
   const direct = resolveWorkspacePath(workspaceRoot, filePath)
-  if (await pathExists(direct)) return direct
+  if (await pathExists(direct)) return { filePath: direct }
   const basename = path.basename(filePath)
   const candidates = await findFilesByBasename(workspaceRoot, basename, 2000)
-  return candidates[0]
+  if (candidates.length === 1) return { filePath: candidates[0] }
+  if (candidates.length > 1) {
+    const candidateList = candidates.map((candidate) => toPosixPath(path.relative(workspaceRoot, candidate))).join(", ")
+    return { warning: `ambiguous basename fallback for ${toPosixPath(filePath)}: ${candidateList}` }
+  }
+  return {}
 }
 
 async function findFilesByBasename(root: string, basename: string, limit: number): Promise<string[]> {
@@ -259,7 +336,7 @@ async function findFilesByBasename(root: string, basename: string, limit: number
     }
   }
   await visit(root)
-  return result
+  return result.sort((left, right) => left.localeCompare(right))
 }
 
 function renderCodeSlice(evidenceId: string, filePath: string, range: FunctionRange, diffLines: DiffLine[]): string {

@@ -31,6 +31,26 @@ test("default action registry rejects missing VS Code command ids", async () => 
   assert.match(result.error, /requires the command id/)
 })
 
+test("default action registry blocks VS Code commands in untrusted workspaces", async () => {
+  let called = false
+  const registry = createDefaultActionRegistry({
+    isWorkspaceTrusted: () => false,
+    executeCommand: () => {
+      called = true
+      return "unused"
+    }
+  })
+
+  const result = await registry.execute("vscode.executeCommand", {
+    args: ["sample.command"],
+    inputs: {}
+  })
+
+  assert.equal(result.ok, false)
+  assert.match(result.error, /Workspace is not trusted/)
+  assert.equal(called, false)
+})
+
 test("action registry executes registered providers and rejects unknown providers", async () => {
   const registry = new ActionRegistry()
   registry.register({

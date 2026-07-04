@@ -34,7 +34,7 @@ test("AI verification matrix expected Bob output validates and generates triage"
   assert.match(fs.readFileSync(path.join(triageDir, "questions-to-author.md"), "utf8"), /Q-001/)
 })
 
-test("capture, validate, and triage recover when real AI writes bob-output.yaml inside the review package", async () => {
+test("capture, validate, and triage do not silently use review-package bob-output fallback", async () => {
   const workspace = createAiVerificationMatrixWorkspace()
   const packageDir = path.join(workspace, ".bob-review", "review-package")
   await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: packageDir })
@@ -49,20 +49,33 @@ test("capture, validate, and triage recover when real AI writes bob-output.yaml 
     bobOutputPath: canonicalOutputPath,
     text: "Bob wrote the YAML output to .bob-review/review-package/bob-output.yaml."
   })
-  assert.equal(capture.status, "ok")
-  assert.equal(path.resolve(capture.sourcePath), path.resolve(fallbackOutputPath))
-  assert.ok(fs.existsSync(canonicalOutputPath))
+  assert.equal(capture.status, "error")
+  assert.match(capture.message, /Bob output YAML not found/)
+  assert.equal(fs.existsSync(canonicalOutputPath), false)
 
-  fs.rmSync(path.dirname(canonicalOutputPath), { recursive: true, force: true })
   const report = await validateBobOutput({ packageDir, bobOutputPath: canonicalOutputPath })
-  assert.deepEqual(report.errors, [])
-  assert.ok(report.warnings.some((warning) => warning.includes("review-package/bob-output.yaml")))
+  assert.ok(report.errors.some((error) => error.includes("Bob output YAML not found")))
+  assert.equal(report.warnings.some((warning) => warning.includes("review-package/bob-output.yaml")), false)
 
   const triageDir = path.join(workspace, ".bob-review", "human-triage")
   const triage = await generateHumanTriage({ packageDir, bobOutputPath: canonicalOutputPath, outDir: triageDir })
-  assert.equal(triage.status, "ok")
-  assert.ok(triage.itemCount >= 4)
-  assert.match(fs.readFileSync(path.join(triageDir, "accepted-findings.md"), "utf8"), /PRE-001/)
+  assert.equal(triage.status, "error")
+  assert.match(triage.message, /Bob output YAML not found/)
+})
+
+test("captureBobOutput rejects multiple YAML output candidates", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bob-review-multiple-yaml-"))
+  const outputPath = path.join(root, ".bob-review", "bob-output", "bob-output.yaml")
+  const output = fs.readFileSync(bobOutputFixturePath, "utf8")
+  const capture = await captureBobOutput({
+    workspaceRoot: root,
+    text: `\`\`\`yaml\n${output}\n\`\`\`\n\`\`\`yaml\n${output}\n\`\`\``,
+    bobOutputPath: outputPath
+  })
+
+  assert.equal(capture.status, "error")
+  assert.match(capture.message, /multiple YAML candidates/)
+  assert.equal(fs.existsSync(outputPath), false)
 })
 
 test("generateHumanTriage reports a missing Bob output file without throwing ENOENT", async () => {
@@ -78,7 +91,9 @@ test("generateHumanTriage reports a missing Bob output file without throwing ENO
 })
 
 test("validateBobOutput rejects missing evidence ids and accepts package evidence", async () => {
-  const outDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bob-review-validate-")), "review-package")
+  const outRoot = path.join(repoRoot, ".bob-review")
+  fs.mkdirSync(outRoot, { recursive: true })
+  const outDir = fs.mkdtempSync(path.join(outRoot, "review-validate-"))
   await preprocessReview({ workspaceRoot: repoRoot, inputPath: reviewInputPath, outDir, diffFixturePath })
 
   const validReport = await validateBobOutput({ packageDir: outDir, bobOutputPath: bobOutputFixturePath })

@@ -20,12 +20,10 @@ Bazaar を用いる既存プロジェクトでは、差分レビュー時に次�
 - `bzr diff` や `bzr log` の出力を Bob へ渡す作業が手動になりやすい。
 - Bazaar alias により `diff` や `log` が GUI ツールへ置き換わると、stdout が取得できない。
 - 日本語や Shift-JIS / CP932 系の Bazaar 出力が文字化けする可能性がある。
-- `.bob` ワークスペースと Bazaar repository が multi-root workspace で別フォルダになる場合がある。
+- `.bob` workspace と Bazaar repository が multi-root workspace で別フォルダになる場合がある。
 - プロジェクト固有規約に沿ったレビュー結果を JSON と Markdown で保存したい。
 - Bob workflow が途中で中断した場合、生成済み JSON を再利用して保存・Markdown 生成だけ再開したい。
 - 過去に保存した review-result を Bob / MCP tool から参照したい。
-
-本拡張はこれらの課題に対して、GUI、workflow action provider、MCP server、review-result capture / store を組み合わせて対応する。
 
 ## 3. スコープ
 
@@ -35,13 +33,15 @@ Bazaar を用いる既存プロジェクトでは、差分レビュー時に次�
 - `bzr --no-aliases` の強制。
 - Bazaar 出力の UTF-8 / Shift-JIS 系 decode。
 - Bazaar review packet の生成。
-- `IBM.bob-code` 導入時の Bob context への packet 追加。未導入時は Markdown 作成で停止する。
-- `.bob` 初期化。
-- project review checklist / schema / prompt template の読み込み。
-- review-result JSON の検証、正規化、保存、Markdown 生成。
+- `IBM.bob-code` 導入時の Bob context への packet 追加。
+- `IBM.bob-code` 未導入時の Markdown document 作成。
+- `.bob` 初期化、MCP 設定、project review rules 初期化。
+- project review checklist / schema / prompt template / packet section の読み込み。
+- review-result JSON の抽出、検証、正規化、保存、Markdown 生成。
 - 保存済み review-result の取得。
+- active editor の review-result JSON 検証と Markdown summary 表示。
 - `workflow-register` action provider 登録。
-- Bazaar / project rules MCP tools の提供。
+- Bazaar / project rules / review-result MCP tools の提供。
 - multi-root workspace での `.bob` root と `.bzr` root の分離解決。
 
 ### 3.2 対象外
@@ -49,7 +49,7 @@ Bazaar を用いる既存プロジェクトでは、差分レビュー時に次�
 - Bazaar の書き込み操作。
 - commit / push / pull / update / revert / merge / resolve などの破壊的操作。
 - IBM Bob 本体の UI 改修。
-- 任意 shell command の実行。
+- OS コマンドの自由実行。
 - review-result JSON の内容を AI なしで自動判定すること。
 - 複数ユーザー間での review result 同期。
 
@@ -59,46 +59,32 @@ Bazaar を用いる既存プロジェクトでは、差分レビュー時に次�
 | --- | --- |
 | 開発者 | Bazaar revision を指定し、Bob へレビュー packet を渡す。 |
 | レビュー担当者 | GUI で変更ファイルと revision 情報を確認し、プロジェクト規約レビューを開始する。 |
-| ワークフロー設計者 | `bazaar-project-rule-review` を Bob workflow として利用・調整する。 |
+| ワークフロー設計者 | `bazaar-project-rule-review` workflow を利用・調整する。 |
 | 拡張機能連携者 | MCP tools や workflow action provider を通じて Bazaar 情報を取得する。 |
-| 保守担当者 | `.bob` template と保存済み review-result の運用状態を確認する。 |
+| 保守担当者 | `.bob` template、MCP 設定、保存済み review-result の状態を確認する。 |
 
 ## 5. 全体構成
 
-```mermaid
-flowchart TD
-  VSCode[VS Code Extension Host]
-  Bob[IBM Bob]
-  WF[workflow-register]
-  GUI[Bazaar Review GUI]
-  Ext[bob-bazaar-review extension]
-  Bzr[BazaarClient]
-  BzrCLI[bzr CLI]
-  Packet[Review Packet]
-  BobRoot[.bob workspace]
-  BzrRoot[.bzr repository]
-  Rules[Project Rules]
-  Capture[Review Result Capture]
-  Store[Review Results Store]
-  MCP[MCP Server]
+```text
+VS Code Extension Host
+  └─ bob-bazaar-review
+       ├─ extension.ts
+       ├─ bazaarReviewCommands.ts
+       ├─ reviewGui.ts
+       ├─ workflowRegisterBridge.ts
+       ├─ workflowBridge.ts
+       ├─ reviewResultValidationCommand.ts
+       ├─ BazaarClient / TextEncoding
+       ├─ WorkspaceResolver
+       ├─ BobWorkspaceInit / McpConfig
+       ├─ ProjectRules / ResultCapture / ReviewResultsStore
+       └─ MCP Server
 
-  VSCode --> Ext
-  Ext --> GUI
-  Ext --> WF
-  WF --> Ext
-  GUI --> Bzr
-  Ext --> Bzr
-  MCP --> Bzr
-  Bzr --> BzrCLI
-  BzrCLI --> BzrRoot
-  Ext --> BobRoot
-  Ext --> Rules
-  GUI --> Packet
-  Packet --> Bob
-  Bob --> Capture
-  Capture --> Store
-  Store --> BobRoot
-  Bob --> MCP
+Bob / workflow-register
+  ├─ bobBazaar.openReviewGui
+  ├─ bobBazaar.collectReviewContext
+  ├─ bobBazaar.loadReviewRules
+  └─ bobBazaar.captureReviewResult
 ```
 
 ## 6. 主要コンポーネント
@@ -106,13 +92,17 @@ flowchart TD
 | コンポーネント | 主な責務 | 主なファイル |
 | --- | --- | --- |
 | Extension Entry | VS Code command 登録、workflow-register action provider 登録 | `src/extension.ts` |
+| Workflow Register Bridge | `local.workflow-register` API 取得、workflow action input 解釈、capture option 生成 | `src/workflowRegisterBridge.ts` |
+| Bob Code Extension Helper | `IBM.bob-code` 導入有無の判定 | `src/bobCodeExtension.ts` |
+| Bazaar Review Commands | revision / range の直接レビュー command、Bob context 追加、保存 fallback | `src/bazaarReviewCommands.ts` |
+| Review Result Validation Command | active editor の review-result JSON 検証、Markdown summary 表示 | `src/reviewResultValidationCommand.ts` |
 | Bazaar Client | Bazaar CLI 実行、引数検証、decode、alias 無効化 | `src/bazaar.ts` |
 | Text Encoding | UTF-8 / Shift-JIS / CP932 系 decode | `src/textEncoding.ts` |
-| Review GUI | Webview UI、target 選択、packet 生成、任意の Bob context 追加 | `src/reviewGui.ts` |
+| Review GUI | Webview UI、target 選択、packet 生成、Bob context 追加 | `src/reviewGui.ts` |
 | Workspace Resolver | `.bob` root と `.bzr` root の分離解決 | `src/workspaceResolver.ts`, `src/workspaceRoots.ts` |
 | Bob Workspace Init | `.bob` 初期化、template refresh、MCP 設定 | `src/bobWorkspaceInit.ts` |
 | MCP Config | `.bob/mcp.json` 生成・更新 | `src/mcpConfig.ts` |
-| MCP Server | 読み取り専用 Bazaar tools、project rules tools、保存済み result tools 提供 | `src/mcp/server.ts` |
+| MCP Server | 読み取り専用 Bazaar tools、project rules tools、保存済み result tools | `src/mcp/server.ts` |
 | Review Packet | Bob へ渡す Markdown packet の生成 | `src/reviewPacket.ts`, `src/revisionInfo.ts` |
 | Workflow Bridge | review packet から workflow state 用 context を生成 | `src/workflowBridge.ts` |
 | Workflow Step Completion | GUI 後に workflow-register の current step 完了を試行 | `src/workflowStepCompletion.ts` |
@@ -133,14 +123,14 @@ flowchart TD
 
 ## 8. Workspace モデル
 
-本拡張は、次の2種類の root を明確に分離する。
+本拡張は次の2種類の root を分離する。
 
 | Root | Marker | 用途 |
 | --- | --- | --- |
 | Bob workspace root | `.bob` | Skill、Workflow、MCP 設定、review rules、review results の保存先。 |
 | Bazaar repository root | `.bzr` | Bazaar diff / log / status / cat の実行対象。 |
 
-multi-root workspace では、review packet の差分取得は `.bzr` 側で行い、review result は `.bob/review/results` に保存する。
+multi-root workspace では、差分取得は `.bzr` 側で行い、review result は `.bob/review/results` に保存する。
 
 ## 9. Bazaar 実行方針
 
@@ -152,39 +142,29 @@ bzr --no-aliases log -r REV
 bzr --no-aliases status
 ```
 
-安全方針:
+安全方針は次の通りである。
 
-- `execFile` を使用し、shell 文字列は使わない。
-- `shell: false` とする。
+- `execFile` を使用し、コマンド文字列連結はしない。
 - Bazaar arguments は array として渡す。
 - revision は `validateRevision` で検証する。
 - repository relative path は `validateRelativePath` で検証する。
-- `BZR_PROGRESS_BAR=none` を設定し、progress 表示を抑制する。
+- `BZR_PROGRESS_BAR=none` を設定する。
 - diff 系 command は Bazaar の差分あり exit code `1` を許可する。
 
-## 10. レビュー GUI 概要
+## 10. レビュー GUI / 直接コマンド
 
-`Bob Bazaar: Open Bazaar Review GUI` は Webview を開き、次を行う。
+`bobBazaar.openReviewGui` は Webview を開き、workspace 解決、`.bob` 初期化確認、review target 入力、Bazaar log / diff / status 取得、changed files 表示、review packet 生成、Bob context 追加、workflow step 完了を行う。
 
-1. Bazaar workspace と Bob workspace を解決する。
-2. `.bob` 初期化状態を確認する。
-3. 必要に応じて `.bob` 初期化を実行する。
-4. review target を入力する。
-5. Bazaar log / diff / status を取得する。
-6. target metadata と changed files を表示する。
-7. review packet を生成する。
-8. `IBM.bob-code` が導入されている場合は Bob context へ packet を追加する。未導入の場合は Markdown document 作成で停止する。
-9. workflow 実行中の場合、GUI action 完了後に現在 step を完了できる。
+直接コマンドとして次を提供する。
 
-### 10.1 Review target
+| Command | 処理 |
+| --- | --- |
+| `bobBazaar.reviewRevision` | 単一 revision packet を作る。 |
+| `bobBazaar.reviewRange` | revision range packet を作る。 |
+| `bobBazaar.reviewRevisionWithProjectRules` | 単一 revision packet に project rules section を追加する。 |
+| `bobBazaar.reviewRangeWithProjectRules` | range packet に project rules section を追加する。 |
 
-| Mode | 入力 | Bazaar 操作 |
-| --- | --- | --- |
-| `singleRevision` | `revision` | `bzr log -r REV`, `bzr diff -c REV` |
-| `revisionRange` | `baseRevision`, `targetRevision` | `bzr diff -r BASE..TARGET`, 可能なら target log |
-| `workingTreeSinceRevision` | 任意 `baseRevision` | `bzr revno`, `bzr diff -r BASE`, `bzr status` |
-
-単一 revision と revision range では、新規追加ファイル本文を `bobBazaar.maxAddedFileContentBytes` の上限内で packet に含める。
+`IBM.bob-code` が無い場合は Markdown document を作って停止する。`workflow-register` が無く `IBM.bob-code` がある場合は Bob context へ追加する。`workflow-register` がある場合は、Bob context 追加、clipboard copy、file save をユーザーに選択させる。
 
 ## 11. `.bob` 初期化設計
 
@@ -201,11 +181,11 @@ bzr --no-aliases status
 .bob/workflows/bazaar-project-rule-review/WORKFLOW.md
 ```
 
-初期化は基本的に missing only でコピーする。ただし workflow template は、`workspaceRequired`、日本語 UI、`schemaVersion: workflow-register/v1`、`requires`、`preflight`、`guardrails.requireApproval`、`artifacts`、`completion` を反映するため refresh 対象として上書きする。
+初期化は基本的に missing only でコピーする。ただし workflow template は現行 schema、requires、preflight、guardrails、artifacts、completion を反映するため refresh 対象として上書きする。
 
 ## 12. workflow-register 連携
 
-本拡張は `workflow-register` が導入されている場合だけ `workflow-register` API へ次の action provider を登録する。未導入でも拡張機能は起動でき、GUI / レビューコマンドで `# Bazaar Revision Review Request` packet を生成できる。`IBM.bob-code` が導入されている場合だけ、生成した packet を Bob context へ追加する。
+`workflow-register` が導入されている場合だけ次の action provider を登録する。未導入でも通常コマンドは利用できる。
 
 | Provider | 用途 |
 | --- | --- |
@@ -214,7 +194,7 @@ bzr --no-aliases status
 | `bobBazaar.loadReviewRules` | checklist と review-result schema を読み込む。 |
 | `bobBazaar.captureReviewResult` | assistant 出力や clipboard から review-result JSON を検証・保存する。 |
 
-`workflowRoot` は Bob workspace root として扱い、`.bob` 側の rules / results 保存先に使う。
+`workflowRegisterBridge.ts` は workflow inputs、args、state、`workflowRoot`、`bazaarRoot`、`repositoryRoot` を解釈し、GUI 初期 target と capture option を生成する。
 
 ## 13. MCP Server 概要
 
@@ -228,15 +208,9 @@ MCP server は stdio JSON-RPC で動作し、Bob から tools として呼び出
 
 Bazaar tools は読み取り専用に限定し、破壊的操作は提供しない。
 
-## 14. Review result 保存
+## 14. Review result 保存 / 検証
 
-Bob が出力した review-result JSON は、次の入力元から抽出できる。
-
-- command argument
-- active editor selection
-- active editor full text
-- clipboard
-- workflow-register result handoff の assistant 成果物
+Bob が出力した review-result JSON は、command argument、active editor selection、active editor full text、clipboard、workflow-register result handoff から抽出できる。
 
 保存処理は次を行う。
 
@@ -246,42 +220,37 @@ Bob が出力した review-result JSON は、次の入力元から抽出でき�
 4. `.bob/review/results/<review_id>.json` を保存する。
 5. `.bob/review/results/<review_id>.md` を保存する。
 
-保存済み result は MCP tools から最新または review id 指定で取得できる。
+`bobBazaar.validateReviewResultJson` は active editor の JSON を検証し、有効な場合は Markdown summary を表示できる。
 
-## 15. セキュリティ方針
+## 15. セキュリティとエラー処理方針
 
 - Bazaar 操作は読み取り系に限定する。
-- shell を使わず `execFile` で実行する。
 - `--no-aliases` を必ず付与する。
 - revision / path を検証する。
 - diff と added file content には byte 上限を設ける。
 - MCP tools では commit / push / pull / revert などを公開しない。
 - review-result 保存ファイル名は sanitize する。
-- project rules の外部パスは明示許可がない限り拒否する。
+- project rules の外部 path は明示許可がない限り拒否する。
+- Bazaar command failure は `BazaarError` として cwd / args / stdout / stderr / code を保持する。
+- `IBM.bob-code` 未導入時は packet Markdown 作成で停止する。
+- Bob context 追加失敗時は clipboard fallback を行う。
+- current workflow step 完了失敗は warning に留める。
 
-## 16. エラー処理方針
-
-| 場面 | 方針 |
-| --- | --- |
-| Bazaar command failure | `BazaarError` として cwd / args / stdout / stderr / code を保持する。 |
-| `.bob` 未初期化 | GUI で未初期化状態を表示し、初期化導線を出す。 |
-| workflow action failure | workflow-register へ error を返し step を pending / held にする。 |
-| review-result JSON 不在 | warning message または validation issue として返す。 |
-| schema validation 失敗 | Markdown validation report を表示する。 |
-| `IBM.bob-code` 未導入 | packet Markdown を作成して停止し、Bob context 追加は試行しない。 |
-| Bob context 追加失敗 | packet を clipboard へ fallback copy する。 |
-| current workflow step 完了失敗 | warning 表示に留め、packet 生成は成功扱いにする。 |
-
-## 17. テスト方針
+## 16. テスト方針
 
 - BazaarClient の引数検証、`--no-aliases` 強制、allowed exit code を検証する。
 - workspace resolver の `.bob` / `.bzr` 分離を検証する。
 - review packet 生成と追加ファイル本文上限を検証する。
-- workflow-register action provider 登録を検証する。
+- direct review command の Bob context / clipboard / save 分岐を検証する。
+- workflow-register bridge の input / args / state 解釈を検証する。
 - review-result JSON 抽出、正規化、schema validation、Markdown 生成を検証する。
+- review result validation command の active editor 検証を検証する。
 - review results store と MCP result 取得 tools を検証する。
 - workflow template の UI 表示値、resultKey、artifact、guardrail、requires、preflight を検証する。
 - MCP server の tool 定義と readonly 境界を検証する。
+- 実機では VS Code / IBM Bob / workflow-register / Bob Workflow UI / Bazaar CLI / Webview / MCP を含む結合動作を確認する。
+
+詳細な単体テスト仕様は `unit-test-spec-ja.md`、実機テスト仕様は `real-machine-test-spec-ja.md` に定義する。
 
 ## 18. 今後の拡張方針
 
