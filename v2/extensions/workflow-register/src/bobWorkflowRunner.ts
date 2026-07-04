@@ -3,6 +3,7 @@ import { buildWorkflowAgentPrompt, extractSubagentResult } from "./agentStep"
 import type {
   BobWorkflowRunnerInputCollector,
   BobWorkflowTask,
+  ActiveStep,
   WorkflowDefinition,
   WorkflowStateEntry,
   WorkflowTodoItem
@@ -55,6 +56,7 @@ interface BobWorkflowEngineRunnerOptions {
   agentProvider?: AgentProvider
   stepRuntime: StepRuntime
   inputsProvider: BobWorkflowRunnerInputCollector
+  onManualStepHeld?: (input: { workflow: CoreWorkflowDefinition; run: WorkflowRunState; step: EngineStep; active: ActiveStep }) => Promise<void> | void
 }
 
 export class BobWorkflowEngineRunner {
@@ -114,21 +116,23 @@ export class BobWorkflowEngineRunner {
         messageStartIndexes
       ),
       manualCompletion: async ({ run, step }) => {
-        const completed = await this.options.stepRuntime.hold(
+        const result = await this.options.stepRuntime.hold(
           this.options.definition,
           { id: step.id, title: step.title },
           task,
           {
             runId: run.runId,
             stepDefinition: this.options.definition.stepsById[step.id],
+            coreStep: step,
             actionRegistry: this.options.actionRegistry,
             inputs: run.inputs,
             state: run.state,
-            messageStartIndex: messageStartIndexes.get(stepKey(run.runId, step.id))
+            messageStartIndex: messageStartIndexes.get(stepKey(run.runId, step.id)),
+            onHeldStep: (active) => this.options.onManualStepHeld?.({ workflow: this.options.coreWorkflow, run, step, active })
           }
         )
-        if (completed) manuallyCompleted.add(stepKey(run.runId, step.id))
-        return { completed }
+        if (result.completed) manuallyCompleted.add(stepKey(run.runId, step.id))
+        return result
       },
       recoverResultText: async ({ workflow, run, step, reason }) => {
         if (reason === "retry-agent-result") return undefined
@@ -149,7 +153,7 @@ export class BobWorkflowEngineRunner {
       if (run.status === "failed") {
         await vscode.window.showErrorMessage(`Bob workflow run failed: ${run.error ?? run.runId}`)
       }
-      return run.status === "completed" || run.status === "running" || run.status === "paused" || run.status === "reviewing"
+      return run.status === "completed" || run.status === "running" || run.status === "paused" || run.status === "reviewing" || run.status === "checkpoint"
     } catch (error) {
       await vscode.window.showErrorMessage(
         `Bob workflow execution failed: ${error instanceof Error ? error.message : String(error)}`

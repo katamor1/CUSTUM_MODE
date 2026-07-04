@@ -2,13 +2,19 @@ import {
   EngineStep,
   ResultSinkDefinition,
   ResultSourceDefinition,
+  WorkflowBranchingDefinition,
   WorkflowInputDefinition,
+  WorkflowManualApprovalDefinition,
+  WorkflowManualFormDefinition,
   WorkflowStepCompletionMode,
   WorkflowStepExecutionDefinition,
   WorkflowStepExecutionMode,
   WorkflowStepMessageMode,
   WorkflowStepReviewDefinition,
-  WorkflowStepReviewPauseAfter
+  WorkflowStepReviewPauseAfter,
+  WorkflowStepTransitionDefinition,
+  WorkflowTransitionConditionDefinition,
+  WorkflowUserActionDefinition
 } from "../model"
 import { asRecord, listField, optionalBoolean, optionalNumber, optionalString, requiredString } from "./yamlFields"
 
@@ -142,6 +148,30 @@ export function normalizeCompletion(record: Record<string, unknown>) {
   }
 }
 
+export function normalizeBranching(value: unknown): WorkflowBranchingDefinition | undefined {
+  const record = asRecord(value)
+  if (Object.keys(record).length === 0) return undefined
+  const loops = Array.isArray(record.loops) ? record.loops.map((entry) => {
+    const loop = asRecord(entry)
+    const checkpoint = asRecord(loop.checkpoint)
+    return {
+      id: requiredString(loop, "id"),
+      title: optionalString(loop, "title"),
+      entryStep: requiredString(loop, "entryStep"),
+      maxIterations: optionalNumber(loop, "maxIterations") ?? 0,
+      extensionSize: optionalNumber(loop, "extensionSize") ?? 0,
+      checkpoint: Object.keys(checkpoint).length > 0 ? {
+        title: optionalString(checkpoint, "title"),
+        message: optionalString(checkpoint, "message")
+      } : undefined
+    }
+  }) : []
+  return {
+    enabled: optionalBoolean(record, "enabled") ?? false,
+    loops
+  }
+}
+
 export function normalizeEngineStep(step: Record<string, unknown>): EngineStep {
   const base = {
     id: requiredString(step, "id"),
@@ -152,7 +182,9 @@ export function normalizeEngineStep(step: Record<string, unknown>): EngineStep {
     completeOnSuccess: optionalBoolean(step, "completeOnSuccess"),
     includeState: listField(step, "includeState"),
     maxResultBytes: optionalNumber(step, "maxResultBytes"),
-    stateRequired: optionalBoolean(step, "stateRequired")
+    stateRequired: optionalBoolean(step, "stateRequired"),
+    transition: normalizeStepTransition(step.transition),
+    userAction: normalizeUserAction(step.userAction)
   }
   if (step.type === "command") {
     const action = asRecord(step.action)
@@ -160,7 +192,84 @@ export function normalizeEngineStep(step: Record<string, unknown>): EngineStep {
   }
   if (step.type === "agent") return { ...base, type: "agent", resultKey: optionalString(step, "resultKey"), result: step.result ? normalizeResult(step.result) : undefined }
   if (step.type === "result") return { ...base, type: "result", result: normalizeResult(step.result) }
-  return { ...base, type: "manual" }
+  return {
+    ...base,
+    type: "manual",
+    form: normalizeManualForm(step.form),
+    approval: normalizeManualApproval(step.approval)
+  }
+}
+
+function normalizeStepTransition(value: unknown): WorkflowStepTransitionDefinition | undefined {
+  const record = asRecord(value)
+  if (Object.keys(record).length === 0) return undefined
+  const decisions = Array.isArray(record.decisions) ? record.decisions.map((entry) => {
+    const decision = asRecord(entry)
+    return {
+      id: requiredString(decision, "id"),
+      when: normalizeTransitionCondition(decision.when),
+      goto: requiredString(decision, "goto"),
+      loop: optionalString(decision, "loop")
+    }
+  }) : []
+  return {
+    decisions,
+    default: optionalString(record, "default") ?? "next"
+  }
+}
+
+function normalizeTransitionCondition(value: unknown): WorkflowTransitionConditionDefinition {
+  const record = asRecord(value)
+  return {
+    stateKey: requiredString(record, "stateKey"),
+    equals: record.equals,
+    notEquals: record.notEquals,
+    in: Array.isArray(record.in) ? record.in : undefined,
+    exists: optionalBoolean(record, "exists"),
+    truthy: optionalBoolean(record, "truthy")
+  }
+}
+
+function normalizeManualForm(value: unknown): WorkflowManualFormDefinition | undefined {
+  const record = asRecord(value)
+  if (Object.keys(record).length === 0) return undefined
+  const fields = Array.isArray(record.fields) ? record.fields.map((entry) => {
+    const field = asRecord(entry)
+    return {
+      id: requiredString(field, "id"),
+      title: optionalString(field, "title"),
+      type: requiredString(field, "type") as "string" | "number" | "boolean" | "select",
+      required: optionalBoolean(field, "required"),
+      multiline: optionalBoolean(field, "multiline"),
+      options: listField(field, "options")
+    }
+  }) : []
+  return {
+    resultKey: requiredString(record, "resultKey"),
+    fields
+  }
+}
+
+function normalizeManualApproval(value: unknown): WorkflowManualApprovalDefinition | undefined {
+  const record = asRecord(value)
+  if (Object.keys(record).length === 0) return undefined
+  return {
+    resultKey: requiredString(record, "resultKey"),
+    approveLabel: optionalString(record, "approveLabel"),
+    rejectLabel: optionalString(record, "rejectLabel"),
+    message: optionalString(record, "message")
+  }
+}
+
+export function normalizeUserAction(value: unknown): WorkflowUserActionDefinition | undefined {
+  const record = asRecord(value)
+  const normalized = {
+    message: optionalString(record, "message"),
+    completeLabel: optionalString(record, "completeLabel"),
+    confirmOnComplete: optionalBoolean(record, "confirmOnComplete"),
+    confirmMessage: optionalString(record, "confirmMessage")
+  }
+  return Object.values(normalized).some((entry) => entry !== undefined) ? normalized : undefined
 }
 
 export function normalizeResult(value: unknown): ResultSourceDefinition {

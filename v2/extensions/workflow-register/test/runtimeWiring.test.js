@@ -11,6 +11,7 @@ function runtimeSource() {
     "bobWorkflowRunner.ts",
     "bobStepRuntime.ts",
     "bobWorkflowMessages.ts",
+    "webview/manualStepPanel.ts",
     "workflowInputPrompt.ts",
     "workflowRegisterService.ts",
     "workflowRunCommands.ts",
@@ -85,6 +86,17 @@ test("standalone workflow launcher uses the shared input resolver for conditiona
   assert.doesNotMatch(source, /for \(const \[key, definition\] of Object\.entries\(workflow\.inputs\)\)/)
 })
 
+test("manual completion results are wired through Bob and standalone engine paths", () => {
+  const source = runtimeSource()
+
+  assert.match(source, /coreStep: step/)
+  assert.match(source, /const result = await this\.options\.stepRuntime\.hold\(/)
+  assert.match(source, /if \(result\.completed\) manuallyCompleted\.add\(stepKey\(run\.runId, step\.id\)\)/)
+  assert.match(source, /return result/)
+  assert.match(source, /manualCompletion: \(input\) => this\.holdStandaloneManualStep\(input\)/)
+  assert.match(source, /private async holdStandaloneManualStep\(/)
+})
+
 test("Bob workflow Todo execution delegates to the shared WorkflowEngine runner", () => {
   const source = readSourceSet([
     "workflowRegistrationService.ts",
@@ -106,6 +118,7 @@ test("Bob workflow Todo execution delegates to the shared WorkflowEngine runner"
     "stepId: request.stepId",
     "})"
   ))
+  assert.match(source, /run\.status === "checkpoint"/)
   assert.match(source, /createBobTaskSnapshotProvider\(task\)/)
   assert.match(source, /new FileTaskSnapshotStore\(/)
   assert.doesNotMatch(source, /async function runWorkflowStepCommand\(/)
@@ -193,4 +206,15 @@ test("Bob adapter applies guardrails to Todo, result, and legacy top-level comma
   assert.match(source, /validateCommandGuardrails\(\{ guardrails: active\.guardrails \}, step\.resultCommand\)/)
   assert.match(source, /actionRegistry: this\.options\.actionRegistry/)
   assert.doesNotMatch(source, /vscode\.commands\.executeCommand\(definition\.command/)
+})
+
+test("Bob manual completion opens a panel without bypassing the held completion path", () => {
+  const source = runtimeSource()
+
+  assert.match(source, /manualCompletion: async \(\{ run, step \}\) => \{/)
+  assert.match(source, /this\.options\.stepRuntime\.hold\(/)
+  assert.match(source, /onHeldStep: \(active\) => this\.options\.onManualStepHeld\?\.\(\{ workflow: this\.options\.coreWorkflow, run, step, active \}\)/)
+  assert.match(source, /completeStepByKey\(key: string/)
+  assert.match(source, /captureHeldStepResult\(active\)/)
+  assert.match(source, /active\.task\.setStepComplete\?\.\(\)/)
 })

@@ -115,7 +115,7 @@ VS Code Extension Host
 
 workflow は `WORKFLOW.md` の YAML front matter と Markdown body で定義する。新規定義では `schemaVersion: workflow-register/v1` を推奨する。
 
-主な要素は、`name`、`description`、`title` / `label` / `menuLabel`、`mode`、`workspaceRequired`、`inputs`、`requires`、`preflight`、`guardrails`、`stepExecution`、`stepReview`、`artifacts`、`completion`、`steps`、Markdown body である。
+主な要素は、`name`、`description`、`title` / `label` / `menuLabel`、`mode`、`workspaceRequired`、`inputs`、`requires`、`preflight`、`guardrails`、`stepExecution`、`stepReview`、`branching`、`artifacts`、`completion`、`steps`、Markdown body である。
 
 step 種別は次の4種類である。
 
@@ -126,7 +126,9 @@ step 種別は次の4種類である。
 | `manual` | 人間の確認完了を待つ。 |
 | `result` | state / literal / agent 結果を result sink に渡す。 |
 
-`includeState` は前段 step の `resultKey` を参照する。GUI Builder では参照切れ、前方参照、`artifact.producedBy` の不整合を即時警告する。
+`includeState` は前段 step の `resultKey`、manual `form.resultKey`、manual `approval.resultKey` を参照する。GUI Builder では参照切れ、前方参照、`artifact.producedBy` の不整合を即時警告する。
+
+`branching` は step 成功後の決定的な遷移制御を定義する。各 step の `transition.decisions[]` は `run.state` の値を安全な比較条件で評価し、`next`、`end`、`fail`、または他 step への `goto` を選ぶ。過去 step への `goto` には `branching.loops[]` の `loop` 指定を必須とし、loop 回数が上限に達した場合は run を `checkpoint` にして専用 command でのみ続行または中止できる。
 
 ## 8. 実行方式
 
@@ -140,6 +142,8 @@ Bob UI 実行では、`BobWorkflowEngineRunner` が task metadata / messages か
 
 `stepReview` が有効な場合、対象 step 成功後に run は `reviewing` で停止する。人間は `acceptCurrentStep`、`retryCurrentStep`、`acceptAndRunNextStep` を使い、承認・再試行・次 step 実行を選ぶ。
 
+`transition` が有効な step では、step 完了後に engine が分岐を評価する。full 実行では checkpoint に達しない限り戻り先 step から続行し、singleStep 実行では `currentStep` を戻り先に設定して次操作を待つ。Bob UI の visible step は静的なため、過去 step への戻りは `run.json` を正本とし、chat / run view / diagnostics で現在位置を明示する。
+
 ## 9. 実行状態、再開、run control
 
 ### 9.1 run state
@@ -150,7 +154,7 @@ Bob UI 実行では、`BobWorkflowEngineRunner` が task metadata / messages か
 <workflowRoot>/.bob/workflows/runs/<runId>/run.json
 ```
 
-`run.json` は run ID、workflow ID / name / schema version / definition hash / workflow file、engine version、inputs、state、steps、current step、status、error、created / updated timestamp を保持する。
+`run.json` は run ID、workflow ID / name / schema version / definition hash / workflow file、engine version、inputs、state、steps、current step、status、error、created / updated timestamp を保持する。分岐実行時は `branching.loops`、pending checkpoint、transition history も保持し、reset された step attempt と古い state の cleanup を追跡できるようにする。
 
 ### 9.2 run control
 

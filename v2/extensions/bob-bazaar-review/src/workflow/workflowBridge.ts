@@ -16,11 +16,11 @@ export interface BazaarReviewContextResult {
   packetSummary: string
 }
 
-export function buildReviewContextResult(packet: string): BazaarReviewContextResult {
+export function buildReviewContextResult(packet: string, options: { workspacePath?: string } = {}): BazaarReviewContextResult {
   const metadata = parsePacketMetadata(packet)
   return {
     status: "ok",
-    workspacePath: metadata["repository root"] ?? "",
+    workspacePath: options.workspacePath ?? metadata["repository root"] ?? "",
     mode: metadata["review mode"] ?? "unknown",
     target: metadata["revision target"] ?? metadata.target ?? "",
     revision: metadata.revision,

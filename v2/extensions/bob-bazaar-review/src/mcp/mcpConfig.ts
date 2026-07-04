@@ -8,6 +8,7 @@ export interface McpServerConfigOptions {
   serverName: string
   bzrPath: string
   textEncoding?: string
+  allowedRoots?: string[]
 }
 
 export interface McpServerConfigResult {
@@ -19,6 +20,7 @@ export interface McpServerConfigResult {
 export async function configureWorkspaceMcpServer(options: McpServerConfigOptions): Promise<McpServerConfigResult> {
   const serverName = validateServerName(options.serverName)
   const workspaceRoot = options.workspaceFolder.uri.fsPath
+  const allowedRoots = uniquePaths([workspaceRoot, ...(options.allowedRoots ?? [])])
   const bobDir = path.join(workspaceRoot, ".bob")
   const configPath = path.join(bobDir, "mcp.json")
   const serverPath = options.extensionContext.asAbsolutePath(path.join("out", "mcp", "server.js"))
@@ -34,7 +36,7 @@ export async function configureWorkspaceMcpServer(options: McpServerConfigOption
     env: {
       BZR_PATH: options.bzrPath,
       BZR_TEXT_ENCODING: options.textEncoding ?? "auto",
-      BOB_BAZAAR_ALLOWED_ROOTS: workspaceRoot
+      BOB_BAZAAR_ALLOWED_ROOTS: allowedRoots.join(path.delimiter)
     },
     disabled: false
   }
@@ -52,6 +54,20 @@ export async function configureWorkspaceMcpServer(options: McpServerConfigOption
     serverName,
     serverPath
   }
+}
+
+function uniquePaths(paths: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const item of paths) {
+    const trimmed = item.trim()
+    if (!trimmed) continue
+    const key = path.resolve(trimmed).toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(trimmed)
+  }
+  return result
 }
 
 export function validateServerName(serverName: string): string {

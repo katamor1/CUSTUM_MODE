@@ -89,9 +89,79 @@ export interface WorkflowStepExecutionDefinition {
   showInBob: boolean
 }
 
+export interface WorkflowBranchingDefinition {
+  enabled: boolean
+  loops: WorkflowBranchLoopDefinition[]
+}
+
+export interface WorkflowBranchLoopDefinition {
+  id: string
+  title?: string
+  entryStep: string
+  maxIterations: number
+  extensionSize: number
+  checkpoint?: WorkflowBranchCheckpointDefinition
+}
+
+export interface WorkflowBranchCheckpointDefinition {
+  title?: string
+  message?: string
+}
+
+export interface WorkflowStepTransitionDefinition {
+  decisions: WorkflowTransitionDecisionDefinition[]
+  default: WorkflowTransitionDefaultAction
+}
+
+export type WorkflowTransitionDefaultAction = string
+
+export interface WorkflowTransitionDecisionDefinition {
+  id: string
+  when: WorkflowTransitionConditionDefinition
+  goto: string
+  loop?: string
+}
+
+export interface WorkflowTransitionConditionDefinition {
+  stateKey: string
+  equals?: unknown
+  notEquals?: unknown
+  in?: unknown[]
+  exists?: boolean
+  truthy?: boolean
+}
+
+export interface WorkflowManualFormDefinition {
+  resultKey: string
+  fields: WorkflowManualFormFieldDefinition[]
+}
+
+export interface WorkflowManualFormFieldDefinition {
+  id: string
+  title?: string
+  type: "string" | "number" | "boolean" | "select"
+  required?: boolean
+  multiline?: boolean
+  options?: string[]
+}
+
+export interface WorkflowManualApprovalDefinition {
+  resultKey: string
+  approveLabel?: string
+  rejectLabel?: string
+  message?: string
+}
+
 export interface WorkflowActionDefinition {
   provider: string
   args?: unknown
+}
+
+export interface WorkflowUserActionDefinition {
+  message?: string
+  completeLabel?: string
+  confirmOnComplete?: boolean
+  confirmMessage?: string
 }
 
 export type ResultSourceDefinition =
@@ -110,6 +180,8 @@ export interface BaseEngineStep {
   includeState?: string[]
   maxResultBytes?: number
   stateRequired?: boolean
+  transition?: WorkflowStepTransitionDefinition
+  userAction?: WorkflowUserActionDefinition
 }
 
 export interface CommandEngineStep extends BaseEngineStep {
@@ -126,6 +198,8 @@ export interface AgentEngineStep extends BaseEngineStep {
 
 export interface ManualEngineStep extends BaseEngineStep {
   type: "manual"
+  form?: WorkflowManualFormDefinition
+  approval?: WorkflowManualApprovalDefinition
 }
 
 export interface ResultEngineStep extends BaseEngineStep {
@@ -179,5 +253,6 @@ export interface CoreWorkflowDefinition {
   guardrails: WorkflowGuardrailsDefinition
   artifacts: WorkflowArtifactDefinition[]
   completion: WorkflowCompletionDefinition
+  branching?: WorkflowBranchingDefinition
   engineSteps: EngineStep[]
 }

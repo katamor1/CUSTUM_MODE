@@ -110,6 +110,7 @@ class BazaarReviewGuiController {
     const status = await initializeBobWorkspaceFromTemplates({
       context: this.context,
       workspaceFolder: folder,
+      allowedRoots: this.bazaarWorkspaceFolder ? [this.bazaarWorkspaceFolder.uri.fsPath] : undefined,
       bzrPath: resolveBzrPath(config, vscode.workspace.isTrusted),
       serverName: config.get<string>("mcpServerName", "bazaar"),
       textEncoding: config.get<string>("textEncoding", "auto")
@@ -183,7 +184,8 @@ class BazaarReviewGuiController {
               packetUri: doc.uri.toString(),
               runId: this.initialTarget?.runId,
               stepId: this.initialTarget?.stepId,
-              target: prepared.info.targetRevision ?? prepared.info.revision
+              target: prepared.info.targetRevision ?? prepared.info.revision,
+              repositoryRoot: prepared.root
             }))
           }
         })

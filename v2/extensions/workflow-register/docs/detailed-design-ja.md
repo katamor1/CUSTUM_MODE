@@ -130,6 +130,7 @@ extensions/workflow-register/
 | `workflowRegister.openCurrentStepInBuilder` | current step の workflow 定義を GUI Builder で開く。 |
 | `workflowRegister.inspectRunDiagnostics` | run state と task snapshot の診断を表示する。 |
 | `workflowRegister.inspectActiveSteps` | Bob UI の手動完了待ち active step を表示する。 |
+| `workflowRegister.openManualStepPanel` | held run または active manual step の手動操作 Webview を開く。 |
 | `workflowRegister.completeCurrentStep` | Bob UI 経由の current manual step を完了する。 |
 | `workflowRegister.completeStep` | `completeCurrentStep` の別名。 |
 | `workflowRegister.validateCurrentWorkflow` | active editor の workflow を検証する。 |
@@ -191,12 +192,13 @@ v1 schema の主な制約は次の通り。
 - `stepMessage` は `full` / `current` / `silent` / `step`。
 - `stepExecution.mode` は `full` / `todo` / `engineSteps`。
 - `stepReview.pauseAfter` は `everyStep` / `agentAndCommand` / `none`。
+- `branching.enabled` が true の場合、`branching.loops[]` の `entryStep`、`maxIterations`、`extensionSize` を検証する。
 - input `type` は `string` / `number` / `boolean` / `select`。
 - step `type` は `command` / `agent` / `manual` / `result`。
 - `command` step では `action` を必須とする。
 - `result` step では `result` を必須とする。
 
-`workflowValidator.ts` は schema 検証に加え、step ID 重複、Todo と step の対応、`includeState` 前方参照、result source、sink 設定、artifact `producedBy`、input `requiredWhen`、guardrails 衝突を検査する。
+`workflowValidator.ts` は schema 検証に加え、step ID 重複、Todo と step の対応、`includeState` 前方参照、result source、sink 設定、artifact `producedBy`、input `requiredWhen`、guardrails 衝突を検査する。分岐では decision ID 重複、condition 演算子数、`goto` step の存在、後方 `goto` の loop 指定、loop ID の存在、manual `form.resultKey` / `approval.resultKey` と既存 producer の衝突を検査する。
 
 ## 9. Bob 登録設計
 
@@ -222,9 +224,12 @@ v1 schema の主な制約は次の通り。
 6. start index を決定する。
 7. step を実行する。
 8. step 成功後に artifact 出力、manual completion、step review、pause checkpoint を処理する。
-9. full 実行で全 step が完了したら run を `completed` にする。
+9. step `transition` があれば `run.state` を条件評価し、`next` / `goto` / `end` / `fail` / `checkpoint` を適用する。
+10. full 実行で全 step が完了したら run を `completed` にする。
 
-`retryCurrentStep()` は current step を pending に戻し、必要に応じて attempt を保存してから再実行する。`resumeRun()` は `paused` の場合に run control を clear し、`held` の場合は `completeHeldStep` に応じて held step を完了扱いにして続行する。
+`retryCurrentStep()` は current step を pending に戻し、必要に応じて attempt を保存してから再実行する。`resumeRun()` は `paused` の場合に run control を clear し、`held` の場合は `completeHeldStep` に応じて held step を完了扱いにして続行する。`checkpoint` の run は通常 resume では突破できず、`approveBranchCheckpoint()` または `abortBranchCheckpoint()` で明示処理する。
+
+後方 `goto` は reset 対象範囲の step state を pending に戻し、attempt を archive し、範囲内で生成された `resultKey` / manual result key を `run.state` から削除する。manual form の前回値は `workflow.branching.lastValues.<stepId>.<resultKey>` に退避し、再入力 UI の初期値として利用できる。
 
 ## 11. Run State Store
 
@@ -234,7 +239,7 @@ v1 schema の主な制約は次の通り。
 <workflowRoot>/.bob/workflows/runs/<runId>/run.json
 ```
 
-`FileRunStateStore.saveRun()` は一時ファイルに JSON を書き込み、rename する atomic write で保存する。`findRecoverableRun()` は workflow ID、definition hash、workflow file、canonical inputs が一致する継続可能 run を返す。
+`FileRunStateStore.saveRun()` は一時ファイルに JSON を書き込み、rename する atomic write で保存する。`findRecoverableRun()` は workflow ID、definition hash、workflow file、canonical inputs が一致する継続可能 run を返す。recoverable status には `checkpoint` も含めるが、engine は通常 resume ではなく専用 checkpoint command の対象として扱う。
 
 ## 12. Run Control Store / Pause
 
@@ -268,6 +273,8 @@ v1 schema の主な制約は次の通り。
 - `contextValue` は `workflowRun.<status>`。
 - Status Bar は active run を running / paused / reviewing / held 別に集計する。
 
+Branch checkpoint command は active run selection と run store を使い、`approveBranchCheckpoint` で loop の `allowed` を `extensionSize` だけ増やして pending back transition を適用し、`abortBranchCheckpoint` で run を `failed` にする。`inspectBranching` は loop count、allowed、checkpoint、history を Markdown report として表示する。
+
 ## 14. Task Snapshot / Recovery
 
 保存場所:
@@ -286,7 +293,9 @@ v1 schema の主な制約は次の通り。
 
 `StepRuntime` は永続状態ではない。VS Code 再起動で失われる。復帰時の正本は `run.json` であり、Bob chat 側の補助情報は task snapshot である。
 
-`completeCurrentStep()` は active step を選択し、必要なら `captureHeldStepResult()` で Bob chat の latest assistant text を result command へ handoff した後、`task.setStepComplete()` と Promise resolve を行う。
+`completeCurrentStep()` は active step を選択し、必要なら `captureHeldStepResult()` で Bob chat の latest assistant text を result command へ handoff した後、`task.setStepComplete()` と Promise resolve を行う。`completeStepByKey(activeKey)` は Manual Step Panel から指定 key の active step だけを完了するための経路であり、同じ完了 helper を使って result handoff と guardrails を bypass しない。
+
+`manualCompletion` は step が held になった時点で `onHeldStep` callback を呼ぶ。`WorkflowRegisterService` はこの callback から `ManualStepPanelController.show()` を呼び、`steps[].userAction`、`prompt`、run inputs、state snapshot を使って利用者向けメッセージを表示する。active task が残っていない held run では read-only 表示にし、誤って完了扱いにしない。
 
 ## 16. Result Handoff / Sink
 
@@ -294,7 +303,9 @@ v1 schema の主な制約は次の通り。
 
 ## 17. GUI Builder / AI Authoring
 
-GUI Builder の保存処理は、authoring model を Markdown 化し、検証し、error が無ければ既存ファイルを backup して `WORKFLOW.md` を書き込み、`workflowRegister.reload` を実行する。
+GUI Builder の保存処理は、authoring model を Markdown 化し、検証し、error が無ければ既存ファイルを backup して `WORKFLOW.md` を書き込み、`workflowRegister.reload` を実行する。authoring model は `branching`、step `transition`、manual `form` / `approval` を保持し、Preview / Diagnostics / Save で parser と validator の同じ検査を通す。
+
+Step detail は `User action` section を持ち、`steps[].userAction.message`、`completeLabel`、`confirmOnComplete`、`confirmMessage` を編集できる。manual step では `userAction.message` が無い場合に `prompt` へ fallback する。Builder preview は template 変数を未展開のまま表示し、保存前 validation は利用者向けメッセージ欠落、長すぎるボタン文言、確認文の既定 fallback、無効化される `command:` URI を warning / info として出す。
 
 AI provider は `workflowRegister.aiProviderCommand` で指定する。未設定時は mock provider を使う。`improveWorkflowWithAi` は候補 Markdown を `.bob/workflows/.previews/...` に保存し、diff を表示し、明示確認後に backup を作成して適用する。
 
@@ -302,7 +313,7 @@ AI provider は `workflowRegister.aiProviderCommand` で指定する。未設定
 
 検証タイミングは、`validateCurrentWorkflow`、`validateWorkspaceWorkflows`、`WORKFLOW.md` 保存時、active editor 切替時、GUI Builder preview / save 時である。
 
-`inspectRunDiagnostics` は、run state と task snapshot summary を読み、run ID、status、current step、workflow hash、step 状態、attempt 件数、snapshot 件数、latest snapshot、handoff error、truncated、不一致 warning を表示する。
+`inspectRunDiagnostics` は、run state と task snapshot summary を読み、run ID、status、current step、workflow hash、step 状態、attempt 件数、snapshot 件数、latest snapshot、handoff error、truncated、不一致 warning を表示する。分岐 run では branch history、loop count、pending checkpoint、reset attempt の有無も表示対象にする。
 
 ## 19. Multi-root workspace
 

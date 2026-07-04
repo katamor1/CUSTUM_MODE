@@ -6,13 +6,14 @@ import {
 } from "./bobWorkflowRunner"
 import { StepRuntime } from "./bobStepRuntime"
 import type {
+  ActiveStep,
   BobWorkflowRunnerInputCollector,
   WorkflowDefinition
 } from "./bobWorkflowTypes"
 import type { ActionRegistry } from "./core/actionRegistry"
 import { createCommandAgentProvider } from "./core/agentProvider"
 import { WorkflowEngine } from "./core/engine"
-import type { WorkflowEngineOptions } from "./core/engine"
+import type { ManualCompletionInput, ManualCompletionResult, WorkflowEngineOptions } from "./core/engine"
 import type { AgentProvider } from "./core/model"
 import { createDefaultResultSinkRegistry, ResultSinkRegistry } from "./core/resultSinkRegistry"
 import { FileRunStateStore, RunStateStore } from "./core/runStateStore"
@@ -35,6 +36,7 @@ export interface WorkflowRuntimeFactoryOptions {
   stepRuntime: StepRuntime
   agentProvider: () => AgentProvider | undefined
   inputsProvider: (workflow: WorkflowDefinition, provided: Record<string, unknown>) => ReturnType<BobWorkflowRunnerInputCollector>
+  onManualStepHeld?: (input: { workflow: import("./core/model").CoreWorkflowDefinition; run: import("./core/model").WorkflowRunState; step: import("./core/model").EngineStep; active: ActiveStep }) => Promise<void> | void
 }
 
 export class WorkflowRuntimeFactory {
@@ -48,6 +50,7 @@ export class WorkflowRuntimeFactory {
       runStore: this.createRunStore(workspaceRoot),
       agentProvider: this.options.agentProvider() ?? this.createCommandAgentProvider(),
       preflightChecks: this.createPreflightChecks(workspaceRoot),
+      manualCompletion: (input) => this.holdStandaloneManualStep(input),
       recoverResultText: snapshotStore
         ? (input) => recoverResultTextFromSnapshots(snapshotStore, input.workflow, input.run, input.step)
         : undefined
@@ -65,6 +68,7 @@ export class WorkflowRuntimeFactory {
       preflightChecks: (workspaceRoot) => this.createPreflightChecks(workspaceRoot),
       agentProvider: this.options.agentProvider() ?? this.createCommandAgentProvider(),
       stepRuntime: this.options.stepRuntime,
+      onManualStepHeld: this.options.onManualStepHeld,
       inputsProvider: (task, provided) => this.options.inputsProvider(workflow, {
         ...extractTaskWorkflowInputs(workflow, task),
         ...provided
@@ -74,6 +78,30 @@ export class WorkflowRuntimeFactory {
 
   createRunStore(workspaceRoot: string): RunStateStore {
     return new FileRunStateStore({ workspaceRoot, engineVersion: this.options.engineVersion })
+  }
+
+  private async holdStandaloneManualStep(input: ManualCompletionInput): Promise<ManualCompletionResult> {
+    return this.options.stepRuntime.hold(
+      {
+        id: input.workflow.id,
+        label: input.workflow.label,
+        guardrails: input.workflow.guardrails
+      },
+      { id: input.step.id, title: input.step.title },
+      {},
+      {
+        runId: input.run.runId,
+        coreStep: input.step,
+        inputs: input.run.inputs,
+        state: input.run.state,
+        onHeldStep: (active) => this.options.onManualStepHeld?.({
+          workflow: input.workflow,
+          run: input.run,
+          step: input.step,
+          active
+        })
+      }
+    )
   }
 
   private createCommandAgentProvider(): AgentProvider | undefined {

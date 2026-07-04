@@ -128,3 +128,53 @@ test("StepRuntime does not apply completion state updates when the expected step
   assert.equal(state["bobBazaar.reviewPacket"], undefined)
   assert.equal(held.completed(), false)
 })
+
+test("StepRuntime collects structured manual form and approval values through a prompt provider", async () => {
+  const { StepRuntime } = loadStepRuntime()
+  const providerInputs = []
+  const runtime = new StepRuntime({
+    collectManualCompletion: async (input) => {
+      providerInputs.push(input)
+      return {
+        formValues: { request: "revised request", priority: 2 },
+        approval: { decision: "rejected", reason: "needs more detail" }
+      }
+    }
+  })
+  const held = heldTask()
+  const state = {
+    "workflow.branching.lastValues.collect-input.userRequest": JSON.stringify({ request: "previous request" })
+  }
+  const pending = runtime.hold(workflow(), { id: "collect-input", title: "Collect input" }, held.task, {
+    runId: "run-1",
+    state,
+    coreStep: {
+      id: "collect-input",
+      title: "Collect input",
+      type: "manual",
+      form: {
+        resultKey: "userRequest",
+        fields: [
+          { id: "request", type: "string", required: true },
+          { id: "priority", type: "number" }
+        ]
+      },
+      approval: {
+        resultKey: "userApproval",
+        approveLabel: "Approve",
+        rejectLabel: "Reject"
+      }
+    }
+  })
+
+  const message = await runtime.completeCurrentStep({ expectedRunId: "run-1", expectedStepId: "collect-input" })
+  const result = await pending
+
+  assert.match(message, /Completed: Project Rule Review \/ Collect input/)
+  assert.equal(result.completed, true)
+  assert.deepEqual(result.formValues, { request: "revised request", priority: 2 })
+  assert.deepEqual(result.approval, { decision: "rejected", reason: "needs more detail" })
+  assert.deepEqual(JSON.parse(state.userRequest), { request: "revised request", priority: 2 })
+  assert.deepEqual(JSON.parse(state.userApproval), { decision: "rejected", reason: "needs more detail" })
+  assert.deepEqual(providerInputs[0].previousFormValues, { request: "previous request" })
+})

@@ -116,3 +116,86 @@ test("loads advanced sections, approval guardrails, and markdown body back into 
   assert.equal(loaded.model.completion.visualization.type, "table")
   assert.match(loaded.model.body, /## Manual Notes/)
 })
+
+test("serializes and loads branching transitions and structured manual steps", () => {
+  const model = createAuthoringModelFromTemplate({
+    name: "branching-authoring",
+    title: "Branching Authoring",
+    description: "差し戻し分岐を GUI model から保存する。",
+    template: "simple-agent"
+  })
+  model.branching = {
+    enabled: true,
+    loops: [
+      {
+        id: "approval-loop",
+        title: "Approval loop",
+        entryStep: "collect-user-input",
+        maxIterations: 5,
+        extensionSize: 5,
+        checkpoint: {
+          title: "Loop limit reached",
+          message: "Review inputs before continuing."
+        }
+      }
+    ]
+  }
+  model.steps = [
+    {
+      id: "collect-user-input",
+      title: "Collect user input",
+      type: "manual",
+      form: {
+        resultKey: "userRequest",
+        fields: [
+          { id: "request", title: "Request", type: "string", required: true, multiline: true }
+        ]
+      }
+    },
+    {
+      id: "generate-draft",
+      title: "Generate draft",
+      type: "agent",
+      includeState: ["userRequest"],
+      resultKey: "generatedDraft",
+      prompt: "Generate a draft."
+    },
+    {
+      id: "user-approval",
+      title: "User approval",
+      type: "manual",
+      includeState: ["userRequest", "generatedDraft"],
+      approval: {
+        resultKey: "userApproval",
+        approveLabel: "Approve",
+        rejectLabel: "Reject",
+        message: "Review the draft."
+      },
+      transition: {
+        decisions: [
+          {
+            id: "user-rejected",
+            when: { stateKey: "userApproval.decision", equals: "rejected" },
+            goto: "collect-user-input",
+            loop: "approval-loop"
+          }
+        ],
+        default: "next"
+      }
+    }
+  ]
+
+  const { rendered, validation } = renderAndValidate(model)
+  const loaded = loadAuthoringModelFromMarkdown({ sourceId: "workflow-register", filePath: rendered.filePath, text: rendered.markdown })
+
+  assert.equal(validation.ok, true, validation.diagnostics.map((item) => item.message).join("\n"))
+  assert.match(rendered.markdown, /branching:/)
+  assert.match(rendered.markdown, /transition:/)
+  assert.match(rendered.markdown, /form:/)
+  assert.match(rendered.markdown, /approval:/)
+  assert.equal(loaded.model.branching.loops[0].id, "approval-loop")
+  assert.equal(loaded.model.steps[0].form.resultKey, "userRequest")
+  assert.equal(loaded.model.steps[0].form.fields[0].multiline, true)
+  assert.equal(loaded.model.steps[2].approval.resultKey, "userApproval")
+  assert.equal(loaded.model.steps[2].transition.decisions[0].loop, "approval-loop")
+})

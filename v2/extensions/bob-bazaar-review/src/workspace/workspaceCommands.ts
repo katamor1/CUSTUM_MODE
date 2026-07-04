@@ -2,7 +2,7 @@ import * as vscode from "vscode"
 import { resolveBzrPath } from "../bazaar/bzrPathTrust"
 import { configureWorkspaceMcpServer } from "../mcp/mcpConfig"
 import { initializeProjectRules } from "../projectRules/io"
-import { resolveBobWorkspaceFolder } from "./workspaceResolver"
+import { resolveBazaarWorkspaceFolder, resolveBobWorkspaceFolder } from "./workspaceResolver"
 
 /**
  * Writes the Bazaar MCP server configuration for the selected Bob workspace.
@@ -18,13 +18,15 @@ export async function configureMcp(context: vscode.ExtensionContext): Promise<vo
   const bzrPath = resolveBzrPath(config, vscode.workspace.isTrusted)
   const textEncoding = config.get<string>("textEncoding", "auto")
   const serverName = config.get<string>("mcpServerName", "bazaar")
+  const bazaarFolder = await resolveBazaarWorkspaceFolder({ workflowRoot: folder.uri.fsPath, allowPick: false })
 
   const result = await configureWorkspaceMcpServer({
     workspaceFolder: folder,
     extensionContext: context,
     serverName,
     bzrPath,
-    textEncoding
+    textEncoding,
+    allowedRoots: bazaarFolder ? [bazaarFolder.uri.fsPath] : undefined
   })
 
   await vscode.window.showInformationMessage(

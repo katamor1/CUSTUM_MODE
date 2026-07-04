@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict")
 const { test } = require("node:test")
 
-const { buildStepMessage, buildWorkflowStartMessage } = require("../out/bobWorkflowMessages")
+const { buildStepMessage, buildWorkflowControlBlock, buildWorkflowStartMessage } = require("../out/bobWorkflowMessages")
 
 function workflow(overrides = {}) {
   return {
@@ -99,4 +99,23 @@ test("workflow state and command result are isolated as data-only prompt content
   assert.ok(commandResult)
   const payload = JSON.parse(commandResult[1])
   assert.equal(payload.value, maliciousResult)
+})
+
+test("workflow control block links held manual runs to the manual step panel", () => {
+  const held = buildWorkflowControlBlock({
+    runId: "run-1",
+    stepId: "check-file",
+    status: "held",
+    currentStep: "check-file"
+  })
+  const running = buildWorkflowControlBlock({
+    runId: "run-2",
+    stepId: "collect",
+    status: "running",
+    currentStep: "collect"
+  })
+
+  assert.match(held, /Open manual step page/)
+  assert.match(held, /workflowRegister\.openManualStepPanel/)
+  assert.doesNotMatch(running, /Open manual step page/)
 })

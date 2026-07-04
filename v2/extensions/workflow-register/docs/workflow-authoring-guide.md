@@ -87,6 +87,60 @@ steps:
       Analyze the collected context.
 ```
 
+Manual steps can also produce state with `form.resultKey` or `approval.resultKey`. These keys are available to later `includeState`, `result.source: state`, and `transition.when.stateKey` references.
+
+```yaml
+steps:
+  - id: collect-user-input
+    title: Collect user input
+    type: manual
+    form:
+      resultKey: userRequest
+      fields:
+        - id: request
+          title: Request
+          type: string
+          required: true
+          multiline: true
+  - id: user-approval
+    title: User approval
+    type: manual
+    approval:
+      resultKey: userApproval
+      approveLabel: Approve
+      rejectLabel: Reject
+```
+
+## Branching and Step-back Loops
+
+Use top-level `branching` plus step-level `transition` when a successful step should conditionally move to another step. Backward `goto` transitions must reference a named loop so the engine can count attempts and stop at a checkpoint.
+
+```yaml
+branching:
+  enabled: true
+  loops:
+    - id: revise-until-approved
+      entryStep: collect-user-input
+      maxIterations: 5
+      extensionSize: 5
+steps:
+  - id: preapproval-check
+    title: Preapproval check
+    type: command
+    resultKey: preapproval
+    transition:
+      decisions:
+        - id: preapproval-ng
+          when:
+            stateKey: preapproval.status
+            equals: ng
+          goto: collect-user-input
+          loop: revise-until-approved
+      default: next
+```
+
+Supported condition operators are `equals`, `notEquals`, `in`, `exists`, and `truthy`. A run that reaches the loop limit moves to `checkpoint`; use `workflowRegister.approveBranchCheckpoint`, `workflowRegister.abortBranchCheckpoint`, or `workflowRegister.inspectBranching` to operate on it.
+
 ## Inputs
 
 Use `inputs` when the workflow needs user-provided values.

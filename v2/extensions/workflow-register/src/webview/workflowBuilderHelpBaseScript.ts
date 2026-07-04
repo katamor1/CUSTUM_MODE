@@ -63,6 +63,13 @@ Object.assign(helpCatalog, {
     summary: '書き出し元と保存先を設定します。',
     effect: 'state、literal、agent 出力を選び、file sink などへ保存できるようにします。'
   },
+  'section.userAction': {
+    id: 'section.userAction',
+    labelJa: 'User action セクション',
+    fieldKey: 'steps[].userAction',
+    summary: '手動操作ページに表示する内容と完了操作を設定します。',
+    effect: 'manual step で workflow が停止したとき、専用ページから作業内容を確認して完了できます。'
+  },
   'step.prompt': {
     id: 'step.prompt',
     labelJa: 'Prompt',
@@ -70,6 +77,34 @@ Object.assign(helpCatalog, {
     summary: 'agent / manual step で Bob または人間に渡す指示文です。',
     effect: 'AI に何を分析・生成させるか、または人間に何を確認してほしいかを具体的に伝えます。',
     caution: '大きな仕様全文を貼るより、includeState や artifacts と組み合わせて根拠を限定する方が安定します。'
+  },
+  'step.userAction.message': {
+    id: 'step.userAction.message',
+    labelJa: '手動操作ページのメッセージ',
+    fieldKey: 'steps[].userAction.message',
+    summary: 'manual step で停止したときに手動操作ページへ表示する本文です。',
+    effect: '実行中の operator が何を確認し、完了ボタンを押す前に何を済ませるべきかを明示できます。'
+  },
+  'step.userAction.completeLabel': {
+    id: 'step.userAction.completeLabel',
+    labelJa: '完了ボタン文言',
+    fieldKey: 'steps[].userAction.completeLabel',
+    summary: '手動操作ページの完了ボタンに表示する短い文言です。',
+    effect: '確認、レビュー済み、保存済みなど、完了条件に近いラベルにできます。'
+  },
+  'step.userAction.confirmOnComplete': {
+    id: 'step.userAction.confirmOnComplete',
+    labelJa: '完了前確認',
+    fieldKey: 'steps[].userAction.confirmOnComplete',
+    summary: '完了ボタンを押した後に確認ダイアログを出すかどうかです。',
+    effect: '取り消しづらい手動確認や外部作業を誤って完了しないようにできます。'
+  },
+  'step.userAction.confirmMessage': {
+    id: 'step.userAction.confirmMessage',
+    labelJa: '確認メッセージ',
+    fieldKey: 'steps[].userAction.confirmMessage',
+    summary: '完了前確認ダイアログに表示する文言です。',
+    effect: '確認対象や完了条件を最後に明示できます。'
   }
 });
 function helpEntry(id) { return helpCatalog[id] || helpCatalog[defaultHelpId]; }
@@ -191,7 +226,8 @@ function helpTabForId(id) {
     id.indexOf('result.') === 0 ||
     id === 'section.command' ||
     id === 'section.result' ||
-    id === 'section.includeState'
+    id === 'section.includeState' ||
+    id === 'section.userAction'
   ) {
     return 'step';
   }

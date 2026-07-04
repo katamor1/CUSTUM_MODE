@@ -5,8 +5,10 @@ import type {
 } from "../model"
 import type { WorkflowEngineOptions } from "../engineTypes"
 import { workflowStepReview } from "./runState"
+import { formatStateValue } from "./templateRenderer"
 
 type ManualCompletion = NonNullable<WorkflowEngineOptions["manualCompletion"]>
+type ManualCompletionResult = Awaited<ReturnType<ManualCompletion>>
 
 export async function completeStepIfManual(input: {
   workflow: CoreWorkflowDefinition
@@ -37,10 +39,37 @@ export async function waitForManualCompletion(input: {
   if (!manualCompletion) return { ok: false, held: true, error: "Manual workflow step is waiting for completion." }
   try {
     const result = await Promise.resolve(manualCompletion({ workflow, run, step }))
-    return result.completed
-      ? { ok: true }
-      : { ok: false, held: true, error: result.error ?? "Manual workflow step is waiting for completion." }
+    if (result.completed) {
+      applyManualCompletionState(run, step, result)
+      return { ok: true }
+    }
+    return { ok: false, held: true, error: result.error ?? "Manual workflow step is waiting for completion." }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+function applyManualCompletionState(run: WorkflowRunState, step: EngineStep, result: ManualCompletionResult): void {
+  for (const [key, value] of Object.entries(result.stateUpdates ?? {})) {
+    if (!key || value === undefined) continue
+    run.state[key] = formatStateValue(value)
+  }
+  if (step.type !== "manual") return
+  if (step.form?.resultKey) {
+    const value = result.formValues ?? result.stateUpdates?.[step.form.resultKey]
+    if (value !== undefined) run.state[step.form.resultKey] = formatStateValue(value)
+  }
+  if (step.approval?.resultKey) {
+    const value = result.approval ?? approvalFromLegacyResult(result)
+    if (value !== undefined) run.state[step.approval.resultKey] = formatStateValue(value)
+  }
+}
+
+function approvalFromLegacyResult(result: ManualCompletionResult): { decision: "approved" | "rejected"; reason?: string; comment?: string } | undefined {
+  if (!result.decision) return undefined
+  return {
+    decision: result.decision,
+    reason: result.reason,
+    comment: result.comment
   }
 }

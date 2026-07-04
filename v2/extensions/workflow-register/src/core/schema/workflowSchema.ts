@@ -1,3 +1,118 @@
+const transitionConditionSchema = {
+  type: "object",
+  required: ["stateKey"],
+  properties: {
+    stateKey: { type: "string", minLength: 1 },
+    equals: {},
+    notEquals: {},
+    "in": { type: "array" },
+    exists: { type: "boolean" },
+    truthy: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const
+
+const transitionSchema = {
+  type: "object",
+  properties: {
+    decisions: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "when", "goto"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          when: transitionConditionSchema,
+          goto: { type: "string", minLength: 1 },
+          loop: { type: "string", minLength: 1 }
+        },
+        additionalProperties: false
+      }
+    },
+    default: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const
+
+const manualFormSchema = {
+  type: "object",
+  required: ["resultKey"],
+  properties: {
+    resultKey: { type: "string", minLength: 1 },
+    fields: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "type"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          title: { type: "string" },
+          type: { enum: ["string", "number", "boolean", "select"] },
+          required: { type: "boolean" },
+          multiline: { type: "boolean" },
+          options: { type: "array", items: { type: "string" } }
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
+} as const
+
+const manualApprovalSchema = {
+  type: "object",
+  required: ["resultKey"],
+  properties: {
+    resultKey: { type: "string", minLength: 1 },
+    approveLabel: { type: "string" },
+    rejectLabel: { type: "string" },
+    message: { type: "string" }
+  },
+  additionalProperties: false
+} as const
+
+const userActionSchema = {
+  type: "object",
+  properties: {
+    message: { type: "string" },
+    completeLabel: { type: "string" },
+    confirmOnComplete: { type: "boolean" },
+    confirmMessage: { type: "string" }
+  },
+  additionalProperties: false
+} as const
+
+const branchingSchema = {
+  type: "object",
+  properties: {
+    enabled: { type: "boolean" },
+    loops: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "entryStep"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          title: { type: "string" },
+          entryStep: { type: "string", minLength: 1 },
+          maxIterations: { type: "number" },
+          extensionSize: { type: "number" },
+          checkpoint: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              message: { type: "string" }
+            },
+            additionalProperties: false
+          }
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  additionalProperties: false
+} as const
+
 export const workflowV1Schema = {
   type: "object",
   required: ["name", "description"],
@@ -37,6 +152,7 @@ export const workflowV1Schema = {
       },
       additionalProperties: false
     },
+    branching: branchingSchema,
     autoApproval: { type: "boolean" },
     workspaceRequired: { type: "boolean" },
     hidden: { type: "boolean" },
@@ -164,6 +280,10 @@ export const workflowV1Schema = {
           maxResultBytes: { type: "number" },
           stateRequired: { type: "boolean" },
           resultKey: { type: "string" },
+          transition: transitionSchema,
+          userAction: userActionSchema,
+          form: manualFormSchema,
+          approval: manualApprovalSchema,
           result: {
             type: "object",
             required: ["source", "sinks"],

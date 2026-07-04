@@ -55,6 +55,16 @@ export interface ManualCompletionInput {
 export interface ManualCompletionResult {
   completed: boolean
   error?: string
+  stateUpdates?: Record<string, unknown>
+  formValues?: Record<string, unknown>
+  approval?: {
+    decision: "approved" | "rejected"
+    reason?: string
+    comment?: string
+  }
+  decision?: "approved" | "rejected"
+  reason?: string
+  comment?: string
 }
 
 export interface RecoverResultTextInput {

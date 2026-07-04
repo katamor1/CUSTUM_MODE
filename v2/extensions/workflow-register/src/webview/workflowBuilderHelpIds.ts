@@ -30,10 +30,15 @@ export const WorkflowBuilderHelpIds = {
   StepIncludeState: "step.includeState",
   StepMaxResultBytes: "step.maxResultBytes",
   StepPrompt: "step.prompt",
+  StepUserActionMessage: "step.userAction.message",
+  StepUserActionCompleteLabel: "step.userAction.completeLabel",
+  StepUserActionConfirmOnComplete: "step.userAction.confirmOnComplete",
+  StepUserActionConfirmMessage: "step.userAction.confirmMessage",
 
   SectionIncludeState: "section.includeState",
   SectionCommand: "section.command",
   SectionResult: "section.result",
+  SectionUserAction: "section.userAction",
 
   CommandProvider: "command.provider",
   CommandCommandId: "command.commandId",

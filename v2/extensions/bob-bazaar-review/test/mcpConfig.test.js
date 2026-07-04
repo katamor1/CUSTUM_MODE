@@ -21,6 +21,24 @@ test("configureWorkspaceMcpServer writes the configured Bazaar text encoding", a
   assert.equal(config.mcpServers.bazaar.env.BOB_BAZAAR_ALLOWED_ROOTS, workspaceRoot)
 })
 
+test("configureWorkspaceMcpServer allows a split Bazaar repository root", async () => {
+  const { configureWorkspaceMcpServer } = require("../out/mcp/mcpConfig")
+  const bobRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-mcp-bob-"))
+  const bazaarRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-mcp-bzr-"))
+  const result = await configureWorkspaceMcpServer({
+    workspaceFolder: { uri: { fsPath: bobRoot } },
+    extensionContext: { asAbsolutePath: (relativePath) => path.join("C:\\extension", relativePath) },
+    serverName: "bazaar",
+    bzrPath: "bzr",
+    allowedRoots: [bazaarRoot]
+  })
+
+  const config = JSON.parse(await fs.readFile(result.configPath, "utf8"))
+  const allowedRoots = config.mcpServers.bazaar.env.BOB_BAZAAR_ALLOWED_ROOTS.split(path.delimiter)
+
+  assert.deepEqual(allowedRoots, [bobRoot, bazaarRoot])
+})
+
 test("configureWorkspaceMcpServer rejects invalid server names", async () => {
   const { configureWorkspaceMcpServer } = require("../out/mcp/mcpConfig")
   const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-mcp-"))

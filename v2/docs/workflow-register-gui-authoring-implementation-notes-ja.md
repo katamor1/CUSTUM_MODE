@@ -73,12 +73,27 @@ Phase 5 では、承認ルールの GUI 編集と `workflowBuilderPanel.ts` の�
 - 肥大化していた `workflowBuilderPanel.ts` を VS Code panel 制御に絞る。
 - Webview shell を `workflowBuilderHtml.ts`、CSS を `workflowBuilderStyles.ts`、client-side script を `workflowBuilderClientScript.ts` へ分割する。
 
+## Phase 6: 手動操作 Step の User Action GUI
+
+Phase 6 では、`type: manual` step と workflow-level manual completion の完了導線として、利用者向けの手動操作ページと Builder 編集項目を追加した。
+
+追加した内容は次のとおり。
+
+- `steps[].userAction` を schema / parser / authoring model / serializer / loader の round-trip 対象にする。
+- `manual-checklist` template と scaffold に `userAction.message` と `completeLabel` の例を追加する。
+- Bob UI 実行中に manual step が held になったとき、`ManualStepPanelController` で手動操作 Webview を開く。
+- `workflowRegister.openManualStepPanel` を追加し、Bob chat の control block、Command Palette、Run Control View の held item から手動操作ページへ到達できるようにする。
+- `StepRuntime.completeStepByKey(activeKey)` を追加し、Webview の完了ボタンから既存の `captureHeldStepResult` と `task.setStepComplete()` 経路を通して対象 step だけを完了する。
+- Step detail に `User action` section を追加し、message、完了ボタン文言、完了前確認、確認メッセージを編集できるようにする。
+- Builder help / help ID / step draft validation / 実行時プレビューに `userAction` を追加する。
+
 ## 追加コマンド
 
 | command | title | 用途 |
 | --- | --- | --- |
 | `workflowRegister.openWorkflowBuilder` | `Bob ワークフロー: GUI で作成` | Webview ベースのワークフロー作成画面を開く。 |
 | `workflowRegister.editWorkflowInBuilder` | `Bob ワークフロー: GUI で編集` | 既存 `WORKFLOW.md` を Webview Builder に読み込んで編集する。 |
+| `workflowRegister.openManualStepPanel` | `Bob ワークフロー: 手動操作ステップを開く` | held run または active manual step の手動操作ページを開く。 |
 
 ## 追加・変更ファイル
 

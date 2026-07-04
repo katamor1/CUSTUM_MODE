@@ -61,6 +61,27 @@ export interface WorkflowRegisterApi {
    * @returns The next-step execution result returned by the runtime.
    */
   runNextStep: (runId?: string) => Promise<unknown>
+  /**
+   * Approves a pending branch checkpoint and extends the loop allowance.
+   *
+   * @param runId Optional run identifier. When omitted, the active or selectable run is used.
+   * @returns The updated workflow run.
+   */
+  approveBranchCheckpoint: (runId?: string) => Promise<unknown>
+  /**
+   * Aborts a workflow run that is waiting at a branch checkpoint.
+   *
+   * @param runId Optional run identifier. When omitted, the active or selectable run is used.
+   * @returns The updated workflow run.
+   */
+  abortBranchCheckpoint: (runId?: string) => Promise<unknown>
+  /**
+   * Shows branching loop/checkpoint/history diagnostics for a workflow run.
+   *
+   * @param runId Optional run identifier. When omitted, the active or selectable run is used.
+   * @returns The inspected workflow run, or an explanatory message.
+   */
+  inspectBranching: (runId?: string) => Promise<unknown>
 }
 
 /**
@@ -89,9 +110,13 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
       }
     ),
     vscode.commands.registerCommand("workflowRegister.runNextStep", (runId?: string) => service.runNextStep(runId)),
+    vscode.commands.registerCommand("workflowRegister.openManualStepPanel", (runArg?: unknown) => service.openManualStepPanel(runArg as Parameters<WorkflowRegisterService["openManualStepPanel"]>[0])),
     vscode.commands.registerCommand("workflowRegister.inspectRuns", () => service.inspectRuns()),
     vscode.commands.registerCommand("workflowRegister.resumeRun", (runId?: string) => service.resumeRun(runId)),
-    vscode.commands.registerCommand("workflowRegister.retryCurrentStep", (runId?: string) => service.retryCurrentStep(runId))
+    vscode.commands.registerCommand("workflowRegister.retryCurrentStep", (runId?: string) => service.retryCurrentStep(runId)),
+    vscode.commands.registerCommand("workflowRegister.approveBranchCheckpoint", (runId?: string) => service.approveBranchCheckpoint(runId)),
+    vscode.commands.registerCommand("workflowRegister.abortBranchCheckpoint", (runId?: string) => service.abortBranchCheckpoint(runId)),
+    vscode.commands.registerCommand("workflowRegister.inspectBranching", (runId?: string) => service.inspectBranching(runId))
   )
   service.reload({ showReport: false }).catch((error) => console.warn("Bob workflow registration failed", error))
   const retryDelaysMs = [3000, 10000]
@@ -111,7 +136,10 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     listWorkflows: () => service.listCoreWorkflows(),
     runWorkflow: (workflowId, inputs) => service.runWorkflow(workflowId, inputs),
     runWorkflowStep: (workflowId, stepId, inputs) => service.runWorkflowStep(workflowId, stepId, inputs),
-    runNextStep: (runId) => service.runNextStep(runId)
+    runNextStep: (runId) => service.runNextStep(runId),
+    approveBranchCheckpoint: (runId) => service.approveBranchCheckpoint(runId),
+    abortBranchCheckpoint: (runId) => service.abortBranchCheckpoint(runId),
+    inspectBranching: (runId) => service.inspectBranching(runId)
   }
 }
 

@@ -1,5 +1,19 @@
 import { WorkflowAuthoringInput, WorkflowAuthoringModel, WorkflowAuthoringStep } from "./workflowAuthoringModel"
-import { ResultSinkDefinition, ResultSourceDefinition, WorkflowApprovalRuleDefinition, WorkflowArtifactDefinition, WorkflowCompletionDefinition, WorkflowGuardrailsDefinition, WorkflowPreflightDefinition, WorkflowRequiresDefinition } from "../model"
+import {
+  ResultSinkDefinition,
+  ResultSourceDefinition,
+  WorkflowApprovalRuleDefinition,
+  WorkflowArtifactDefinition,
+  WorkflowBranchingDefinition,
+  WorkflowCompletionDefinition,
+  WorkflowGuardrailsDefinition,
+  WorkflowManualApprovalDefinition,
+  WorkflowManualFormDefinition,
+  WorkflowPreflightDefinition,
+  WorkflowRequiresDefinition,
+  WorkflowStepTransitionDefinition,
+  WorkflowUserActionDefinition
+} from "../model"
 import { normalizeWorkflowName } from "../workflowScaffold"
 
 const yaml = require("js-yaml") as { dump(value: unknown, options?: Record<string, unknown>): string }
@@ -36,6 +50,7 @@ export function serializeAuthoringModelToMarkdown(model: WorkflowAuthoringModel)
     requires: requiresOrUndefined(model.requires),
     preflight: nonEmptyArray(model.preflight.map(serializePreflight)),
     guardrails: guardrailsOrUndefined(model.guardrails),
+    branching: branchingOrUndefined(model.branching),
     artifacts: nonEmptyArray(model.artifacts.map(serializeArtifact)),
     completion: completionOrUndefined(model.completion),
     steps: nonEmptyArray(model.steps.map(serializeStep)) ?? []
@@ -76,12 +91,95 @@ function serializeStep(step: WorkflowAuthoringStep): Record<string, unknown> {
     includeState: step.includeState && step.includeState.length > 0 ? step.includeState : undefined,
     maxResultBytes: step.maxResultBytes,
     stateRequired: step.stateRequired,
-    resultKey: step.resultKey
+    resultKey: step.resultKey,
+    transition: transitionOrUndefined(step.transition),
+    userAction: userActionOrUndefined(step.userAction)
   })
   if (step.type === "command") return compactObject({ ...base, action: compactObject({ provider: step.action.provider, args: step.action.args && step.action.args.length > 0 ? step.action.args : undefined }) })
   if (step.type === "result") return compactObject({ ...base, result: serializeResult(step.result) })
   if (step.type === "agent" && step.result) return compactObject({ ...base, result: serializeResult(step.result) })
+  if (step.type === "manual") return compactObject({
+    ...base,
+    form: manualFormOrUndefined(step.form),
+    approval: manualApprovalOrUndefined(step.approval)
+  })
   return base
+}
+
+function branchingOrUndefined(branching: WorkflowBranchingDefinition | undefined): Record<string, unknown> | undefined {
+  if (!branching) return undefined
+  const loops = branching.loops.map((loop) => compactObject({
+    id: loop.id,
+    title: loop.title,
+    entryStep: loop.entryStep,
+    maxIterations: loop.maxIterations,
+    extensionSize: loop.extensionSize,
+    checkpoint: loop.checkpoint ? compactObject({
+      title: loop.checkpoint.title,
+      message: loop.checkpoint.message
+    }) : undefined
+  }))
+  return compactObject({
+    enabled: branching.enabled,
+    loops: nonEmptyArray(loops)
+  })
+}
+
+function transitionOrUndefined(transition: WorkflowStepTransitionDefinition | undefined): Record<string, unknown> | undefined {
+  if (!transition) return undefined
+  const decisions = transition.decisions.map((decision) => compactObject({
+    id: decision.id,
+    when: compactObject({
+      stateKey: decision.when.stateKey,
+      equals: decision.when.equals,
+      notEquals: decision.when.notEquals,
+      in: decision.when.in,
+      exists: decision.when.exists,
+      truthy: decision.when.truthy
+    }),
+    goto: decision.goto,
+    loop: decision.loop
+  }))
+  return compactObject({
+    decisions: nonEmptyArray(decisions),
+    default: transition.default
+  })
+}
+
+function userActionOrUndefined(userAction: WorkflowUserActionDefinition | undefined): Record<string, unknown> | undefined {
+  if (!userAction) return undefined
+  const next = compactObject({
+    message: userAction.message,
+    completeLabel: userAction.completeLabel,
+    confirmOnComplete: userAction.confirmOnComplete,
+    confirmMessage: userAction.confirmMessage
+  })
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+function manualFormOrUndefined(form: WorkflowManualFormDefinition | undefined): Record<string, unknown> | undefined {
+  if (!form) return undefined
+  return compactObject({
+    resultKey: form.resultKey,
+    fields: nonEmptyArray(form.fields.map((field) => compactObject({
+      id: field.id,
+      title: field.title,
+      type: field.type,
+      required: field.required,
+      multiline: field.multiline,
+      options: field.options && field.options.length > 0 ? field.options : undefined
+    })))
+  })
+}
+
+function manualApprovalOrUndefined(approval: WorkflowManualApprovalDefinition | undefined): Record<string, unknown> | undefined {
+  if (!approval) return undefined
+  return compactObject({
+    resultKey: approval.resultKey,
+    approveLabel: approval.approveLabel,
+    rejectLabel: approval.rejectLabel,
+    message: approval.message
+  })
 }
 
 function serializeResult(result: ResultSourceDefinition): Record<string, unknown> {

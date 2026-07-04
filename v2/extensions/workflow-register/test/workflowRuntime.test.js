@@ -177,6 +177,70 @@ test("workflow run diagnostics include task snapshot evidence and mismatch warni
   assert.ok(report.lines.some((line) => line.includes("handoffError=capture failed")))
 })
 
+test("workflow run diagnostics include branch loops, checkpoint, and history", () => {
+  const run = {
+    runId: "20260701T000000Z-branching",
+    workflowId: "workflow-register.branching",
+    workflowName: "branching",
+    status: "checkpoint",
+    currentStep: "collect",
+    inputs: {},
+    state: {},
+    branching: {
+      loops: {
+        "retry-loop": {
+          loopId: "retry-loop",
+          count: 1,
+          allowed: 1,
+          maxIterations: 1,
+          extensionSize: 2,
+          checkpointCount: 1,
+          lastTransitionAt: "2026-07-01T00:00:01.000Z"
+        }
+      },
+      checkpoint: {
+        id: "checkpoint-1",
+        loopId: "retry-loop",
+        fromStepId: "review",
+        toStepId: "collect",
+        decisionId: "retry",
+        count: 1,
+        allowed: 1,
+        extensionSize: 2,
+        message: "Review before retry.",
+        createdAt: "2026-07-01T00:00:02.000Z"
+      },
+      history: [
+        {
+          id: "history-1",
+          loopId: "retry-loop",
+          decisionId: "retry",
+          fromStepId: "review",
+          toStepId: "collect",
+          action: "checkpoint",
+          loopCount: 1,
+          createdAt: "2026-07-01T00:00:02.000Z"
+        }
+      ]
+    },
+    steps: [
+      { id: "collect", title: "Collect", type: "manual", status: "pending" },
+      { id: "review", title: "Review", type: "manual", status: "completed" }
+    ],
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:02.000Z"
+  }
+
+  const lines = formatWorkflowRunDiagnostics(run)
+
+  assert.ok(lines.some((line) => line.includes("Branch loops:")))
+  assert.ok(lines.some((line) => line.includes("retry-loop: count=1; allowed=1; maxIterations=1; extensionSize=2; checkpoints=1")))
+  assert.ok(lines.some((line) => line.includes("Branch checkpoint:")))
+  assert.ok(lines.some((line) => line.includes("transition: review -> collect")))
+  assert.ok(lines.some((line) => line.includes("Branching history:")))
+  assert.ok(lines.some((line) => line.includes("checkpoint: retry; review -> collect; loop=retry-loop; count=1")))
+})
+
 function fixedNow() {
   return "2026-06-28T00:00:00.000Z"
 }

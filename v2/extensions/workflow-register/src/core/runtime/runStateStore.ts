@@ -3,7 +3,7 @@ import * as path from "path"
 import { randomUUID } from "crypto"
 import { CoreWorkflowDefinition, WorkflowRunState } from "../model"
 
-const RECOVERABLE_RUN_STATUSES = new Set(["running", "paused", "reviewing", "held"])
+const RECOVERABLE_RUN_STATUSES = new Set(["running", "paused", "checkpoint", "reviewing", "held"])
 
 export interface RecoverableRunLookupOptions {
   executionMode?: "full" | "singleStep"

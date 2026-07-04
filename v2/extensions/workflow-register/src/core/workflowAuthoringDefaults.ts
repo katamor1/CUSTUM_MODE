@@ -124,7 +124,16 @@ function agentStep(id: string, title: string, prompt: string, includeState: stri
 }
 
 function manualStep(id: string, title: string, prompt: string): WorkflowAuthoringStep {
-  return { id, title, type: "manual", prompt }
+  return {
+    id,
+    title,
+    type: "manual",
+    prompt,
+    userAction: {
+      message: prompt,
+      completeLabel: "完了"
+    }
+  }
 }
 
 function resultStep(id: string, title: string, stateKey: string, path: string): WorkflowAuthoringStep {

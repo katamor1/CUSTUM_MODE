@@ -55,6 +55,8 @@ export function formatWorkflowRunDiagnostics(run: WorkflowRunState, options: { s
       if (hint) lines.push(`- step suggested fix: ${hint}`)
     }
   }
+  const branchingLines = formatBranchingDiagnostics(run)
+  if (branchingLines.length > 0) lines.push("", ...branchingLines)
   const stateKeys = Object.keys(run.state).sort()
   lines.push("", "State:", stateKeys.length === 0 ? "- no state values captured" : `- keys: ${stateKeys.join(", ")}`)
   if (run.state["workflow.preflightWarnings"]) lines.push(`- preflight warnings: ${run.state["workflow.preflightWarnings"]}`)
@@ -64,6 +66,44 @@ export function formatWorkflowRunDiagnostics(run: WorkflowRunState, options: { s
     appendAttemptSummaries(lines, step)
   }
   appendTaskSnapshots(lines, run, options.snapshots ?? [])
+  return lines
+}
+
+export function formatBranchingDiagnostics(run: WorkflowRunState): string[] {
+  if (!run.branching) return []
+  const lines: string[] = ["Branch loops:"]
+  const loops = Object.values(run.branching.loops ?? {})
+  if (loops.length === 0) {
+    lines.push("- No branch loops recorded.")
+  } else {
+    for (const loop of loops) {
+      lines.push(`- ${loop.loopId}: count=${loop.count}; allowed=${loop.allowed}; maxIterations=${loop.maxIterations}; extensionSize=${loop.extensionSize}; checkpoints=${loop.checkpointCount}; lastTransitionAt=${loop.lastTransitionAt ?? "none"}`)
+    }
+  }
+  lines.push("", "Branch checkpoint:")
+  const checkpoint = run.branching.checkpoint
+  if (!checkpoint) {
+    lines.push("- none")
+  } else {
+    lines.push(
+      `- id: ${checkpoint.id}`,
+      `- loopId: ${checkpoint.loopId}`,
+      `- transition: ${checkpoint.fromStepId} -> ${checkpoint.toStepId}`,
+      `- decisionId: ${checkpoint.decisionId}`,
+      `- count: ${checkpoint.count}/${checkpoint.allowed}`,
+      `- extensionSize: ${checkpoint.extensionSize}`,
+      `- message: ${checkpoint.message}`
+    )
+  }
+  lines.push("", "Branching history:")
+  const history = run.branching.history ?? []
+  if (history.length === 0) {
+    lines.push("- No branch transitions recorded.")
+  } else {
+    for (const item of history) {
+      lines.push(`- ${item.createdAt} ${item.action}: ${item.decisionId}; ${item.fromStepId} -> ${item.toStepId ?? "none"}; loop=${item.loopId ?? "none"}; count=${item.loopCount ?? "none"}`)
+    }
+  }
   return lines
 }
 

@@ -127,6 +127,43 @@ export const workflowBuilderHelpCatalog: Record<string, WorkflowBuilderHelpEntry
     summary: "人間が読む step の名前です。",
     effect: "Bob UI や step 一覧で表示されます。"
   },
+  "section.userAction": {
+    id: "section.userAction",
+    labelJa: "User action",
+    fieldKey: "steps[].userAction",
+    summary: "手動操作ページに表示する利用者向け操作内容と完了ボタンを設定します。",
+    effect: "manual step や手動完了待ち step で、人間が何を確認し、どのボタンで進めるかを GUI 上に出せます。"
+  },
+  "step.userAction.message": {
+    id: "step.userAction.message",
+    labelJa: "操作メッセージ",
+    fieldKey: "steps[].userAction.message",
+    summary: "手動操作ページに表示する利用者向けメッセージです。",
+    effect: "実行時に inputs / state / run / workflow / step の template 変数を展開して表示します。",
+    caution: "HTML や command URI は実行されません。リンクとして動かしたい処理は専用 command で設計してください。",
+    example: "userAction:\n  message: |\n    `.bob/artifacts/{{inputs.reportName}}.md` を確認してください。"
+  },
+  "step.userAction.completeLabel": {
+    id: "step.userAction.completeLabel",
+    labelJa: "完了ボタン文言",
+    fieldKey: "steps[].userAction.completeLabel",
+    summary: "手動操作ページの完了ボタンに表示する文言です。",
+    effect: "利用者が押すボタンの意味を step に合わせて明確にできます。"
+  },
+  "step.userAction.confirmOnComplete": {
+    id: "step.userAction.confirmOnComplete",
+    labelJa: "完了前確認",
+    fieldKey: "steps[].userAction.confirmOnComplete",
+    summary: "完了ボタン押下時に確認ダイアログを表示します。",
+    effect: "取り消しにくい確認やレビュー完了の誤クリックを減らします。"
+  },
+  "step.userAction.confirmMessage": {
+    id: "step.userAction.confirmMessage",
+    labelJa: "確認メッセージ",
+    fieldKey: "steps[].userAction.confirmMessage",
+    summary: "完了前確認ダイアログに表示する文言です。",
+    effect: "何を完了扱いにするのかを最後に確認できます。"
+  },
   "step.required": {
     id: "step.required",
     labelJa: "必須 step",

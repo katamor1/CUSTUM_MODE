@@ -30,6 +30,7 @@ export function buildWorkflowControlBlock(input: WorkflowControlBlockInput): str
     `- ${commandLink("Inspect current step", "workflowRegister.inspectCurrentStep")}`,
     `- ${commandLink("Open current step in Builder", "workflowRegister.openCurrentStepInBuilder")}`
   ]
+  if (input.status === "held") lines.push(`- ${commandLink("Open manual step page", "workflowRegister.openManualStepPanel")}`)
   if (input.includeResume) lines.push(`- ${commandLink("Resume paused run", "workflowRegister.resumePausedRun")}`)
   lines.push(
     "</workflow_controls>",

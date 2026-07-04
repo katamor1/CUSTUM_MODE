@@ -61,6 +61,46 @@ test("buildReviewContextResult summarizes packet metadata and changed files", ()
   assert.match(result.packetSummary, /already been added to Bob context/i)
 })
 
+test("buildReviewContextResult uses explicit workspace path when packet redacts local paths", () => {
+  const { buildReviewContextResult } = require("../out/workflow/workflowBridge")
+  const packet = [
+    "# Bazaar Revision Review Request",
+    "",
+    "VCS: Bazaar",
+    "Repository root: <redacted local path>",
+    "Review mode: singleRevision",
+    "Revision target: 2",
+    "",
+    "## Bazaar diff",
+    "",
+    "```diff",
+    "=== modified file 'src/main.c'",
+    "```"
+  ].join("\n")
+
+  const result = buildReviewContextResult(packet, { workspacePath: "C:\\repo\\trunk" })
+
+  assert.equal(result.workspacePath, "C:\\repo\\trunk")
+})
+
+test("review packet state preserves the Bazaar repository root for workflow context", () => {
+  const {
+    REVIEW_PACKET_STATE_KEY,
+    buildReviewPacketState,
+    reviewPacketRepositoryRootFromState
+  } = require("../out/bazaar/reviewPacketSelection")
+  const state = {
+    [REVIEW_PACKET_STATE_KEY]: JSON.stringify(buildReviewPacketState({
+      packetUri: "untitled:packet",
+      runId: "run-1",
+      repositoryRoot: "C:\\repo\\trunk"
+    }))
+  }
+
+  assert.equal(reviewPacketRepositoryRootFromState(state, "run-1"), "C:\\repo\\trunk")
+  assert.equal(reviewPacketRepositoryRootFromState(state, "run-2"), undefined)
+})
+
 test("required project rules loaders reject missing files for workflow steps", async () => {
   const {
     loadProjectChecklistRequired,

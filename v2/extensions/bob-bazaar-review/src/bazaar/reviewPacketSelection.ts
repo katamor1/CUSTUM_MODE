@@ -28,6 +28,7 @@ export interface ReviewPacketState {
   stepId?: string
   createdAt?: string
   target?: string
+  repositoryRoot?: string
 }
 
 interface ReviewPacketCandidate extends ReviewPacketPickItem {
@@ -39,6 +40,7 @@ export function buildReviewPacketState(input: {
   runId?: string
   stepId?: string
   target?: string
+  repositoryRoot?: string
   createdAt?: string
 }): ReviewPacketState {
   return {
@@ -46,8 +48,16 @@ export function buildReviewPacketState(input: {
     runId: input.runId,
     stepId: input.stepId,
     target: input.target,
+    repositoryRoot: input.repositoryRoot,
     createdAt: input.createdAt ?? new Date().toISOString()
   }
+}
+
+export function reviewPacketRepositoryRootFromState(state: Record<string, string> | undefined, runId: string | undefined): string | undefined {
+  const packetState = parseReviewPacketState(state?.[REVIEW_PACKET_STATE_KEY])
+  if (!packetState?.repositoryRoot) return undefined
+  if (packetState.runId && runId && packetState.runId !== runId) return undefined
+  return packetState.repositoryRoot
 }
 
 export async function selectReviewPacketText(request: ReviewPacketSelectionRequest): Promise<string | undefined> {
@@ -107,7 +117,8 @@ function parseReviewPacketState(value: string | undefined): ReviewPacketState | 
         runId: typeof record.runId === "string" ? record.runId : undefined,
         stepId: typeof record.stepId === "string" ? record.stepId : undefined,
         createdAt: typeof record.createdAt === "string" ? record.createdAt : undefined,
-        target: typeof record.target === "string" ? record.target : undefined
+        target: typeof record.target === "string" ? record.target : undefined,
+        repositoryRoot: typeof record.repositoryRoot === "string" ? record.repositoryRoot : undefined
       }
       : undefined
   } catch {

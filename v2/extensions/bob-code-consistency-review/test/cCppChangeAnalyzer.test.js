@@ -6,6 +6,43 @@ const { test } = require("node:test")
 
 const { analyzeCppChanges } = require("../out/analyzers/cCppChangeAnalyzer")
 
+test("diffLinesForFile keeps same-basename hunks scoped to the requested path", () => {
+  const { diffLinesForFile, parseUnifiedDiff } = require("../out/analyzers/cCppDiffParser")
+  const diffLines = parseUnifiedDiff({
+    vcs: "git",
+    vcsRoot: "C:\\repo",
+    base: "main",
+    head: "feature/same-basename",
+    files: [
+      { path: "src/foo.c", status: "modified", additions: 1, deletions: 0, language: "c" },
+      { path: "tests/foo.c", status: "modified", additions: 1, deletions: 0, language: "c" }
+    ],
+    unifiedDiff: [
+      "diff --git a/src/foo.c b/src/foo.c",
+      "--- a/src/foo.c",
+      "+++ b/src/foo.c",
+      "@@ -1,4 +1,4 @@",
+      " int SourceFunction(void)",
+      " {",
+      "+    return 1;",
+      " }",
+      "diff --git a/tests/foo.c b/tests/foo.c",
+      "--- a/tests/foo.c",
+      "+++ b/tests/foo.c",
+      "@@ -1,4 +1,4 @@",
+      " int TestFunction(void)",
+      " {",
+      "+    return 2;",
+      " }",
+      ""
+    ].join("\n"),
+    warnings: []
+  })
+
+  assert.deepEqual(diffLinesForFile(diffLines, "src/foo.c").map((line) => line.file), ["src/foo.c"])
+  assert.deepEqual(diffLinesForFile(diffLines, "tests/foo.c").map((line) => line.file), ["tests/foo.c"])
+})
+
 test("analyzeCppChanges skips ambiguous basename fallback candidates", async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "bob-ccpp-ambiguous-"))
   fs.mkdirSync(path.join(workspace, "src"), { recursive: true })

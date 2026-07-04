@@ -20,6 +20,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .muted { color: var(--vscode-descriptionForeground); font-size: 12px; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .card { border: 1px solid var(--vscode-panel-border); padding: 10px; margin: 8px 0; border-radius: 4px; background: var(--vscode-sideBar-background); }
+.message-preview { white-space: pre-wrap; margin: 8px 0; padding: 8px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
 .step-card { cursor: pointer; }
 .step-card.selected { outline: 1px solid var(--vscode-focusBorder); }
 .badge { display: inline-block; border: 1px solid var(--vscode-panel-border); padding: 1px 6px; border-radius: 99px; font-size: 11px; margin-left: 6px; }

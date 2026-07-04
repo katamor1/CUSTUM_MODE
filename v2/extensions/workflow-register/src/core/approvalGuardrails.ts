@@ -21,6 +21,7 @@ type ApprovalExpression =
 export interface CommandApprovalRequirement {
   rule: WorkflowApprovalRuleDefinition
   message: string
+  fingerprint: string
 }
 
 export function findCommandApprovalRequirement(input: {
@@ -34,10 +35,12 @@ export function findCommandApprovalRequirement(input: {
     const parsed = parseApprovalExpression(rule.when)
     if (!parsed.ok) return { error: unsupportedApprovalExpressionMessage(rule, parsed.error) }
     if (!approvalExpressionMatches(parsed.expression, input)) continue
-    if (approvalAlreadyGranted(input.run, input.step.id, rule)) continue
+    const fingerprint = commandApprovalFingerprint(input.providerId, input.args)
+    if (approvalAlreadyGranted(input.run, input.step.id, rule, fingerprint)) continue
     return {
       rule,
-      message: approvalRequiredMessage(rule)
+      message: approvalRequiredMessage(rule),
+      fingerprint
     }
   }
   return undefined
@@ -47,6 +50,7 @@ export function markApprovalRequired(run: WorkflowRunState, stepId: string, requ
   run.state[approvalStateKey(stepId)] = JSON.stringify({
     status: "required",
     ruleId: requirement.rule.id,
+    fingerprint: requirement.fingerprint,
     message: requirement.message,
     requestedAt: new Date().toISOString()
   })
@@ -176,9 +180,10 @@ function firstArgument(value: unknown): unknown {
   return Array.isArray(value) ? value[0] : value
 }
 
-function approvalAlreadyGranted(run: WorkflowRunState, stepId: string, rule: WorkflowApprovalRuleDefinition): boolean {
+function approvalAlreadyGranted(run: WorkflowRunState, stepId: string, rule: WorkflowApprovalRuleDefinition, fingerprint: string): boolean {
   const state = readApprovalState(run, stepId)
   if (state?.status !== "approved") return false
+  if (state.fingerprint !== fingerprint) return false
   return !rule.id || state.ruleId === rule.id
 }
 
@@ -195,6 +200,25 @@ function readApprovalState(run: WorkflowRunState, stepId: string): Record<string
 
 function approvalStateKey(stepId: string): string {
   return `${APPROVAL_STATE_PREFIX}${stepId}`
+}
+
+function commandApprovalFingerprint(providerId: string, args: unknown): string {
+  return stableJson({ providerId, args })
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(canonicalJson(value))
+}
+
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson)
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(
+    Object.keys(value as Record<string, unknown>)
+      .sort()
+      .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
+      .map((key) => [key, canonicalJson((value as Record<string, unknown>)[key])])
+  )
 }
 
 function approvalRequiredMessage(rule: WorkflowApprovalRuleDefinition): string {

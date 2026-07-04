@@ -3,6 +3,7 @@ import * as vscode from "vscode"
 import { editWorkflowInBuilder } from "./editWorkflowInBuilder"
 import { FileRunStateStore } from "../core/runStateStore"
 import { RunStepState, WorkflowRunState } from "../core/model"
+import { pendingReviewTransitionStepId } from "../core/engine/runState"
 import { fallbackWorkspaceRootCandidates, findWorkflowRootCandidates, MarkerRootCandidate } from "../core/workspaceRoots"
 
 interface StepReviewCommandOptions {
@@ -32,7 +33,9 @@ export async function acceptCurrentStep(options: StepReviewCommandOptions, runId
   if (!run) return `Workflow run not found: ${selection.runId}`
   const accepted = acceptReviewingStep(run)
   await runStore.saveRun(accepted)
-  const message = accepted.status === "completed"
+  const message = pendingReviewTransitionStepId(accepted)
+    ? `Accepted step; pending transition will run from ${accepted.currentStep}: ${accepted.runId}`
+    : accepted.status === "completed"
     ? `Accepted final step and completed workflow run: ${accepted.runId}`
     : `Accepted step; next step is ${accepted.currentStep}: ${accepted.runId}`
   if (!acceptOptions.silent) await vscode.window.showInformationMessage(message)
@@ -114,6 +117,13 @@ function acceptReviewingStep(run: WorkflowRunState): WorkflowRunState {
   current.acceptedAt = now
   current.completedAt = now
   current.error = undefined
+
+  if (pendingReviewTransitionStepId(run) === current.id) {
+    run.status = "running"
+    run.currentStep = current.id
+    run.error = undefined
+    return run
+  }
 
   const nextIndex = run.steps.findIndex((step, index) => index > currentIndex && (step.status === "pending" || step.status === "held" || step.status === "failed" || step.status === "reviewing"))
   if (nextIndex < 0) {

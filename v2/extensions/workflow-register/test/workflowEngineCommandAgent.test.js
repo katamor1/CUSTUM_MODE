@@ -281,6 +281,83 @@ test("workflow engine runs an approval-held command only after explicit approval
   assert.equal(resumed.state.analysis, "analysis")
 })
 
+test("workflow engine requires fresh approval when a branch reruns a command with different args", async () => {
+  const calls = []
+  const { actions, engine } = createWorkflowEngineContext()
+  let collectCount = 0
+  actions.register({
+    id: "sample.collect",
+    execute: async () => ({ request: `request-${++collectCount}` })
+  })
+  actions.register({
+    id: "sample.guarded",
+    execute: async ({ args }) => {
+      calls.push(args.request)
+      return { status: calls.length === 1 ? "retry" : "ok" }
+    }
+  })
+  const workflow = {
+    id: "workflow-register.command-approval-branch-rerun",
+    name: "command-approval-branch-rerun",
+    label: "Command Approval Branch Rerun",
+    schemaVersion: "workflow-register/v1",
+    inputs: {},
+    guardrails: {
+      requireApproval: [
+        { id: "approve-guarded", when: "provider == 'sample.guarded'", message: "Guarded command requires approval." }
+      ]
+    },
+    branching: {
+      enabled: true,
+      loops: [
+        {
+          id: "retry-loop",
+          entryStep: "collect",
+          maxIterations: 5,
+          extensionSize: 5
+        }
+      ]
+    },
+    engineSteps: [
+      {
+        id: "collect",
+        title: "Collect",
+        type: "command",
+        action: { provider: "sample.collect" },
+        resultKey: "userRequest"
+      },
+      {
+        id: "guarded",
+        title: "Guarded",
+        type: "command",
+        includeState: ["userRequest"],
+        action: { provider: "sample.guarded", args: { request: "{{json state.userRequest.request}}" } },
+        resultKey: "guardedResult",
+        transition: {
+          decisions: [
+            {
+              id: "retry",
+              when: { stateKey: "guardedResult.status", equals: "retry" },
+              goto: "collect",
+              loop: "retry-loop"
+            }
+          ],
+          default: "next"
+        }
+      }
+    ]
+  }
+
+  const held = await engine.runWorkflow(workflow, {})
+  const rerun = await engine.resumeRun(held.runId, { workflow, completeHeldStep: true })
+
+  assert.equal(rerun.status, "held")
+  assert.equal(rerun.currentStep, "guarded")
+  assert.deepEqual(calls, ["request-1"])
+  assert.equal(JSON.parse(rerun.state.userRequest).request, "request-2")
+  assert.match(rerun.error, /Guarded command requires approval/)
+})
+
 test("workflow engine fails command steps when providers return structured error results", async () => {
   const { ActionRegistry } = require("../out/core/actionRegistry")
   const { WorkflowEngine } = require("../out/core/engine")

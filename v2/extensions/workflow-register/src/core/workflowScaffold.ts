@@ -151,16 +151,28 @@ steps:
     type: manual
     prompt: |
       Confirm that the required inputs and workspace files are ready.
+    userAction:
+      message: |
+        Confirm that the required inputs and workspace files are ready.
+      completeLabel: Ready
   - id: review
     title: Review result
     type: manual
     prompt: |
       Review the generated or collected result and note any issues.
+    userAction:
+      message: |
+        Review the generated or collected result and note any issues.
+      completeLabel: Reviewed
   - id: finish
     title: Finish workflow
     type: manual
     prompt: |
-      Confirm that all follow-up actions are captured before completing the workflow.`)
+      Confirm that all follow-up actions are captured before completing the workflow.
+    userAction:
+      message: |
+        Confirm that all follow-up actions are captured before completing the workflow.
+      completeLabel: Finish`)
 }
 
 function inputDrivenAgentTemplate(name: string, title: string, description: string): string {

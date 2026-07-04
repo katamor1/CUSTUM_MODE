@@ -52,7 +52,7 @@ ${renderWorkflowBuilderStyles()}
 </aside>
 <section>
 <div class="tabs">
-<div class="tab active" data-tab="step">Step detail</div><div class="tab" data-tab="inputs">Inputs</div><div class="tab" data-tab="requires">Requires</div><div class="tab" data-tab="preflight">Preflight</div><div class="tab" data-tab="artifacts">Artifacts</div><div class="tab" data-tab="guardrails">Guardrails</div><div class="tab" data-tab="completion">Completion</div><div class="tab" data-tab="body">Markdown Body</div><div class="tab" data-tab="preview">Preview / Diagnostics</div>
+<div class="tab active" data-tab="step">Step detail</div><div class="tab" data-tab="inputs">Inputs</div><div class="tab" data-tab="requires">Requires</div><div class="tab" data-tab="preflight">Preflight</div><div class="tab" data-tab="branching">Branching</div><div class="tab" data-tab="artifacts">Artifacts</div><div class="tab" data-tab="guardrails">Guardrails</div><div class="tab" data-tab="completion">Completion</div><div class="tab" data-tab="body">Markdown Body</div><div class="tab" data-tab="preview">Preview / Diagnostics</div>
 </div>
 <div id="content"></div>
 </section>

@@ -11,6 +11,7 @@ function fieldIdForControl(control) {
   if (control.dataset.meta) return 'meta.' + control.dataset.meta;
   if (control.dataset.bodyField) return 'body.' + control.dataset.bodyField;
   if (control.dataset.stepField) return 'step.' + control.dataset.stepField;
+  if (control.dataset.userActionField) return 'step.userAction.' + control.dataset.userActionField;
   if (control.dataset.commandField) return 'command.' + control.dataset.commandField;
   if (control.dataset.resultField) return 'result.' + control.dataset.resultField;
   if (control.dataset.stateKey) return 'step.includeState';
@@ -41,6 +42,7 @@ function sectionHelpIdForHeading(heading) {
   if (text === 'includeState') return 'section.includeState';
   if (text === 'Command') return 'section.command';
   if (text === 'Result') return 'section.result';
+  if (text === 'User action') return 'section.userAction';
   return undefined;
 }
 function matchingElements(scope, selector) {

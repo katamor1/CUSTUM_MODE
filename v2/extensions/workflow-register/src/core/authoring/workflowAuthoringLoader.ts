@@ -40,6 +40,7 @@ const guiManagedFrontMatterFields = new Set([
   "requires",
   "preflight",
   "guardrails",
+  "branching",
   "artifacts",
   "completion",
   "steps"
@@ -83,6 +84,7 @@ export function workflowToAuthoringModel(workflow: CoreWorkflowDefinition, front
     requires: workflow.requires,
     preflight: workflow.preflight,
     guardrails: workflow.guardrails,
+    branching: workflow.branching,
     steps: workflow.engineSteps.map(engineStepToAuthoringStep),
     artifacts: workflow.artifacts,
     completion: workflow.completion,
@@ -107,12 +109,14 @@ function engineStepToAuthoringStep(step: EngineStep): WorkflowAuthoringStep {
     includeState: step.includeState,
     maxResultBytes: step.maxResultBytes,
     stateRequired: step.stateRequired,
-    resultKey: "resultKey" in step ? step.resultKey : undefined
+    resultKey: "resultKey" in step ? step.resultKey : undefined,
+    transition: step.transition,
+    userAction: step.userAction
   }
   if (step.type === "command") return { ...base, type: "command", action: normalizeAction(step.action) }
   if (step.type === "agent") return { ...base, type: "agent", result: step.result }
   if (step.type === "result") return { ...base, type: "result", result: step.result }
-  return { ...base, type: "manual" }
+  return { ...base, type: "manual", form: step.form, approval: step.approval }
 }
 
 function normalizeAction(action: WorkflowActionDefinition): { provider: string; args?: unknown[] } {

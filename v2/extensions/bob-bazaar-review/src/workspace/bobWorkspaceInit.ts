@@ -67,6 +67,7 @@ export async function getBobWorkspaceStatus(workspaceFolder: vscode.WorkspaceFol
 export async function initializeBobWorkspaceFromTemplates(options: {
   context: vscode.ExtensionContext
   workspaceFolder: vscode.WorkspaceFolder
+  allowedRoots?: string[]
   bzrPath: string
   serverName: string
   textEncoding?: string
@@ -82,7 +83,8 @@ export async function initializeBobWorkspaceFromTemplates(options: {
     extensionContext: options.context,
     serverName: options.serverName,
     bzrPath: options.bzrPath,
-    textEncoding: options.textEncoding
+    textEncoding: options.textEncoding,
+    allowedRoots: options.allowedRoots
   })
 
   return getBobWorkspaceStatus(options.workspaceFolder, options.serverName)

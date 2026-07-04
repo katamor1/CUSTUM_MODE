@@ -3,7 +3,7 @@ import {
   loadProjectChecklistRequired,
   loadReviewResultSchemaRequired
 } from "../projectRules/io"
-import { selectReviewPacketText } from "../bazaar/reviewPacketSelection"
+import { reviewPacketRepositoryRootFromState, selectReviewPacketText } from "../bazaar/reviewPacketSelection"
 import { BazaarReviewContextResult, buildReviewContextResult } from "./workflowBridge"
 import {
   firstStringArg,
@@ -51,7 +51,9 @@ export async function collectReviewContext(input?: WorkflowActionExecutionInput)
   if (!packet) {
     throw new Error("Bazaar レビュー packet ドキュメントが開かれていません。先に Bob Bazaar Review でレビュー packet を作成して Bob コンテキストに追加してください。")
   }
-  return buildReviewContextResult(packet)
+  return buildReviewContextResult(packet, {
+    workspacePath: reviewPacketRepositoryRootFromState(input?.state, input?.runId)
+  })
 }
 
 /**

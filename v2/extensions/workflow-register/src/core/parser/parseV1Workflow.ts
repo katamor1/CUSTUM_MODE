@@ -12,6 +12,7 @@ import { legacyEngineStepsFromWorkflow, legacyTodosFromMarkdown, legacyTodosFrom
 import { removeMarkdownSection, removeMarkdownStepSections } from "./markdownSections"
 import {
   normalizeArtifacts,
+  normalizeBranching,
   normalizeCompletion,
   normalizeEngineStep,
   normalizeGuardrails,
@@ -84,6 +85,7 @@ export function parseV1Workflow(request: ParseWorkflowRequest, fields: Record<st
     guardrails: normalizeGuardrails(asRecord(fields.guardrails)),
     artifacts: normalizeArtifacts(fields.artifacts),
     completion: normalizeCompletion(asRecord(fields.completion)),
+    branching: normalizeBranching(fields.branching),
     engineSteps
   }
   return { ok: true, workflow, diagnostics: [...warnings, `- ok: ${request.filePath}: ${workflow.id}; schemaVersion=workflow-register/v1; steps=${workflow.engineSteps.length}`] }
@@ -108,7 +110,7 @@ function stepSpecificFieldWarnings(filePath: string, steps: Record<string, unkno
 function ignoredFieldsForStepType(type: string): string[] {
   if (type === "command") return ["result"]
   if (type === "agent") return ["action", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
-  if (type === "manual") return ["action", "result", "resultKey", "includeState", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
+  if (type === "manual") return ["action", "result", "resultKey", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
   if (type === "result") return ["action", "prompt", "resultKey", "includeState", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
   return []
 }

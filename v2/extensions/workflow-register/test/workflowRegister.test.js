@@ -65,13 +65,25 @@ test("package contributes standalone workflow launcher commands without a hard B
     "workflowRegister.runNextStep",
     "workflowRegister.inspectRuns",
     "workflowRegister.resumeRun",
-    "workflowRegister.retryCurrentStep"
+    "workflowRegister.retryCurrentStep",
+    "workflowRegister.approveBranchCheckpoint",
+    "workflowRegister.abortBranchCheckpoint",
+    "workflowRegister.inspectBranching"
   ]) {
     assertContributesCommand(packageJson, command)
   }
   assert.match(source, /new WorkflowRegisterService\(String\(context\.extension\.packageJSON\.version \?\? "unknown"\)\)/)
   assert.match(source, /registerCommand\([\s\S]*"workflowRegister\.runWorkflowStep"[\s\S]*service\.runWorkflowStep\(workflowId, stepId, inputs\)/)
   assert.match(source, /registerCommand\("workflowRegister\.runNextStep", \(runId\?: string\) => service\.runNextStep\(runId\)\)/)
+  assert.match(source, /registerCommand\("workflowRegister\.approveBranchCheckpoint", \(runId\?: string\) => service\.approveBranchCheckpoint\(runId\)\)/)
+  assert.match(source, /registerCommand\("workflowRegister\.abortBranchCheckpoint", \(runId\?: string\) => service\.abortBranchCheckpoint\(runId\)\)/)
+  assert.match(source, /registerCommand\("workflowRegister\.inspectBranching", \(runId\?: string\) => service\.inspectBranching\(runId\)\)/)
+  assert.match(source, /approveBranchCheckpoint: \(runId\?: string\) => Promise<unknown>/)
+  assert.match(source, /abortBranchCheckpoint: \(runId\?: string\) => Promise<unknown>/)
+  assert.match(source, /inspectBranching: \(runId\?: string\) => Promise<unknown>/)
+  assert.match(source, /approveBranchCheckpoint: \(runId\) => service\.approveBranchCheckpoint\(runId\)/)
+  assert.match(source, /abortBranchCheckpoint: \(runId\) => service\.abortBranchCheckpoint\(runId\)/)
+  assert.match(source, /inspectBranching: \(runId\) => service\.inspectBranching\(runId\)/)
   assert.match(source, /new FileRunStateStore\(\{ workspaceRoot, engineVersion: this\.options\.engineVersion \}\)/)
 })
 
@@ -93,6 +105,40 @@ test("package exposes task snapshot retention settings", () => {
   assert.equal(properties["workflowRegister.taskSnapshots.maxPerRun"].default, 50)
   assert.equal(properties["workflowRegister.taskSnapshots.includeMessages"].default, false)
   assert.equal(properties["workflowRegister.taskSnapshots.pruneOnSave"].default, true)
+})
+
+test("package and extension wire the manual step panel command", () => {
+  const packageJson = readJson("package.json")
+  const extension = readSrc("extension.ts")
+  const service = readSrc("workflowRegisterService.ts")
+  const runner = readSrc("bobWorkflowRunner.ts")
+  const factory = readSrc("workflowRuntimeFactory.ts")
+  const panel = readSrc("webview", "manualStepPanel.ts")
+  const panelHtml = readSrc("webview", "manualStepPanelHtml.ts")
+  const panelViewModel = readSrc("webview", "manualStepViewModel.ts")
+
+  assertContributesCommand(packageJson, "workflowRegister.openManualStepPanel")
+  assert.ok(packageJson.activationEvents.includes("onCommand:workflowRegister.openManualStepPanel"))
+  assert.deepEqual(
+    packageJson.contributes.menus["view/item/context"].filter((item) => item.command === "workflowRegister.openManualStepPanel"),
+    [{
+      command: "workflowRegister.openManualStepPanel",
+      when: "view == workflowRegister.runs && viewItem == workflowRun.held",
+      group: "inline"
+    }]
+  )
+  assert.match(extension, /registerCommand\("workflowRegister\.openManualStepPanel"[\s\S]*service\.openManualStepPanel/)
+  assert.match(service, /new ManualStepPanelController/)
+  assert.match(service, /completeStepByKeyResult/)
+  assert.match(service, /openManualStepPanel\(runArg\?: RunCommandArg\)/)
+  assert.match(panel, /class ManualStepPanelController/)
+  assert.match(panel, /completeStep\(\{ activeKey, expectedRunId, expectedStepId \}\)/)
+  assert.doesNotMatch(panel, /startsWith\("Completed:"\)/)
+  assert.match(panelHtml, /function renderManualStepHtml/)
+  assert.doesNotMatch(panelHtml, /confirmOnComplete/)
+  assert.match(panelViewModel, /function buildManualStepActionViewModel/)
+  assert.match(factory, /onManualStepHeld/)
+  assert.match(runner, /onManualStepHeld/)
 })
 
 test("workflow-register does not silently use the first workspace folder in multi-root paths", () => {

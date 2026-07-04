@@ -51,10 +51,14 @@ export function parseUnifiedDiff(diff: DiffSummary): DiffLine[] {
 export function diffLinesForFile(diffLines: DiffLine[], filePath: string): DiffLine[] {
   const normalized = toPosixPath(filePath)
   const basename = path.posix.basename(normalized)
-  return diffLines.filter((line) => {
+  const exact = diffLines.filter((line) => {
     const linePath = toPosixPath(line.file)
-    return normalized.endsWith(linePath) || linePath.endsWith(normalized) || path.posix.basename(linePath) === basename
+    return normalized.endsWith(linePath) || linePath.endsWith(normalized)
   })
+  if (exact.length > 0) return exact
+  const basenameMatches = diffLines.filter((line) => path.posix.basename(toPosixPath(line.file)) === basename)
+  const matchedPaths = new Set(basenameMatches.map((line) => toPosixPath(line.file)))
+  return matchedPaths.size === 1 ? basenameMatches : []
 }
 
 export function changedIdentifierTokens(diffLines: DiffLine[]): Set<string> {

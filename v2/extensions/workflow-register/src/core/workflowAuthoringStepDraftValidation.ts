@@ -102,7 +102,7 @@ function validateTypeSpecificFields(step: WorkflowAuthoringStep, diagnostics: St
       validatePromptStep(step, diagnostics, "agent")
       break
     case "manual":
-      validatePromptStep(step, diagnostics, "manual")
+      validateManualStep(step, diagnostics)
       if (step.completeOnSuccess !== undefined) {
         diagnostics.push(warning("manual.completeOnSuccess.unusual", "manual step では completeOnSuccess の指定は通常不要です。手動完了との関係を確認してください。", "completeOnSuccess"))
       }
@@ -120,6 +120,25 @@ function validatePromptStep(step: WorkflowAuthoringStep, diagnostics: StepDraftD
   if (!nonEmpty(step.prompt)) diagnostics.push(error(`${type}.prompt.required`, `${type} step では prompt が必須です。`, "prompt"))
   if (step.includeState && step.includeState.length > 0 && !containsStateHint(step.prompt)) {
     diagnostics.push(warning(`${type}.prompt.stateHintMissing`, "includeState を指定しています。prompt 内で state をどう使うか明示することを推奨します。", "prompt"))
+  }
+}
+
+function validateManualStep(step: Extract<WorkflowAuthoringStep, { type: "manual" }>, diagnostics: StepDraftDiagnostic[]): void {
+  const message = step.userAction?.message
+  if (!nonEmpty(step.prompt) && !nonEmpty(message)) {
+    diagnostics.push(warning("manual.userAction.message.missing", "手動 step ですが、利用者向け操作メッセージがありません。", "userAction.message"))
+  }
+  if (step.includeState && step.includeState.length > 0 && !containsStateHint([step.prompt, message].filter(Boolean).join("\n"))) {
+    diagnostics.push(warning("manual.prompt.stateHintMissing", "includeState を指定しています。操作メッセージ内で state をどう使うか明示することを推奨します。", "userAction.message"))
+  }
+  if (step.userAction?.completeLabel && step.userAction.completeLabel.length > 24) {
+    diagnostics.push(warning("manual.userAction.completeLabel.long", "ボタン文言が長いため GUI で折り返される可能性があります。", "userAction.completeLabel"))
+  }
+  if (step.userAction?.confirmOnComplete === true && !nonEmpty(step.userAction.confirmMessage)) {
+    diagnostics.push(info("manual.userAction.confirmMessage.default", "既定の確認文を使います。", "userAction.confirmMessage"))
+  }
+  if (typeof message === "string" && /command:/i.test(message)) {
+    diagnostics.push(warning("manual.userAction.commandUri.ignored", "メッセージ内の command URI はリンクとして実行されません。", "userAction.message"))
   }
 }
 
@@ -294,4 +313,8 @@ function error(code: string, message: string, field?: string): StepDraftDiagnost
 
 function warning(code: string, message: string, field?: string): StepDraftDiagnostic {
   return { severity: "warning", code, message, field }
+}
+
+function info(code: string, message: string, field?: string): StepDraftDiagnostic {
+  return { severity: "info", code, message, field }
 }

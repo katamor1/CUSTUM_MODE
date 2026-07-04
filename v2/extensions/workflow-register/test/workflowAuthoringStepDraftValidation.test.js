@@ -51,6 +51,65 @@ test("step draft validation blocks stateRequired without includeState", () => {
   assert.ok(result.diagnostics.some((item) => item.code === "step.stateRequired.withoutIncludeState"))
 })
 
+test("manual step draft validation accepts userAction message without prompt", () => {
+  const model = createAuthoringModelFromTemplate({
+    name: "manual-user-action",
+    title: "Manual User Action",
+    description: "manual user action を検証する。",
+    template: "manual-checklist"
+  })
+  const draftStep = {
+    ...model.steps[0],
+    prompt: undefined,
+    userAction: { message: "Review the generated file.", completeLabel: "Reviewed" }
+  }
+
+  const result = validateStepDraft({ model, originalStep: model.steps[0], draftStep, stepIndex: 0 })
+
+  assert.equal(result.status, "ok")
+  assert.equal(result.diagnostics.some((item) => item.code === "manual.prompt.required"), false)
+})
+
+test("manual step draft validation warns about missing and risky userAction settings", () => {
+  const model = createAuthoringModelFromTemplate({
+    name: "manual-user-action-warnings",
+    title: "Manual User Action Warnings",
+    description: "manual user action の warning を検証する。",
+    template: "manual-checklist"
+  })
+  const draftStep = {
+    ...model.steps[0],
+    prompt: "",
+    userAction: {
+      message: "Run command:workflowRegister.completeCurrentStep when done.",
+      completeLabel: "This label is intentionally too long for a compact button",
+      confirmOnComplete: true
+    }
+  }
+
+  const result = validateStepDraft({ model, originalStep: model.steps[0], draftStep, stepIndex: 0 })
+
+  assert.equal(result.status, "warning")
+  assert.ok(result.diagnostics.some((item) => item.code === "manual.userAction.completeLabel.long"))
+  assert.ok(result.diagnostics.some((item) => item.code === "manual.userAction.confirmMessage.default"))
+  assert.ok(result.diagnostics.some((item) => item.code === "manual.userAction.commandUri.ignored"))
+})
+
+test("manual step draft validation warns when neither prompt nor userAction message exists", () => {
+  const model = createAuthoringModelFromTemplate({
+    name: "manual-user-action-missing",
+    title: "Manual User Action Missing",
+    description: "manual user action の欠落 warning を検証する。",
+    template: "manual-checklist"
+  })
+  const draftStep = { ...model.steps[0], prompt: "", userAction: undefined }
+
+  const result = validateStepDraft({ model, originalStep: model.steps[0], draftStep, stepIndex: 0 })
+
+  assert.equal(result.status, "warning")
+  assert.ok(result.diagnostics.some((item) => item.code === "manual.userAction.message.missing"))
+})
+
 test("step draft validation detects resultKey downstream impact", () => {
   const model = createAuthoringModelFromTemplate({
     name: "resultkey-impact",

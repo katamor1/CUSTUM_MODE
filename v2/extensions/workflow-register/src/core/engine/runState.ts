@@ -24,6 +24,8 @@ const DEFAULT_STEP_EXECUTION: WorkflowStepExecutionDefinition = {
   showInBob: true
 }
 
+export const REVIEW_PENDING_TRANSITION_STEP_KEY = "workflow.review.pendingTransitionStepId"
+
 interface RunWorkflowOptionsLike {
   executionMode?: WorkflowExecutionMode
   stepId?: string
@@ -69,6 +71,20 @@ export function shouldPauseForStepReview(workflow: CoreWorkflowDefinition, step:
   if (review.pauseAfter === "none") return false
   if (review.pauseAfter === "agentAndCommand") return step.type === "agent" || step.type === "command"
   return true
+}
+
+export function markPendingReviewTransition(run: WorkflowRunState, step: EngineStep): void {
+  if (!("transition" in step) || !step.transition) return
+  run.state[REVIEW_PENDING_TRANSITION_STEP_KEY] = step.id
+}
+
+export function pendingReviewTransitionStepId(run: WorkflowRunState): string | undefined {
+  const stepId = run.state[REVIEW_PENDING_TRANSITION_STEP_KEY]
+  return stepId?.trim() || undefined
+}
+
+export function clearPendingReviewTransition(run: WorkflowRunState): void {
+  delete run.state[REVIEW_PENDING_TRANSITION_STEP_KEY]
 }
 
 export function blockedPreviousStep(workflow: CoreWorkflowDefinition, run: WorkflowRunState, targetIndex: number, options: RunWorkflowOptionsLike): RunStepState | undefined {
