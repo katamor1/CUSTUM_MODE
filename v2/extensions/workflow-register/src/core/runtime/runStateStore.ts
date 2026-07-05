@@ -170,6 +170,10 @@ function isRecoverableRun(run: WorkflowRunState, workflow: CoreWorkflowDefinitio
   const stepIndex = workflow.engineSteps.findIndex((step) => step.id === options.stepId)
   if (stepIndex < 0) return false
   if (run.steps[stepIndex]?.status !== "failed") return false
+  const reviewOrHeldGateIndex = run.steps.slice(0, stepIndex).findIndex((step) => step.status === "reviewing" || step.status === "held")
+  if (reviewOrHeldGateIndex >= 0) {
+    return run.steps.slice(0, reviewOrHeldGateIndex).every((step) => step.status === "completed")
+  }
   return run.steps.slice(0, stepIndex).every((step) => step.status === "completed")
 }
 

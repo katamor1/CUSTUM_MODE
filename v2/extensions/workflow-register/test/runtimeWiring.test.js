@@ -126,6 +126,13 @@ test("Bob workflow Todo execution delegates to the shared WorkflowEngine runner"
   assert.doesNotMatch(source, /Unsupported step command\. Add it to the workflow-register allowlist before use\./)
 })
 
+test("Bob workflow runner surfaces step review gates without failing the run", () => {
+  const source = readSrc("bobWorkflowRunner.ts")
+
+  assert.match(source, /if \(\(run\.status === "reviewing" \|\| run\.status === "held"\) && run\.error\)/)
+  assert.match(source, /vscode\.window\.showWarningMessage\(`Bob workflow step gate: \$\{run\.error\}`\)/)
+})
+
 test("Bob workflow result recovery is scoped to messages after the current step starts", () => {
   const source = readSrc("bobWorkflowRunner.ts")
 

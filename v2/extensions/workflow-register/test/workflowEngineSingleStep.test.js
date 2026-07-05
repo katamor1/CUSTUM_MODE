@@ -131,11 +131,12 @@ test("workflow engine blocks the next ordered single step while the previous ste
 
   assert.equal(first.status, "reviewing")
   assert.equal(first.steps[0].status, "reviewing")
-  assert.equal(second.status, "failed")
+  assert.equal(second.status, "reviewing")
+  assert.equal(second.currentStep, "collect")
   assert.equal(second.steps[0].status, "reviewing")
   assert.equal(second.steps[0].acceptedAt, undefined)
-  assert.equal(second.steps[1].status, "failed")
-  assert.match(second.error, /cannot run before previous step 'collect' is completed/)
+  assert.equal(second.steps[1].status, "pending")
+  assert.match(second.error, /waiting for step review/)
   assert.equal(second.state.analysis, undefined)
   assert.equal(analyzeCalls, 0)
 })
@@ -187,10 +188,73 @@ test("workflow engine does not bypass reviewing steps with allowOutOfOrder", asy
   const second = await engine.runWorkflow(workflow, {}, { executionMode: "singleStep", stepId: "analyze", allowOutOfOrder: true })
 
   assert.equal(first.steps[0].status, "reviewing")
-  assert.equal(second.status, "failed")
+  assert.equal(second.status, "reviewing")
+  assert.equal(second.currentStep, "collect")
   assert.equal(second.steps[0].status, "reviewing")
-  assert.equal(second.steps[1].status, "failed")
-  assert.match(second.error, /cannot run before previous step 'collect' is completed/)
+  assert.equal(second.steps[1].status, "pending")
+  assert.match(second.error, /waiting for step review/)
+  assert.equal(analyzeCalls, 0)
+})
+
+test("workflow engine recovers a legacy failed next-step attempt blocked by step review", async () => {
+  const { actions, engine, runStore } = createWorkflowEngineContext()
+  actions.register({ id: "sample.collect", execute: async () => "context" })
+  let analyzeCalls = 0
+  actions.register({
+    id: "sample.analyze",
+    execute: async () => {
+      analyzeCalls += 1
+      return "analysis"
+    }
+  })
+  const workflow = {
+    id: "workflow-register.reviewed-single-step-legacy-failed-gate",
+    name: "reviewed-single-step-legacy-failed-gate",
+    label: "Reviewed Single Step Legacy Failed Gate",
+    schemaVersion: "workflow-register/v1",
+    inputs: {},
+    stepReview: {
+      enabled: true,
+      pauseAfter: "everyStep",
+      requireAcceptBeforeNext: true,
+      allowRetry: true,
+      allowEditBeforeRetry: true,
+      preserveAttempts: true
+    },
+    engineSteps: [
+      {
+        id: "collect",
+        title: "Collect",
+        type: "command",
+        action: { provider: "sample.collect" },
+        resultKey: "context"
+      },
+      {
+        id: "analyze",
+        title: "Analyze",
+        type: "command",
+        action: { provider: "sample.analyze" },
+        resultKey: "analysis"
+      }
+    ]
+  }
+
+  const first = await engine.runWorkflow(workflow, {}, { executionMode: "singleStep", stepId: "collect" })
+  first.status = "failed"
+  first.currentStep = "analyze"
+  first.error = "Step 'analyze' cannot run before previous step 'collect' is completed."
+  first.steps[1].status = "failed"
+  first.steps[1].error = first.error
+  await runStore.saveRun(first)
+
+  const recovered = await engine.runWorkflow(workflow, {}, { executionMode: "singleStep", stepId: "analyze" })
+
+  assert.equal(recovered.runId, first.runId)
+  assert.equal(recovered.status, "reviewing")
+  assert.equal(recovered.currentStep, "collect")
+  assert.equal(recovered.steps[0].status, "reviewing")
+  assert.equal(recovered.steps[1].status, "pending")
+  assert.match(recovered.error, /waiting for step review/)
   assert.equal(analyzeCalls, 0)
 })
 

@@ -153,6 +153,9 @@ export class BobWorkflowEngineRunner {
       if (run.status === "failed") {
         await vscode.window.showErrorMessage(`Bob workflow run failed: ${run.error ?? run.runId}`)
       }
+      if ((run.status === "reviewing" || run.status === "held") && run.error) {
+        await vscode.window.showWarningMessage(`Bob workflow step gate: ${run.error}`)
+      }
       return run.status === "completed" || run.status === "running" || run.status === "paused" || run.status === "reviewing" || run.status === "checkpoint"
     } catch (error) {
       await vscode.window.showErrorMessage(

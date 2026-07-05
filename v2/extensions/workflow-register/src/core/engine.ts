@@ -41,6 +41,7 @@ import {
   AgentProvider,
   CoreWorkflowDefinition,
   EngineStep,
+  RunStepState,
   WorkflowRunState
 } from "./model"
 import type {
@@ -151,7 +152,15 @@ export class WorkflowEngine {
     if (blocked) {
       const step = workflow.engineSteps[startIndex]
       const stepState = run.steps[startIndex]
-      const error = `Step '${step.id}' cannot run before previous step '${blocked.id}' is completed.`
+      const error = blockedStepMessage(step, blocked)
+      if (isReviewOrHeldGate(blocked)) {
+        run.status = blocked.status
+        run.currentStep = blocked.id
+        run.error = error
+        resetBlockedTargetStep(stepState)
+        await this.runStore.saveRun(run)
+        return run
+      }
       run.status = "failed"
       run.currentStep = step.id
       run.error = error
@@ -490,4 +499,28 @@ export class WorkflowEngine {
 
 function isOrderedSingleStepContinuation(options: RunWorkflowOptions): boolean {
   return options.executionMode === "singleStep" && typeof options.stepId === "string" && options.stepId.length > 0
+}
+
+function isReviewOrHeldGate(step: RunStepState): step is RunStepState & { status: "reviewing" | "held" } {
+  return step.status === "reviewing" || step.status === "held"
+}
+
+function blockedStepMessage(target: EngineStep, blocked: RunStepState): string {
+  if (blocked.status === "reviewing") {
+    return `Current step '${blocked.id}' is waiting for step review. Accept or retry it before running step '${target.id}'.`
+  }
+  if (blocked.status === "held") {
+    return `Current step '${blocked.id}' is held. Complete it before running step '${target.id}'.`
+  }
+  return `Step '${target.id}' cannot run before previous step '${blocked.id}' is completed.`
+}
+
+function resetBlockedTargetStep(step: RunStepState | undefined): void {
+  if (!step || step.status !== "failed") return
+  step.status = "pending"
+  step.error = undefined
+  step.startedAt = undefined
+  step.completedAt = undefined
+  step.reviewStartedAt = undefined
+  step.acceptedAt = undefined
 }
