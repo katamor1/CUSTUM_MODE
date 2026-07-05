@@ -1,0 +1,16 @@
+schema_version: bazaar-review-triage/v1
+review_id: bazaar-r125-project-rule-review
+triaged_by: reviewer-name
+triaged_at: "2026-07-04T11:00:00+09:00"
+items:
+  - finding_id: F-001
+    rule_id: RT-001
+    decision: needs_investigation
+    action: investigate
+    owner: reviewer-name
+    reason: Bob の指摘内容を人間が確認する。
+summary:
+  accepted: 0
+  rejected: 0
+  needs_investigation: 1
+  deferred: 0

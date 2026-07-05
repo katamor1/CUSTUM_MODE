@@ -96,6 +96,34 @@ workspace 外への読み書きは、Phase 0 では原則禁止とする。将�
 | P0-CCR-02 | bob-code-consistency-review | workspace path resolver 統一 | 1 | strict resolver、読み書き境界 tests |
 | P0-OPS-01 | docs/templates | 運用設計・UAT 準備 | 2 | UAT template、metrics template、運用 README |
 
+### 4.1 現行実装ステータス
+
+本書作成後に Phase 0 相当の実装が進んでいるため、CODEX は次表を起点に「未実装の再実装」ではなく「証跡化、残件補強、最終検証」を行う。
+
+| ID | 現行ステータス | 根拠 / CODEX の扱い |
+|---|---|---|
+| P0-ALL-01 | verified | `.github/workflows/extensions-quality.yml` が 3 拡張を matrix 相当に検証し、各拡張に `package-lock.json` と `npm ci` 前提の dependency policy がある。CODEX は package smoke と VSIX policy を最終確認する。 |
+| P0-WR-01 | verified | `allowedCommandIds` / `deniedCommandIds` は parser、schema、engine tests に反映済み。`vscode.executeCommand` は command ID allowlist なしで fail closed になる。CODEX は互換 workflow の allowlist と regression を維持する。 |
+| P0-WR-02 | verified | `taskSnapshots.includeMessages` 既定値は `false`、redaction / truncation / pruning / `.gitignore` helper の tests がある。CODEX は privacy docs へ運用注意を反映する。 |
+| P0-WR-03 | remaining | `isWorkflowDocumentPath` による軽量判定はあるが、workspace root、予約名、trailing dot/space、symlink escape を含む保存先 validator としては不足する。CODEX は `workflowBuilderPanel.ts` の保存前チェックを共通 validator へ寄せる。 |
+| P0-BBR-01 | verified | `BOB_BAZAAR_ALLOWED_ROOTS`、MCP allowed cwd validation、write tool default disable、`bzr --no-aliases` regression が実装済み。CODEX は package smoke と UAT 手順へ反映する。 |
+| P0-BBR-02 | verified | `reviewLimits.ts` の clamp、packet selection の ambiguity handling、workflow state packet URI 優先が実装済み。CODEX は運用 docs で packet path の扱いを固定する。 |
+| P0-CCR-01 | verified | Git revision は `git rev-parse --verify --end-of-options <rev>^{commit}` で SHA 解決し、Bazaar revision は option-like / unsafe 値を拒否する tests がある。CODEX は既存正常 fixture を維持する。 |
+| P0-CCR-02 | partial | workspace containment helper と複数の path boundary tests はあるが、kind ごとの許可領域、absolute path 拒否、symlink escape 検出が未統一。CODEX は kind-aware resolver を追加し、preprocess / capture / triage / traceability へ適用する。 |
+| P0-OPS-01 | remaining | `docs/ops/`、`docs/uat/`、`docs/metrics/` の Phase 0 運用資産が未整備。CODEX は UAT、security/privacy、VSIX release、metrics の 4 文書を追加する。 |
+
+### 4.2 現行 baseline
+
+分離 worktree で作業を開始する前に、次の baseline を確認する。
+
+| 拡張 | baseline command | 期待結果 |
+|---|---|---|
+| `workflow-register` | `npm.cmd test` | 247 tests, 0 failures |
+| `bob-bazaar-review` | `npm.cmd test` | 103 tests, 0 failures |
+| `bob-code-consistency-review` | `npm.cmd test` | 91 tests, 0 failures |
+
+新規 worktree では `node_modules` が存在しないため、初回は各拡張で `npm.cmd ci` を実行してから baseline を確認する。
+
 ## 5. P0-ALL-01: CI / package / lockfile / VSIX 運用基盤
 
 ### 5.1 背景

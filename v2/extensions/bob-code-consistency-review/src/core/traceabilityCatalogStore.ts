@@ -1,4 +1,4 @@
-import { pathExists, readTextFile, resolveWorkspacePathStrict, writeJsonFile, writeTextFile } from "./fileSystem"
+import { pathExists, readTextFile, resolveWorkspacePathForKind, writeJsonFile, writeTextFile } from "./fileSystem"
 import { renderTraceabilityGateReport, validateTraceabilityCatalog, type TraceabilityCatalog, type TraceabilityValidationReport } from "./traceabilityCatalog"
 
 export const DEFAULT_TRACEABILITY_CATALOG_PATH = ".bob-trace/traceability-catalog.json"
@@ -69,8 +69,8 @@ export async function validateAndWriteTraceabilityGateReport(input: {
   textEncoding?: string
 }): Promise<ValidateAndWriteTraceabilityGateReportResult> {
   const catalogPath = resolveCatalogPath(input.workspaceRoot, input.catalogPath)
-  const reportPath = resolveWorkspacePathStrict(input.workspaceRoot, input.reportPath ?? DEFAULT_TRACEABILITY_GATE_REPORT_PATH, "traceabilityGateReportPath")
-  const read = await readTraceabilityCatalog({ workspaceRoot: input.workspaceRoot, catalogPath, textEncoding: input.textEncoding })
+  const reportPath = resolveWorkspacePathForKind(input.workspaceRoot, input.reportPath ?? DEFAULT_TRACEABILITY_GATE_REPORT_PATH, "traceability-gate-report")
+  const read = await readTraceabilityCatalog({ workspaceRoot: input.workspaceRoot, catalogPath: input.catalogPath, textEncoding: input.textEncoding })
   if (read.status === "error") return { status: "error", catalogPath, reportPath, errors: read.errors }
 
   const report = validateTraceabilityCatalog(read.catalog)
@@ -100,7 +100,7 @@ export function emptyTraceabilityCatalog(): TraceabilityCatalog {
 }
 
 export function resolveCatalogPath(workspaceRoot: string, catalogPath = DEFAULT_TRACEABILITY_CATALOG_PATH): string {
-  return resolveWorkspacePathStrict(workspaceRoot, catalogPath, "traceabilityCatalogPath")
+  return resolveWorkspacePathForKind(workspaceRoot, catalogPath, "traceability-catalog")
 }
 
 function normalizeCatalog(catalog: TraceabilityCatalog): TraceabilityCatalog {

@@ -2,6 +2,7 @@ import * as vscode from "vscode"
 import { reviewRange, reviewRevision } from "./bazaar/bazaarReviewCommands"
 import { captureReviewResult, saveReviewResultFromClipboard } from "./projectRules/resultCapture"
 import { validateActiveReviewResultJson } from "./projectRules/reviewResultValidationCommand"
+import { registerReviewRecordCommands } from "./records/reviewRecordCommands"
 import { openBazaarReviewGui } from "./ui/reviewGui"
 import { collectReviewContext, loadReviewRules } from "./workflow/workflowActions"
 import { registerWorkflowProvidersWithRetry } from "./workflow/workflowProviders"
@@ -34,6 +35,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("bobBazaar.reviewRangeWithProjectRules", () => reviewRange(context, true)),
     vscode.commands.registerCommand("bobBazaar.validateReviewResultJson", () => validateActiveReviewResultJson())
   )
+  registerReviewRecordCommands(context)
   registerWorkflowProvidersWithRetry(context)
 }
 

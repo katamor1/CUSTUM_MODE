@@ -24,6 +24,7 @@ AI チャット、Skill、Workflow、手動調査で Bazaar CLI を直接使う�
 - `.bob/review/checklist.json` と `.bob/review/review-result.schema.json` を使ったプロジェクト規約レビューを支援する。
 - `workflow-register` のワークフローステップから呼び出せる action provider を提供する。
 - Bob が出力した review-result JSON を検証し、JSON と Markdown の成果物として保存する。
+- Phase 1 の Bazaar レビュー実績として、packet、review-result、human triage、summary を `.bob-review-records` に記録する。
 - 読み取り専用の Bazaar MCP ツールと、プロジェクト規約支援ツールを提供する。
 
 ## 任意連携
@@ -50,6 +51,8 @@ AI チャット、Skill、Workflow、手動調査で Bazaar CLI を直接使う�
 6. `レビューしてBobにADD` でレビュー用 packet を作成する。`IBM.bob-code` が導入済みなら Bob context に追加する。
 7. Bob のワークフローで `bazaar-project-rule-review` を実行する。
 8. Bob が出力した JSON を `Bob Bazaar Review: レビュー結果を取り込む` で検証、保存する。
+9. `Bob Bazaar Review: 実績 record を作成` と `Bob Bazaar Review: 人間 triage 雛形を生成` で Phase 1 evidence を作る。
+10. `Bob Bazaar Review: 実績 campaign summary を生成` で `summary.json` / `summary.md` を作る。
 
 ## Command Palette のコマンド
 
@@ -67,6 +70,12 @@ AI チャット、Skill、Workflow、手動調査で Bazaar CLI を直接使う�
 | `Bob Bazaar Review: 1リビジョンをプロジェクト規約付きでレビュー` | `bobBazaar.reviewRevisionWithProjectRules` | 単一 revision レビューにプロジェクト規約と JSON 出力契約を追加する。 |
 | `Bob Bazaar Review: リビジョン範囲をプロジェクト規約付きでレビュー` | `bobBazaar.reviewRangeWithProjectRules` | revision range レビューにプロジェクト規約と JSON 出力契約を追加する。 |
 | `Bob Bazaar Review: レビュー結果 JSON を検証` | `bobBazaar.validateReviewResultJson` | active editor / selection の review-result JSON を検証し、Markdown 表示できる。 |
+| `Bob Bazaar Review: 実績 campaign を初期化` | `bobBazaar.records.initCampaign` | `.bob-review-records/campaigns/phase1-bazaar-review-uat-001` の雛形を workspace にコピーする。 |
+| `Bob Bazaar Review: 実績 record を作成` | `bobBazaar.records.createRecord` | 保存済み review-result と review-packet.md を `record.yaml` で紐付ける。command 引数に `reviewPacketText` がある場合は packet artifact も保存する。 |
+| `Bob Bazaar Review: 実績 record を検証` | `bobBazaar.records.validateRecord` | `record.yaml` の必須 field、workspace-relative path、参照 artifact を検証する。 |
+| `Bob Bazaar Review: 人間 triage 雛形を生成` | `bobBazaar.records.createTriage` | review-result JSON から `triage.yaml` を生成し、初期 decision を `needs_investigation` にする。 |
+| `Bob Bazaar Review: 人間 triage を検証` | `bobBazaar.records.validateTriage` | decision enum、finding_id、summary 件数を検証する。 |
+| `Bob Bazaar Review: 実績 campaign summary を生成` | `bobBazaar.records.generateSummary` | 複数 record / triage から `summary.json` と `summary.md` を生成する。 |
 
 ## レビュー GUI
 
@@ -179,6 +188,32 @@ Bob Bazaar Review: クリップボードからレビュー結果を保存
 
 Markdown は `renderReviewResultMarkdown` で生成され、件数、チェックリスト、evidence、findings を確認できます。検証に失敗した場合は、問題点を Markdown レポートとして表示します。
 
+## Phase 1 レビュー実績 record
+
+Phase 1 の実績作成では、既存の `.bob/review/results/<review_id>.json` と `.md` を変更せず、追加の evidence を `.bob-review-records` に分離して保存します。
+
+```text
+.bob-review-records/
+  campaigns/
+    <campaign_id>/
+      campaign.yaml
+      targets.yaml
+      records/
+        <review_id>/
+          review-packet.md
+          record.yaml
+          triage.yaml
+          triage.md
+          metrics.json
+          notes.md
+      summary.json
+      summary.md
+```
+
+`record.yaml` は target、review-packet.md、review-result JSON/Markdown、triage.yaml、所要時間 metrics を追跡するための索引です。`triage.yaml` は Bob の指摘を人間が `accepted` / `rejected` / `needs_investigation` / `deferred` に分類した結果を保存します。campaign summary は triage を findings 採否の source of truth として集計し、triage がない record は `triage_missing` warning として表示します。
+
+CODEX や workflow から command 引数で呼び出す場合は、少なくとも `workspaceRoot`、`campaignId`、`reviewId` を渡します。`bobBazaar.records.createRecord` に `reviewPacketText` を渡すと、`.bob-review-records/campaigns/<campaign_id>/records/<review_id>/review-packet.md` へ packet artifact を保存します。既存 packet がある場合は backup を作ってから更新します。
+
 ## MCP ツール
 
 同梱 MCP サーバーは Bazaar 操作を読み取り専用で公開します。
@@ -264,6 +299,7 @@ Bob には JSON を先に返し、その後に Markdown checklist を出力す�
 | `src/workflowRegisterBridge.ts` | workflow-register API 取得、action provider 型、workflow input helper、capture option 変換。 |
 | `src/reviewGui*` / `src/webview/*` | Bazaar review GUI と初期化 UI。 |
 | `src/projectRules/*` | checklist / schema / review-result 検証と Markdown 変換。 |
+| `src/records/*` | Phase 1 review record、triage、campaign summary、record command。 |
 | `src/mcp/*` | 読み取り専用 Bazaar MCP server と project rules MCP tool。 |
 
 次の分割候補は、`extension.ts` に残る `registerWorkflowProviders`、`collectReviewContext`、`loadReviewRules`、`configureMcp`、`initProjectRules` です。Command ID と workflow action provider ID は互換性に直結するため、分割時も名称は変更しません。
@@ -337,7 +373,7 @@ code --install-extension bob-bazaar-review-0.3.0.vsix
 
 ### 生成物
 
-主な生成物は Bob workspace 側の `.bob/mcp.json`、`.bob/review/checklist.json`、`.bob/review/review-result.schema.json`、`.bob/review/results/*.json`、`.bob/review/results/*.md` です。review-result はレビュー対象や指摘根拠を含むため、共有前に内容を確認してください。
+主な生成物は Bob workspace 側の `.bob/mcp.json`、`.bob/review/checklist.json`、`.bob/review/review-result.schema.json`、`.bob/review/results/*.json`、`.bob/review/results/*.md`、`.bob-review-records/campaigns/*` です。review-result と review record はレビュー対象や指摘根拠を含むため、共有前に内容を確認してください。
 
 ### VSIX サイズ
 

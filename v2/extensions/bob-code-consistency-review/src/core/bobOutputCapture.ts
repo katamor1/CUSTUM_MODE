@@ -1,6 +1,6 @@
 import * as path from "node:path"
 import YAML from "yaml"
-import { pathExists, readTextFile, resolveWorkspacePathStrict, writeTextFile } from "./fileSystem"
+import { pathExists, readTextFile, resolveWorkspacePathForKind, resolveWorkspacePathStrict, writeTextFile } from "./fileSystem"
 import { canonicalizeBobOutputWithReport, type CanonicalizationIssue, type EvidenceIndexItem, type EvidenceLookup } from "./bobOutputCanonicalizer"
 import { validateParsedBobOutput } from "./bobOutputValidator"
 import { extractSingleYamlDocumentText } from "./structuredTextExtractor"
@@ -33,7 +33,7 @@ type CaptureSourceResult = {
 }
 
 export async function captureBobOutput(input: CaptureBobOutputInput): Promise<CaptureBobOutputResult> {
-  const bobOutputPath = resolveWorkspacePathStrict(input.workspaceRoot, input.bobOutputPath, "bobOutputPath")
+  const bobOutputPath = resolveWorkspacePathForKind(input.workspaceRoot, input.bobOutputPath, "bob-output")
   const packageDir = input.packageDir ? resolveWorkspacePathStrict(input.workspaceRoot, input.packageDir, "reviewPackagePath") : undefined
   const resolvedInput = { ...input, bobOutputPath, packageDir }
   const source = await resolveCaptureSource(resolvedInput)

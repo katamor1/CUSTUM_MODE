@@ -12,7 +12,7 @@
 | 依存拡張 | `IBM.bob-code`, `local.workflow-register` |
 | Bazaar | `bzr root`, `bzr log`, `bzr diff`, `bzr cat`, `bzr status`, `bzr revno` |
 | Bob workspace | `.bob/mcp.json`, `.bob/review/*`, `.bob/skills/*`, `.bob/workflows/bazaar-project-rule-review/WORKFLOW.md` |
-| 成果物 | `.bob/review/results/<review_id>.json`, `.bob/review/results/<review_id>.md` |
+| 成果物 | `.bob/review/results/<review_id>.json`, `.bob/review/results/<review_id>.md`, `.bob-review-records/campaigns/<campaign_id>/...` |
 | UI | Command Palette、Bazaar Review GUI Webview、Bob Workflow UI、active editor validation report |
 | MCP | stdio JSON-RPC server、Bazaar readonly tools、project rules tools、review result tools |
 
@@ -115,7 +115,7 @@ bazaar_test/branch2/
 | --- | --- |
 | 目的 | 拡張が起動し、Command Palette に主要 command が表示されることを確認する。 |
 | 手順 | 1. テスト workspace を開く。<br>2. `Developer: Show Running Extensions` で拡張状態を確認する。<br>3. Command Palette で `Bob Bazaar Review:` を検索する。 |
-| 期待結果 | GUI、context 収集、rules 読み込み、capture、MCP 設定、init、revision / range review、JSON 検証 command が表示される。 |
+| 期待結果 | GUI、context 収集、rules 読み込み、capture、MCP 設定、init、revision / range review、JSON 検証、Phase 1 record / triage / summary command が表示される。 |
 
 ### BZR-RT-002 workflow-register provider 登録
 
@@ -389,6 +389,70 @@ bazaar_test/branch2/
 | 手順 | 1. `reviewRevisionWithProjectRules` または GUI で packet を作る。<br>2. Bob にレビューさせる。<br>3. Bob 出力 JSON を clipboard または editor から capture する。<br>4. JSON validation を行う。 |
 | 期待結果 | packet 生成、Bob context 追加、review-result 保存、validation が完了する。 |
 
+### BZR-RT-036 Phase 1 campaign 初期化
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | Phase 1 実績作成用の `.bob-review-records` campaign 雛形を作成できることを確認する。 |
+| 手順 | 1. `Bob Bazaar Review: 実績 campaign を初期化` を実行する。<br>2. workspace root の `.bob-review-records/campaigns/phase1-bazaar-review-uat-001` を確認する。 |
+| 期待結果 | `campaign.yaml`、`targets.yaml`、`records/_template/record.yaml`、`records/_template/triage.yaml` が作成される。 |
+
+### BZR-RT-037 review packet artifact 保存
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | Bob に渡した packet を campaign record 配下へ保存できることを確認する。 |
+| 手順 | 1. GUI または direct command で review packet を作成する。<br>2. `bobBazaar.records.createRecord` を command 引数付きで呼ぶか、packet を `review-packet.md` として保存する。 |
+| 期待結果 | `.bob-review-records/campaigns/<campaign_id>/records/<review_id>/review-packet.md` が存在し、既存 packet 更新時は backup が残る。 |
+
+### BZR-RT-038 review-result から record.yaml 作成
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | capture 済み review-result と packet を `record.yaml` で追跡できることを確認する。 |
+| 手順 | 1. review-result JSON / Markdown を `.bob/review/results` に保存する。<br>2. `Bob Bazaar Review: 実績 record を作成` を実行する。 |
+| 期待結果 | `record.yaml` に target、packet、review-result JSON/Markdown、triage path、metrics が記録される。 |
+
+### BZR-RT-039 human triage 雛形生成
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | Bob finding を人間判断用 `triage.yaml` に変換できることを確認する。 |
+| 手順 | 1. findings を含む review-result を保存する。<br>2. `Bob Bazaar Review: 人間 triage 雛形を生成` を実行する。 |
+| 期待結果 | finding ごとに item が作成され、初期 decision は `needs_investigation` になる。fail checklist だが finding がない rule も追加調査 item になる。 |
+
+### BZR-RT-040 triage validation error
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | human triage の不正 decision や summary mismatch を検出できることを確認する。 |
+| 手順 | 1. `triage.yaml` の decision を不正値に変更する。<br>2. `Bob Bazaar Review: 人間 triage を検証` を実行する。 |
+| 期待結果 | invalid decision、unknown finding_id、summary mismatch が warning / error として表示される。 |
+
+### BZR-RT-041 campaign summary 生成
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | 複数 record / triage から Phase 1 実績 summary を生成できることを確認する。 |
+| 手順 | 1. 2 件以上の `record.yaml` と `triage.yaml` を用意する。<br>2. `Bob Bazaar Review: 実績 campaign summary を生成` を実行する。 |
+| 期待結果 | `summary.json` と `summary.md` に件数、schema valid/invalid、triage decision、所要時間、estimated minutes saved が出る。 |
+
+### BZR-RT-042 workflow run metadata 紐付け
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | workflow-register 実行がある場合に record と run metadata を紐付け、ない場合も実績作成を継続できることを確認する。 |
+| 手順 | 1. workflow 経由と direct command 経由の両方で record を作る。<br>2. `record.yaml` の workflow section を確認する。 |
+| 期待結果 | workflow 経由では run_id / status が入り、取得できない場合は `unavailable: true` として扱われる。 |
+
+### BZR-RT-043 実績報告 Markdown 作成
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | campaign summary をプロジェクトリーダ向けの報告材料として読めることを確認する。 |
+| 手順 | 1. `summary.md` を開く。<br>2. 件数、採用/棄却/追加調査、所要時間、warning を確認する。 |
+| 期待結果 | Phase 1 実績報告へ転記でき、triage missing や invalid record が隠れない。 |
+
 ## 7. 実機テスト結果記録テンプレート
 
 | 項目 | 記入欄 |
@@ -413,6 +477,7 @@ bazaar_test/branch2/
 - BZR-RT-001 から BZR-RT-006 までの起動・初期化・GUI 基本導線が合格する。
 - Bazaar CLI 読み取り操作が `--no-aliases` 経路で実行され、packet が生成できる。
 - review-result JSON / Markdown が `.bob/review/results` に保存できる。
+- Phase 1 record / triage / summary が `.bob-review-records` に保存できる。
 - active editor validation と MCP result tools が保存済み result を扱える。
 - Bob Workflow UI 経由で主要 provider が provider missing にならない。
 - multi-root で `.bob` と `.bzr` の責務分離が守られる。
@@ -423,6 +488,6 @@ bazaar_test/branch2/
 | 優先度 | 対象 |
 | --- | --- |
 | P0 | 起動、project rules 初期化、GUI packet 生成、direct reviewRevision、capture、validation。 |
-| P1 | workflow-register provider、Bob Workflow UI、MCP initialize / tools/list、multi-root。 |
+| P1 | workflow-register provider、Bob Workflow UI、MCP initialize / tools/list、multi-root、Phase 1 record / triage / summary。 |
 | P2 | revisionRange、working tree、Shift-JIS / CP932、diff / added file truncation。 |
 | P3 | file save fallback、Bob 拡張なし fallback、unsafe input、OS 差分。 |

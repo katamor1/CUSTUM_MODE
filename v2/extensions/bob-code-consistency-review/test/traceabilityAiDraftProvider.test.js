@@ -222,7 +222,7 @@ test("prepareAiTraceabilityDraftPrompt writes a proposed-only sidecar catalog pr
 
   const result = await prepareAiTraceabilityDraftPrompt({
     workspaceRoot,
-    outputDir: path.join(workspaceRoot, ".bob-trace", "ai-traceability-draft"),
+    outputDir: ".bob-trace/ai-traceability-draft",
     base: "main",
     head: "feature/payment",
     vcs: "git",

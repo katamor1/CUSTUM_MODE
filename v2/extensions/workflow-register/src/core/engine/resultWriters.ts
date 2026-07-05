@@ -6,6 +6,7 @@ import type {
 } from "../model"
 import type { ResultSinkRegistry } from "../resultSinkRegistry"
 import type { WorkflowEngineEventInput, WorkflowEngineOptions } from "../engineTypes"
+import { assertUserWritableStateKey } from "../stateKeys"
 import { markResultHandoffFailed } from "./recoveryState"
 import {
   renderArtifactPath,
@@ -27,6 +28,7 @@ export async function writeResultSinks(input: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { workflow, run, step, result, resultSinks, recoverResultText, emitHandoffFailed, agentText } = input
   try {
+    if ("resultKey" in step && step.resultKey) assertUserWritableStateKey(step.resultKey, "workflow resultKey")
     const text = await resultText({ workflow, run, step, result, recoverResultText, agentText })
     for (const sink of result.sinks) {
       // result sink はファイル書き込みやコマンド連携を含む副作用境界なので、失敗は run state に記録して再開可能にする。

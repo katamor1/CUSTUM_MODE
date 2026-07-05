@@ -1,0 +1,22 @@
+schema_version: bazaar-review-targets/v1
+campaign_id: phase1-bazaar-review-uat-001
+targets:
+  - target_id: bzr-r125-single
+    mode: singleRevision
+    revision: "125"
+    change_type: bugfix
+    reason: 不具合修正の代表ケース
+    expected_review_focus:
+      - error-handling
+      - regression-risk
+  - target_id: bzr-r120-r126-range
+    mode: revisionRange
+    base_revision: "120"
+    target_revision: "126"
+    change_type: feature
+    reason: 複数 revision にまたがる機能追加
+  - target_id: bzr-working-tree-001
+    mode: workingTreeSinceRevision
+    base_revision: "126"
+    change_type: precommit
+    reason: コミット前レビューの代表ケース

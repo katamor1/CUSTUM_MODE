@@ -223,6 +223,42 @@ test("workflow engine holds matching command approval guardrails before executin
   assert.equal(run.state.context, undefined)
 })
 
+test("workflow engine rejects reserved workflow result keys before executing command steps", async () => {
+  const calls = []
+  const { actions, engine } = createWorkflowEngineContext()
+  actions.register({
+    id: "sample.collect",
+    execute: async () => {
+      calls.push("collect")
+      return "context"
+    }
+  })
+  const workflow = {
+    id: "workflow-register.reserved-result-key",
+    name: "reserved-result-key",
+    label: "Reserved Result Key",
+    schemaVersion: "workflow-register/v1",
+    inputs: {},
+    engineSteps: [
+      {
+        id: "collect",
+        title: "Collect",
+        type: "command",
+        action: { provider: "sample.collect" },
+        resultKey: "workflow.approval.collect"
+      }
+    ]
+  }
+
+  const run = await engine.runWorkflow(workflow, {})
+
+  assert.equal(run.status, "failed")
+  assert.equal(run.currentStep, "collect")
+  assert.match(run.error, /Reserved workflow state key/)
+  assert.deepEqual(calls, [])
+  assert.equal(run.state["workflow.approval.collect"], undefined)
+})
+
 test("workflow engine runs an approval-held command only after explicit approval resume", async () => {
   const calls = []
   const { actions, engine } = createWorkflowEngineContext()

@@ -165,6 +165,39 @@ steps:
   assert.match(messages, /condition must specify exactly one operator/)
 })
 
+test("validator rejects reserved workflow result key prefixes", () => {
+  const validation = validateWorkflowText({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/reserved-result-keys/WORKFLOW.md",
+    text: workflowText(`
+steps:
+  - id: collect
+    title: Collect
+    type: command
+    action:
+      provider: sample.collect
+    resultKey: workflow.approval.collect
+  - id: form
+    title: Form
+    type: manual
+    form:
+      resultKey: workflow.review.form
+      fields: []
+  - id: approve
+    title: Approve
+    type: manual
+    approval:
+      resultKey: workflow.branching.approval
+`)
+  })
+
+  assert.equal(validation.ok, false)
+  const messages = validation.diagnostics.map((item) => item.message).join("\n")
+  assert.match(messages, /resultKey 'workflow\.approval\.collect' uses the reserved workflow state namespace/)
+  assert.match(messages, /form resultKey 'workflow\.review\.form' uses the reserved workflow state namespace/)
+  assert.match(messages, /approval resultKey 'workflow\.branching\.approval' uses the reserved workflow state namespace/)
+})
+
 test("validator rejects loop transitions that do not target the loop entry step", () => {
   const validation = validateWorkflowText({
     sourceId: "workflow-register",

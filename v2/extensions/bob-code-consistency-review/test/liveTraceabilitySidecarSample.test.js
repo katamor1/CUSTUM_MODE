@@ -91,8 +91,8 @@ test("live traceability sidecar sample prompt input discovers docs and git diff"
 
   const result = await prepareAiTraceabilityDraftPrompt({
     workspaceRoot: workspace,
-    outputDir: path.join(workspace, draftInput.outputDir),
-    catalogPath: path.join(workspace, draftInput.catalogPath),
+    outputDir: draftInput.outputDir,
+    catalogPath: draftInput.catalogPath,
     docsRoot: draftInput.docsRoot,
     base: draftInput.base,
     head: draftInput.head,
@@ -116,7 +116,7 @@ test("preprocessReview builds a package from the live traceability sidecar sampl
   const result = await preprocessReview({
     workspaceRoot: workspace,
     inputPath: path.join(workspace, "review-input.yaml"),
-    outDir
+    outDir: ".bob-review/review-package"
   })
 
   const changedFiles = JSON.parse(fs.readFileSync(path.join(outDir, "changed-files.json"), "utf8"))
@@ -139,9 +139,10 @@ test("preprocessReview builds a package from the live traceability sidecar sampl
 
   const triageDir = path.join(workspace, ".bob-review", "human-triage")
   const triage = await generateHumanTriage({
+    workspaceRoot: workspace,
     packageDir: outDir,
     bobOutputPath: expectedBobOutputPath,
-    outDir: triageDir
+    outDir: ".bob-review/human-triage"
   })
   assert.equal(triage.status, "ok")
   assert.match(fs.readFileSync(path.join(triageDir, "accepted-findings.md"), "utf8"), /PRE-001/)

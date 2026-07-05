@@ -8,7 +8,7 @@ import {
   readTraceabilityCatalog,
   validateAndWriteTraceabilityGateReport
 } from "./core/traceabilityCatalogStore"
-import { pathExists, readTextFile } from "./core/fileSystem"
+import { pathExists, readTextFile, resolveWorkspacePathForKind } from "./core/fileSystem"
 import { writeReviewInputFromDraft } from "./core/reviewInputBuilder"
 import {
   absolute,
@@ -35,12 +35,9 @@ export async function runPrepareAiTraceabilityDraft(options?: unknown): Promise<
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)
   const workspaceRoot = await requireBobWorkspaceRoot(record)
-  const catalogPath = absolute(
-    workspaceRoot,
-    stringOption(record, "traceabilityCatalogPath") ??
-      config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
-  )
-  const outputDir = absolute(workspaceRoot, stringOption(record, "aiTraceabilityDraftPromptPath") ?? ".bob-trace/ai-traceability-draft")
+  const catalogPath = stringOption(record, "traceabilityCatalogPath") ??
+    config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
+  const outputDir = stringOption(record, "aiTraceabilityDraftPromptPath") ?? ".bob-trace/ai-traceability-draft"
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
   const base = await stringOrPrompt(record, "base", "traceability AI draft 用の base revision", "HEAD~1")
   if (!base) return { status: "cancelled" }
@@ -77,16 +74,10 @@ export async function runApplyAiTraceabilityDraft(textOrOptions?: unknown): Prom
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(textOrOptions)
   const workspaceRoot = await requireBobWorkspaceRoot(record)
-  const catalogPath = absolute(
-    workspaceRoot,
-    stringOption(record, "traceabilityCatalogPath") ??
-      config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
-  )
-  const reportPath = absolute(
-    workspaceRoot,
-    stringOption(record, "traceabilityGateReportPath") ??
-      config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
-  )
+  const catalogPath = stringOption(record, "traceabilityCatalogPath") ??
+    config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
+  const reportPath = stringOption(record, "traceabilityGateReportPath") ??
+    config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
   const rawText = firstString(textOrOptions) ?? stringOption(record, "text") ?? await vscode.env.clipboard.readText()
   const text = await resolveTraceabilityDraftText({ workspaceRoot, record, rawText, textEncoding })
@@ -107,16 +98,10 @@ export async function runValidateTraceabilityCatalog(options?: unknown): Promise
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)
   const workspaceRoot = await requireBobWorkspaceRoot(record)
-  const catalogPath = absolute(
-    workspaceRoot,
-    stringOption(record, "traceabilityCatalogPath") ??
-      config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
-  )
-  const reportPath = absolute(
-    workspaceRoot,
-    stringOption(record, "traceabilityGateReportPath") ??
-      config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
-  )
+  const catalogPath = stringOption(record, "traceabilityCatalogPath") ??
+    config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
+  const reportPath = stringOption(record, "traceabilityGateReportPath") ??
+    config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
   const result = await validateAndWriteTraceabilityGateReport({ workspaceRoot, catalogPath, reportPath, textEncoding })
   if (result.status === "error") {
@@ -133,11 +118,8 @@ export async function runCreateReviewInputFromTraceability(options?: unknown): P
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)
   const workspaceRoot = await requireBobWorkspaceRoot(record)
-  const catalogPath = absolute(
-    workspaceRoot,
-    stringOption(record, "traceabilityCatalogPath") ??
-      config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
-  )
+  const catalogPath = stringOption(record, "traceabilityCatalogPath") ??
+    config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
   const reviewInputPath = absolute(workspaceRoot, stringOption(record, "reviewInputPath") ?? config.get<string>("reviewInputPath", "review-input.yaml"))
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
   const read = await readTraceabilityCatalog({ workspaceRoot, catalogPath, textEncoding })
@@ -153,11 +135,8 @@ export async function runCreateReviewInputFromTraceability(options?: unknown): P
     review_focus: reviewFocusOption(record) ?? ["requirement-code-consistency", "design-code-consistency", "test-gap"]
   })
   if (build.status === "error") {
-    const reportPath = absolute(
-      workspaceRoot,
-      stringOption(record, "traceabilityGateReportPath") ??
-        config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
-    )
+    const reportPath = stringOption(record, "traceabilityGateReportPath") ??
+      config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
     await validateAndWriteTraceabilityGateReport({ workspaceRoot, catalogPath, reportPath, textEncoding })
     notifyError(`traceability gate error のため review-input.yaml を生成できません: ${build.errors.map((item) => item.code).join(", ")}`)
     return build
@@ -186,16 +165,10 @@ export async function runOpenTraceabilityPrep(context: vscode.ExtensionContext, 
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
   const record = optionRecord(options)
   const workspaceRoot = await requireBobWorkspaceRoot(record)
-  const catalogPath = absolute(
-    workspaceRoot,
-    stringOption(record, "traceabilityCatalogPath") ??
-      config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
-  )
-  const reportPath = absolute(
-    workspaceRoot,
-    stringOption(record, "traceabilityGateReportPath") ??
-      config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
-  )
+  const catalogPath = stringOption(record, "traceabilityCatalogPath") ??
+    config.get<string>("traceabilityCatalogPath", DEFAULT_TRACEABILITY_CATALOG_PATH)
+  const reportPath = stringOption(record, "traceabilityGateReportPath") ??
+    config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
   const result = await openTraceabilityPrepWebview({ context, workspaceRoot, catalogPath, reportPath, textEncoding })
   if (result.status === "error") notifyError(`traceability prep を開けません: ${result.errors.join("; ")}`)
@@ -211,9 +184,10 @@ async function resolveTraceabilityDraftText(input: {
 }): Promise<string> {
   if (looksLikeInlineJson(input.rawText)) return input.rawText
 
-  const outputDir = absolute(
+  const outputDir = resolveWorkspacePathForKind(
     input.workspaceRoot,
-    stringOption(input.record, "aiTraceabilityDraftPromptPath") ?? ".bob-trace/ai-traceability-draft"
+    stringOption(input.record, "aiTraceabilityDraftPromptPath") ?? ".bob-trace/ai-traceability-draft",
+    "traceability-ai-draft-output"
   )
   const candidates = uniqueStrings([
     ...extractTraceabilityDraftJsonPaths(input.rawText),

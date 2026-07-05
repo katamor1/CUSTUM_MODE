@@ -109,6 +109,27 @@ test("StepRuntime applies completion state updates only after the expected step 
   assert.deepEqual(JSON.parse(state["bobBazaar.reviewPacket"]), { packetUri: "untitled:packet-1", runId: "run-1" })
 })
 
+test("StepRuntime rejects reserved workflow state updates before completing a step", async () => {
+  const { StepRuntime } = loadStepRuntime()
+  const runtime = new StepRuntime()
+  const held = heldTask()
+  const state = {}
+
+  runtime.hold(workflow(), { id: "review-input", title: "Review target" }, held.task, { runId: "run-1", state })
+  const message = await runtime.completeCurrentStep({
+    expectedRunId: "run-1",
+    expectedStepId: "review-input",
+    stateUpdates: {
+      "workflow.approval.review-input": JSON.stringify({ status: "approved" })
+    }
+  })
+
+  assert.match(message, /Reserved workflow state key/)
+  assert.equal(state["workflow.approval.review-input"], undefined)
+  assert.equal(held.completed(), false)
+  assert.equal(runtime.list().length, 1)
+})
+
 test("StepRuntime does not apply completion state updates when the expected step mismatches", async () => {
   const { StepRuntime } = loadStepRuntime()
   const runtime = new StepRuntime()

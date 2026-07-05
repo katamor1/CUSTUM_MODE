@@ -35,6 +35,8 @@ IBM.bob-code
 
 `bob-code-consistency-review` は、コード差分と要求・設計・テスト仕様の整合プレレビューを支援する実行可能な VS Code 拡張です。`review-input.yaml` を直接フル手書きする運用だけでなく、対話式 wizard、AI draft JSON、traceability sidecar catalog から生成する運用を提供します。
 
+3拡張機能をさらに分割するか、単一拡張へ統合するかの判断は `docs/bob-three-extension-architecture-decision-ja.md` を参照してください。現時点の方針は、ユーザー可視の拡張は3つのまま維持し、統合は workflow action contract、成果物 schema、security / privacy policy、CI / package policy で行うことです。
+
 ## 現在のリファクタリング状態
 
 3 拡張機能では、AI と人間が安全に保守しやすい単位へ責務分割を進めています。
@@ -142,6 +144,7 @@ npm run package
 
 ## 関連ドキュメント
 
+- `docs/bob-three-extension-architecture-decision-ja.md`
 - `docs/workflow-authoring-guide-ja.md`
 - `docs/extension-refactor-review-54e1fe58.md`
 - `docs/workflows/code-consistency-review/README.md`

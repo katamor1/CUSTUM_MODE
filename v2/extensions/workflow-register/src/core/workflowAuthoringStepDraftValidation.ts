@@ -1,5 +1,6 @@
 import { analyzeAuthoringReferences } from "./workflowAuthoringReferenceAnalysis"
 import type { ResultSinkDefinition, ResultSourceDefinition } from "./model"
+import { isReservedWorkflowStateKey } from "./stateKeys"
 import type { WorkflowAuthoringModel, WorkflowAuthoringStep } from "./workflowAuthoringModel"
 
 export type StepDraftDiagnosticSeverity = "error" | "warning" | "info"
@@ -95,6 +96,8 @@ function validateCommonFields(step: WorkflowAuthoringStep, diagnostics: StepDraf
   if (step.stateRequired === true && (!step.includeState || step.includeState.length === 0)) {
     diagnostics.push(error("step.stateRequired.withoutIncludeState", "stateRequired が true の場合は includeState を1件以上指定してください。", "stateRequired"))
   }
+
+  validateResultKeyPolicy(step.resultKey, "step.resultKey.reserved", "resultKey", diagnostics)
 }
 
 function validateTypeSpecificFields(step: WorkflowAuthoringStep, diagnostics: StepDraftDiagnostic[]): void {
@@ -140,6 +143,14 @@ function validateManualStep(step: Extract<WorkflowAuthoringStep, { type: "manual
   }
   if (typeof message === "string" && /command:/i.test(message)) {
     diagnostics.push(warning("manual.userAction.commandUri.ignored", "メッセージ内の command URI はリンクとして実行されません。", "userAction.message"))
+  }
+  validateResultKeyPolicy(step.form?.resultKey, "manual.form.resultKey.reserved", "form.resultKey", diagnostics)
+  validateResultKeyPolicy(step.approval?.resultKey, "manual.approval.resultKey.reserved", "approval.resultKey", diagnostics)
+}
+
+function validateResultKeyPolicy(value: string | undefined, code: string, field: string, diagnostics: StepDraftDiagnostic[]): void {
+  if (value && isReservedWorkflowStateKey(value)) {
+    diagnostics.push(error(code, "`workflow` / `workflow.*` は内部制御 state 用の予約 key です。別の resultKey を指定してください。", field))
   }
 }
 

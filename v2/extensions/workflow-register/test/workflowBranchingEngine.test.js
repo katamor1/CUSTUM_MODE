@@ -405,6 +405,45 @@ test("workflow engine stores structured manual form values in workflow state", a
   assert.deepEqual(seen, [{ request: "structured request", constraints: "short" }])
 })
 
+test("workflow engine rejects reserved manual result keys before prompting", async () => {
+  let prompted = false
+  const { engine } = createWorkflowEngineContext({
+    engineOptions: {
+      manualCompletion: async () => {
+        prompted = true
+        return { completed: true, formValues: { request: "unsafe" } }
+      }
+    }
+  })
+  const workflow = {
+    id: "workflow-register.manual-reserved-result-key",
+    name: "manual-reserved-result-key",
+    label: "Manual Reserved Result Key",
+    schemaVersion: "workflow-register/v1",
+    inputs: {},
+    engineSteps: [
+      {
+        id: "collect-user-input",
+        title: "Collect user input",
+        type: "manual",
+        form: {
+          resultKey: "workflow.review.userRequest",
+          fields: [
+            { id: "request", type: "string", required: true }
+          ]
+        }
+      }
+    ]
+  }
+
+  const run = await engine.runWorkflow(workflow, {})
+
+  assert.equal(run.status, "failed")
+  assert.match(run.error, /Reserved workflow state key/)
+  assert.equal(run.state["workflow.review.userRequest"], undefined)
+  assert.equal(prompted, false)
+})
+
 test("workflow engine stores manual approval decisions and applies reject transitions", async () => {
   const { actions, engine } = createWorkflowEngineContext({
     engineOptions: {

@@ -1,0 +1,39 @@
+schema_version: bazaar-review-record/v1
+campaign_id: phase1-bazaar-review-uat-001
+record_id: bzr-r125-single-run-001
+review_id: bazaar-r125-project-rule-review
+target_id: bzr-r125-single
+workflow:
+  workflow_id: bazaar-project-rule-review
+  run_id: wrun-20260704-001
+  started_at: "2026-07-04T10:00:00+09:00"
+  finished_at: "2026-07-04T10:18:00+09:00"
+  status: completed
+  unavailable: false
+vcs:
+  type: bazaar
+  repository: .
+  revision_mode: singleRevision
+  revision: "125"
+inputs:
+  review_packet_path: .bob-review-records/campaigns/phase1-bazaar-review-uat-001/records/bazaar-r125-project-rule-review/review-packet.md
+  checklist_path: .bob/review/checklist.json
+outputs:
+  review_result_json: .bob/review/results/bazaar-r125-project-rule-review.json
+  review_result_markdown: .bob/review/results/bazaar-r125-project-rule-review.md
+  triage_yaml: .bob-review-records/campaigns/phase1-bazaar-review-uat-001/records/bazaar-r125-project-rule-review/triage.yaml
+quality_gate:
+  schema_valid: true
+  checklist_count_matches: true
+  evidence_required_satisfied: true
+  findings_have_rule_id: true
+metrics:
+  baseline_review_minutes: 45
+  bob_review_minutes: 18
+  human_triage_minutes: 12
+  findings_total: 3
+  findings_accepted: 2
+  findings_rejected: 1
+  findings_needs_investigation: 0
+  findings_deferred: 0
+notes: notes.md

@@ -20,7 +20,7 @@ test("preprocessReview builds a review package with document and code evidence",
   const outRoot = path.join(repoRoot, ".bob-review")
   fs.mkdirSync(outRoot, { recursive: true })
   const outDir = fs.mkdtempSync(path.join(outRoot, "review-package-"))
-  const result = await preprocessReview({ workspaceRoot: repoRoot, inputPath: reviewInputPath, outDir, diffFixturePath })
+  const result = await preprocessReview({ workspaceRoot: repoRoot, inputPath: reviewInputPath, outDir: path.relative(repoRoot, outDir), diffFixturePath })
 
   for (const file of [
     "manifest.yaml",
@@ -54,7 +54,7 @@ test("preprocessReview builds a review package with document and code evidence",
 test("preprocessReview builds the AI verification matrix package from a real git diff", async () => {
   const workspace = createAiVerificationMatrixWorkspace()
   const outDir = path.join(workspace, ".bob-review", "review-package")
-  const result = await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir })
+  const result = await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: ".bob-review/review-package" })
 
   const changedFiles = JSON.parse(fs.readFileSync(path.join(outDir, "changed-files.json"), "utf8"))
   const changedSymbols = JSON.parse(fs.readFileSync(path.join(outDir, "changed-symbols.json"), "utf8"))
@@ -95,7 +95,7 @@ test("preprocessReview builds the AI verification matrix package from a real git
 test("preprocessReview preserves Shift-JIS review input, documents, source, and git diff text", async () => {
   const workspace = createShiftJisMixedWorkspace()
   const outDir = path.join(workspace, ".bob-review", "review-package")
-  const result = await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir })
+  const result = await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: ".bob-review/review-package" })
 
   const documentExcerpts = fs.readFileSync(path.join(outDir, "document-excerpts.md"), "utf8")
   const diffContext = fs.readFileSync(path.join(outDir, "diff-context.md"), "utf8")

@@ -7,6 +7,7 @@ import {
 } from "./model"
 import { validateApprovalExpression } from "./approvalGuardrails"
 import { parseWorkflowMarkdown } from "./parser"
+import { isReservedWorkflowStateKey } from "./stateKeys"
 
 export type WorkflowDiagnosticSeverity = "error" | "warning" | "info"
 
@@ -74,10 +75,10 @@ export function validateCoreWorkflow(
     if (stepIds.has(step.id)) diagnostics.push(error(filePath, `Duplicate step id '${step.id}'.`))
     stepIds.add(step.id)
     stepIndexes.set(step.id, index)
-    if ("resultKey" in step && step.resultKey) addResultKeyProducer(resultKeyProducers, step.resultKey, step.id, "resultKey", index)
+    if ("resultKey" in step && step.resultKey) addResultKeyProducer(resultKeyProducers, step.resultKey, step.id, "resultKey", index, diagnostics, filePath)
     if (step.type === "manual") {
-      if (step.form?.resultKey) addResultKeyProducer(resultKeyProducers, step.form.resultKey, step.id, "form resultKey", index)
-      if (step.approval?.resultKey) addResultKeyProducer(resultKeyProducers, step.approval.resultKey, step.id, "approval resultKey", index)
+      if (step.form?.resultKey) addResultKeyProducer(resultKeyProducers, step.form.resultKey, step.id, "form resultKey", index, diagnostics, filePath)
+      if (step.approval?.resultKey) addResultKeyProducer(resultKeyProducers, step.approval.resultKey, step.id, "approval resultKey", index, diagnostics, filePath)
     }
     if (step.maxResultBytes !== undefined && step.maxResultBytes <= 0) {
       diagnostics.push(error(filePath, `Step '${step.id}' maxResultBytes must be greater than zero.`))
@@ -103,8 +104,13 @@ function addResultKeyProducer(
   key: string,
   stepId: string,
   source: string,
-  index: number
+  index: number,
+  diagnostics: WorkflowDiagnostic[],
+  filePath: string
 ): void {
+  if (isReservedWorkflowStateKey(key)) {
+    diagnostics.push(error(filePath, `Step '${stepId}' ${source} '${key}' uses the reserved workflow state namespace.`))
+  }
   const items = producers.get(key) ?? []
   items.push({ stepId, source, index })
   producers.set(key, items)

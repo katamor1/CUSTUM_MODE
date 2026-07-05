@@ -1,7 +1,7 @@
 import * as path from "node:path"
 import { collectGitDiff } from "./gitDiffCollector"
 import { discoverReviewInputCandidates } from "./reviewInputDiscovery"
-import { resolveWorkspacePathStrict, writeTextFile } from "./fileSystem"
+import { resolveWorkspacePathForKind, resolveWorkspacePathStrict, writeTextFile } from "./fileSystem"
 import {
   MAX_TRACEABILITY_CANDIDATE_COUNT,
   renderTraceabilityPrompt
@@ -82,7 +82,7 @@ type RawTraceabilityCatalog = {
 
 export async function prepareAiTraceabilityDraftPrompt(input: PrepareAiTraceabilityDraftPromptInput): Promise<PrepareAiTraceabilityDraftPromptResult> {
   const warnings: string[] = []
-  const outputDir = resolveWorkspacePathStrict(input.workspaceRoot, input.outputDir, "aiTraceabilityDraftPromptPath")
+  const outputDir = resolveWorkspacePathForKind(input.workspaceRoot, input.outputDir, "traceability-ai-draft-output")
   const discovery = await discoverReviewInputCandidates(input.workspaceRoot, {
     docsRoot: input.docsRoot,
     textEncoding: input.textEncoding,

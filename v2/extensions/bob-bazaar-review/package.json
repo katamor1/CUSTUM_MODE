@@ -29,7 +29,13 @@
     "onCommand:bobBazaar.reviewRange",
     "onCommand:bobBazaar.reviewRevisionWithProjectRules",
     "onCommand:bobBazaar.reviewRangeWithProjectRules",
-    "onCommand:bobBazaar.validateReviewResultJson"
+    "onCommand:bobBazaar.validateReviewResultJson",
+    "onCommand:bobBazaar.records.initCampaign",
+    "onCommand:bobBazaar.records.createRecord",
+    "onCommand:bobBazaar.records.validateRecord",
+    "onCommand:bobBazaar.records.createTriage",
+    "onCommand:bobBazaar.records.validateTriage",
+    "onCommand:bobBazaar.records.generateSummary"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -93,6 +99,36 @@
         "command": "bobBazaar.validateReviewResultJson",
         "title": "レビュー結果 JSON を検証",
         "category": "Bob Bazaar Review"
+      },
+      {
+        "command": "bobBazaar.records.initCampaign",
+        "title": "実績 campaign を初期化",
+        "category": "Bob Bazaar Review"
+      },
+      {
+        "command": "bobBazaar.records.createRecord",
+        "title": "実績 record を作成",
+        "category": "Bob Bazaar Review"
+      },
+      {
+        "command": "bobBazaar.records.validateRecord",
+        "title": "実績 record を検証",
+        "category": "Bob Bazaar Review"
+      },
+      {
+        "command": "bobBazaar.records.createTriage",
+        "title": "人間 triage 雛形を生成",
+        "category": "Bob Bazaar Review"
+      },
+      {
+        "command": "bobBazaar.records.validateTriage",
+        "title": "人間 triage を検証",
+        "category": "Bob Bazaar Review"
+      },
+      {
+        "command": "bobBazaar.records.generateSummary",
+        "title": "実績 campaign summary を生成",
+        "category": "Bob Bazaar Review"
       }
     ],
     "configuration": {
@@ -106,7 +142,13 @@
         "bobBazaar.textEncoding": {
           "type": "string",
           "default": "auto",
-          "enum": ["auto", "utf8", "shift_jis", "cp932", "windows-31j"],
+          "enum": [
+            "auto",
+            "utf8",
+            "shift_jis",
+            "cp932",
+            "windows-31j"
+          ],
           "description": "Bazaar の log / diff / cat 出力を読み取る文字コード。auto は UTF-8 を優先し、文字化けが疑われる場合に Shift-JIS 系として読み直します。"
         },
         "bobBazaar.mcpServerName": {
@@ -142,21 +184,66 @@
     },
     "menus": {
       "commandPalette": [
-        { "command": "bobBazaar.openReviewGui" },
-        { "command": "bobBazaar.collectReviewContext" },
-        { "command": "bobBazaar.loadReviewRules" },
-        { "command": "bobBazaar.captureReviewResult" },
-        { "command": "bobBazaar.saveReviewResultFromClipboard" },
-        { "command": "bobBazaar.configureMcp" },
-        { "command": "bobBazaar.initProjectRules" },
-        { "command": "bobBazaar.reviewRevision" },
-        { "command": "bobBazaar.reviewRange" },
-        { "command": "bobBazaar.reviewRevisionWithProjectRules" },
-        { "command": "bobBazaar.reviewRangeWithProjectRules" },
-        { "command": "bobBazaar.validateReviewResultJson" }
+        {
+          "command": "bobBazaar.openReviewGui"
+        },
+        {
+          "command": "bobBazaar.collectReviewContext"
+        },
+        {
+          "command": "bobBazaar.loadReviewRules"
+        },
+        {
+          "command": "bobBazaar.captureReviewResult"
+        },
+        {
+          "command": "bobBazaar.saveReviewResultFromClipboard"
+        },
+        {
+          "command": "bobBazaar.configureMcp"
+        },
+        {
+          "command": "bobBazaar.initProjectRules"
+        },
+        {
+          "command": "bobBazaar.reviewRevision"
+        },
+        {
+          "command": "bobBazaar.reviewRange"
+        },
+        {
+          "command": "bobBazaar.reviewRevisionWithProjectRules"
+        },
+        {
+          "command": "bobBazaar.reviewRangeWithProjectRules"
+        },
+        {
+          "command": "bobBazaar.validateReviewResultJson"
+        },
+        {
+          "command": "bobBazaar.records.initCampaign"
+        },
+        {
+          "command": "bobBazaar.records.createRecord"
+        },
+        {
+          "command": "bobBazaar.records.validateRecord"
+        },
+        {
+          "command": "bobBazaar.records.createTriage"
+        },
+        {
+          "command": "bobBazaar.records.validateTriage"
+        },
+        {
+          "command": "bobBazaar.records.generateSummary"
+        }
       ],
       "scm/title": [
-        { "command": "bobBazaar.openReviewGui", "group": "navigation" }
+        {
+          "command": "bobBazaar.openReviewGui",
+          "group": "navigation"
+        }
       ]
     }
   },
@@ -175,12 +262,16 @@
     "package:policy": "node ../../scripts/check-vsix-policy.js --max-bytes 200000"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.11.30",
     "@types/vscode": "^1.106.0",
+    "@vscode/vsce": "^3.2.1",
     "depcheck": "^1.4.7",
     "knip": "^5.0.0",
     "ts-prune": "^0.10.3",
-    "typescript": "^5.4.5",
-    "@vscode/vsce": "^3.2.1"
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
   }
 }

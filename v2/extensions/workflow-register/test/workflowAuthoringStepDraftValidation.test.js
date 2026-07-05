@@ -125,6 +125,28 @@ test("step draft validation detects resultKey downstream impact", () => {
   assert.ok(result.affectedReferences.some((item) => item.code === "step.resultKey.change.breaksIncludeState"))
 })
 
+test("step draft validation rejects reserved workflow result keys", () => {
+  const model = createAuthoringModelFromTemplate({
+    name: "reserved-result-key",
+    title: "Reserved Result Key",
+    description: "内部予約 state key を GUI draft で拒否する。",
+    template: "manual-checklist"
+  })
+  const draftStep = {
+    ...model.steps[0],
+    resultKey: "workflow.approval.collect",
+    form: { resultKey: "workflow.review.form", fields: [] },
+    approval: { resultKey: "workflow.branching.approval" }
+  }
+
+  const result = validateStepDraft({ model, originalStep: model.steps[0], draftStep, stepIndex: 0 })
+
+  assert.equal(result.status, "error")
+  assert.ok(result.diagnostics.some((item) => item.code === "step.resultKey.reserved"))
+  assert.ok(result.diagnostics.some((item) => item.code === "manual.form.resultKey.reserved"))
+  assert.ok(result.diagnostics.some((item) => item.code === "manual.approval.resultKey.reserved"))
+})
+
 test("step draft validation detects artifact producer impact", () => {
   const model = createAuthoringModelFromTemplate({
     name: "artifact-impact",

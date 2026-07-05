@@ -12,13 +12,13 @@ const { createAiVerificationMatrixWorkspace } = require("./helpers/reviewPipelin
 test("captureBobOutput canonicalizes common real-AI YAML shorthand before validation", async () => {
   const workspace = createAiVerificationMatrixWorkspace()
   const packageDir = path.join(workspace, ".bob-review", "review-package")
-  await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: packageDir })
+  await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: ".bob-review/review-package" })
 
   const bobOutputPath = path.join(workspace, ".bob-review", "bob-output", "bob-output.yaml")
   const capture = await captureBobOutput({
     workspaceRoot: workspace,
     packageDir,
-    bobOutputPath,
+    bobOutputPath: ".bob-review/bob-output/bob-output.yaml",
     text: `schema_version: "1.0"
 review_summary:
   review_id: REVIEW-AI-MATRIX-001
@@ -85,13 +85,13 @@ rejected_or_uncertain:
 test("captureBobOutput canonicalizes workflow-state wrapped real-AI output before validation", async () => {
   const workspace = createAiVerificationMatrixWorkspace()
   const packageDir = path.join(workspace, ".bob-review", "review-package")
-  await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: packageDir })
+  await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: ".bob-review/review-package" })
 
   const bobOutputPath = path.join(workspace, ".bob-review", "bob-output", "bob-output.yaml")
   const capture = await captureBobOutput({
     workspaceRoot: workspace,
     packageDir,
-    bobOutputPath,
+    bobOutputPath: ".bob-review/bob-output/bob-output.yaml",
     text: `<workflow_state>
 <state>
 schema_version: "1.0"

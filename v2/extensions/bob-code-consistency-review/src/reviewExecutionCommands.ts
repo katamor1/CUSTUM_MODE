@@ -23,12 +23,9 @@ export async function runPreprocess(options?: unknown): Promise<unknown> {
   const record = optionRecord(options)
   const workspaceRoot = await requireBobWorkspaceRoot(record)
   const inputPath = absolute(workspaceRoot, stringOption(record, "reviewInputPath") ?? config.get<string>("reviewInputPath", "review-input.yaml"))
-  const outDir = absolute(
-    workspaceRoot,
-    stringOption(record, "reviewPackagePath") ??
-      stringOption(record, "outDir") ??
-      config.get<string>("reviewPackagePath", ".bob-review/review-package")
-  )
+  const outDir = stringOption(record, "reviewPackagePath") ??
+    stringOption(record, "outDir") ??
+    config.get<string>("reviewPackagePath", ".bob-review/review-package")
   const diffFixturePath = optionalAbsolute(workspaceRoot, stringOption(record, "diffFixturePath"))
   const bzrPath = resolveTrustedBzrPath(record, config.get<string>("bzrPath", "bzr"))
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
@@ -53,11 +50,8 @@ export async function runCaptureBobOutput(textOrOptions?: unknown): Promise<unkn
   const record = optionRecord(textOrOptions)
   const workspaceRoot = await requireBobWorkspaceRoot(record)
   const text = firstString(textOrOptions) ?? stringOption(record, "text") ?? await vscode.env.clipboard.readText()
-  const bobOutputPath = absolute(
-    workspaceRoot,
-    stringOption(record, "bobOutputPath") ??
-      config.get<string>("bobOutputPath", ".bob-review/bob-output/bob-output.yaml")
-  )
+  const bobOutputPath = stringOption(record, "bobOutputPath") ??
+    config.get<string>("bobOutputPath", ".bob-review/bob-output/bob-output.yaml")
   const packageDir = absolute(
     workspaceRoot,
     stringOption(record, "reviewPackagePath") ??
@@ -106,14 +100,11 @@ export async function runTriage(options?: unknown): Promise<unknown> {
     stringOption(record, "bobOutputPath") ??
       config.get<string>("bobOutputPath", ".bob-review/bob-output/bob-output.yaml")
   )
-  const outDir = absolute(
-    workspaceRoot,
-    stringOption(record, "triagePath") ??
-      stringOption(record, "outDir") ??
-      config.get<string>("triagePath", ".bob-review/human-triage")
-  )
-  const result = await generateHumanTriage({ packageDir, bobOutputPath, outDir })
-  if (result.status === "ok") notifyInfo(`人間確認用 triage ファイルを生成しました: ${outDir}`)
+  const outDir = stringOption(record, "triagePath") ??
+    stringOption(record, "outDir") ??
+    config.get<string>("triagePath", ".bob-review/human-triage")
+  const result = await generateHumanTriage({ workspaceRoot, packageDir, bobOutputPath, outDir })
+  if (result.status === "ok") notifyInfo(`人間確認用 triage ファイルを生成しました: ${result.outDir}`)
   else notifyError(result.message)
   return result
 }

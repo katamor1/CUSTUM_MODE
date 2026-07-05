@@ -4,7 +4,7 @@ import { createAuthoringModelFromTemplate } from "../core/workflowAuthoringDefau
 import { WorkflowAuthoringModel, WorkflowAuthoringStep } from "../core/workflowAuthoringModel"
 import { serializeAuthoringModelToMarkdown } from "../core/workflowAuthoringSerializer"
 import { validateStepDraft } from "../core/workflowAuthoringStepDraftValidation"
-import { isWorkflowDocumentPath } from "../core/workflowDocumentPath"
+import { validateWorkflowDocumentPath } from "../core/workflowDocumentPath"
 import { WorkflowTemplateKind, workflowTemplates } from "../core/workflowScaffold"
 import { formatWorkflowDiagnostics, validateWorkflowText } from "../core/workflowValidator"
 import { renderWorkflowBuilderHtml } from "./workflowBuilderHtml"
@@ -119,8 +119,9 @@ export class WorkflowBuilderPanel {
     const rendered = serializeAuthoringModelToMarkdown(model)
     const targetUri = this.targetUri(rendered.filePath)
     const targetPath = this.displayPathForUri(targetUri, rendered.filePath)
-    if (this.options.mode === "edit" && !isWorkflowDocumentPath(targetUri.fsPath)) {
-      await vscode.window.showErrorMessage("GUI Builder edit mode can only overwrite .bob/workflows/*/WORKFLOW.md files.")
+    const savePathValidation = validateWorkflowDocumentPath({ workspaceRoot: this.options.workflowRoot, filePath: targetUri.fsPath })
+    if (!savePathValidation.ok) {
+      await vscode.window.showErrorMessage(`GUI Builder can only save .bob/workflows/*/WORKFLOW.md inside the workflow workspace: ${savePathValidation.reason}`)
       return
     }
     const validation = validateWorkflowText({ sourceId: this.options.sourceId, filePath: targetPath, text: rendered.markdown })

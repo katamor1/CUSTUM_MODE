@@ -168,8 +168,8 @@ test("workflow authoring write paths enforce WORKFLOW.md document boundaries", (
   assert.match(improve, /isWorkflowDocumentPath\(editor\.document\.uri\.fsPath\)/)
   assert.match(improve, /Open a \.bob\/workflows\/\*\/WORKFLOW\.md file/)
   assert.match(edit, /isWorkflowDocumentPath\(targetUri\.fsPath\)/)
-  assert.match(panel, /isWorkflowDocumentPath\(targetUri\.fsPath\)/)
-  assert.ok(panel.indexOf("isWorkflowDocumentPath(targetUri.fsPath)") < panel.indexOf("workspace.fs.writeFile(targetUri"))
+  assert.match(panel, /validateWorkflowDocumentPath\(\{ workspaceRoot: this\.options\.workflowRoot, filePath: targetUri\.fsPath \}\)/)
+  assert.ok(panel.indexOf("validateWorkflowDocumentPath({ workspaceRoot: this.options.workflowRoot, filePath: targetUri.fsPath })") < panel.indexOf("workspace.fs.writeFile(targetUri"))
 })
 
 test("workspace workflow validation uses strict diagnostics", () => {

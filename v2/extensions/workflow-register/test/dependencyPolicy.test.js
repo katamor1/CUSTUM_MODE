@@ -61,6 +61,16 @@ test("workflow-register CI uses npm ci, dependency policy, production audit, tes
   assert.doesNotMatch(job, /run: npm install/)
 })
 
+test("shared extension CI watches all quality gate scripts", () => {
+  const workflowPath = repoPath(".github", "workflows", "extensions-quality.yml")
+  const workflow = fs.readFileSync(workflowPath, "utf8")
+  const pullRequestPaths = workflow.slice(workflow.indexOf("pull_request:"), workflow.indexOf("push:"))
+  const pushPaths = workflow.slice(workflow.indexOf("push:"), workflow.indexOf("workflow_dispatch:"))
+
+  assert.match(pullRequestPaths, /- "scripts\/\*\.js"/)
+  assert.match(pushPaths, /- "scripts\/\*\.js"/)
+})
+
 test("shared extension CI reports source metrics back to pull requests", () => {
   const workflowPath = repoPath(".github", "workflows", "extensions-quality.yml")
   const workflow = fs.readFileSync(workflowPath, "utf8")

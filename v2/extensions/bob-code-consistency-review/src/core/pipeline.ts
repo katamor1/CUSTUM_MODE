@@ -2,7 +2,7 @@ import { analyzeCppChanges } from "../analyzers/cCppChangeAnalyzer"
 import { extractDocuments } from "../analyzers/documentExtractor"
 import { buildTraceability } from "../analyzers/traceabilityBuilder"
 import { collectGitDiff } from "./gitDiffCollector"
-import { resolveWorkspacePathStrict } from "./fileSystem"
+import { resolveWorkspacePathForKind, resolveWorkspacePathStrict } from "./fileSystem"
 import { normalizeReviewProcessingLimits, type ReviewProcessingLimits } from "./limits"
 import { buildReviewPackage } from "./reviewPackageBuilder"
 import { validateReviewInput } from "./reviewInputValidator"
@@ -12,7 +12,7 @@ export async function preprocessReview(input: { workspaceRoot: string; inputPath
   const textEncoding = input.textEncoding ?? "auto"
   const limits = normalizeReviewProcessingLimits(input.limits)
   const inputPath = resolveWorkspacePathStrict(input.workspaceRoot, input.inputPath, "reviewInputPath")
-  const outDir = resolveWorkspacePathStrict(input.workspaceRoot, input.outDir, "reviewPackagePath")
+  const outDir = resolveWorkspacePathForKind(input.workspaceRoot, input.outDir, "review-package-output")
   const diffFixturePath = input.diffFixturePath ? resolveWorkspacePathStrict(input.workspaceRoot, input.diffFixturePath, "diffFixturePath") : undefined
   const reviewInput = await validateReviewInput(inputPath, input.workspaceRoot, textEncoding)
   const diff = await collectGitDiff(reviewInput, { workspaceRoot: input.workspaceRoot, diffFixturePath, bzrPath: input.bzrPath, textEncoding, limits })

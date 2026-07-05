@@ -8,6 +8,7 @@ import type { ManualCompletionResult } from "./core/engineTypes"
 import { formatStateValue } from "./core/engine/templateRenderer"
 import { validateCommandGuardrails } from "./core/guardrails"
 import type { EngineStep, WorkflowGuardrailsDefinition } from "./core/model"
+import { assertUserWritableStateKey, reservedWorkflowStateKeyError } from "./core/stateKeys"
 import {
   createVscodeManualStepCompletionPromptProvider,
   type ManualStepCompletionPromptProvider,
@@ -107,11 +108,21 @@ export class StepRuntime {
   }
 
   private async completeStep(active: ActiveStep, options: StepCompletionExpectation): Promise<StepCompletionResult> {
+    const stateKeyError = validateCompletionStateKeys(active, options.stateUpdates)
+    if (stateKeyError) {
+      await vscode.window.showErrorMessage(stateKeyError)
+      return { ok: false, message: stateKeyError }
+    }
     const completion = await this.collectManualCompletion(active, options)
     if (!completion.completed) {
       const message = completion.error ?? "Manual workflow step completion was cancelled."
       await vscode.window.showWarningMessage(message)
       return { ok: false, message }
+    }
+    const completionStateKeyError = validateCompletionStateKeys(active, completion.stateUpdates)
+    if (completionStateKeyError) {
+      await vscode.window.showErrorMessage(completionStateKeyError)
+      return { ok: false, message: completionStateKeyError }
     }
     const handoff = await captureHeldStepResult(active)
     if (!handoff.ok) {
@@ -200,10 +211,30 @@ function stepMatchesExpectation(step: ActiveStep, options: StepCompletionExpecta
     (!options.expectedStepId || step.stepId === options.expectedStepId)
 }
 
+function validateCompletionStateKeys(active: ActiveStep, stateUpdates: Record<string, unknown> | undefined): string | undefined {
+  for (const key of Object.keys(stateUpdates ?? {})) {
+    if (!key) continue
+    const error = reservedWorkflowStateKeyError(key, "workflow/user updates")
+    if (error) return error
+  }
+  const step = active.coreStep
+  if (step?.type !== "manual") return undefined
+  if (step.form?.resultKey) {
+    const error = reservedWorkflowStateKeyError(step.form.resultKey, "manual form resultKey")
+    if (error) return error
+  }
+  if (step.approval?.resultKey) {
+    const error = reservedWorkflowStateKeyError(step.approval.resultKey, "manual approval resultKey")
+    if (error) return error
+  }
+  return undefined
+}
+
 function applyStateUpdates(active: ActiveStep, stateUpdates: Record<string, unknown> | undefined): void {
   if (!active.state || !stateUpdates) return
   for (const [key, value] of Object.entries(stateUpdates)) {
     if (!key || value === undefined) continue
+    assertUserWritableStateKey(key, "workflow/user updates")
     active.state[key] = formatStateValue(value)
   }
 }
@@ -212,10 +243,12 @@ function applyManualCompletionState(active: ActiveStep, result: ManualCompletion
   const step = active.coreStep
   if (!active.state || step?.type !== "manual") return
   if (step.form?.resultKey) {
+    assertUserWritableStateKey(step.form.resultKey, "manual form resultKey")
     const value = result.formValues ?? result.stateUpdates?.[step.form.resultKey]
     if (value !== undefined) active.state[step.form.resultKey] = formatStateValue(value)
   }
   if (step.approval?.resultKey) {
+    assertUserWritableStateKey(step.approval.resultKey, "manual approval resultKey")
     const value = result.approval ?? approvalFromPromptResult(result)
     if (value !== undefined) active.state[step.approval.resultKey] = formatStateValue(value)
   }

@@ -1,0 +1,17 @@
+schema_version: bazaar-review-campaign/v1
+campaign_id: phase1-bazaar-review-uat-001
+title: Phase 1 Bazaar レビュー実績作成 UAT
+project: legacy-control
+owner: project-leader-name
+repository:
+  type: bazaar
+  path_hint: .
+review_policy:
+  checklist_path: .bob/review/checklist.json
+  schema_path: .bob/review/review-result.schema.json
+privacy:
+  share_level: internal
+  snapshot_messages_allowed: false
+metrics:
+  baseline_review_minutes_required: true
+  human_triage_required: true

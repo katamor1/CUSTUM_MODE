@@ -1,15 +1,19 @@
 import * as path from "node:path"
 import YAML from "yaml"
 import { readBobOutputText } from "../core/bobOutputSource"
-import { writeTextFile } from "../core/fileSystem"
+import { resolveWorkspacePathForKind, writeTextFile } from "../core/fileSystem"
 
 export type HumanTriageResult =
   | { status: "ok"; outDir: string; itemCount: number; bobOutputPath: string }
   | { status: "error"; outDir: string; itemCount: 0; message: string; errors: string[] }
 
-export async function generateHumanTriage(input: { packageDir: string; bobOutputPath: string; outDir: string }): Promise<HumanTriageResult> {
-  const loaded = await readBobOutputText(input)
-  if (!loaded.ok) return triageError(input.outDir, loaded.error)
+export async function generateHumanTriage(input: { workspaceRoot: string; packageDir: string; bobOutputPath: string; outDir: string }): Promise<HumanTriageResult> {
+  const resolvedInput = {
+    ...input,
+    outDir: resolveWorkspacePathForKind(input.workspaceRoot, input.outDir, "human-triage-output")
+  }
+  const loaded = await readBobOutputText(resolvedInput)
+  if (!loaded.ok) return triageError(resolvedInput.outDir, loaded.error)
 
   let bobOutput: {
     review_summary?: { review_id?: string }
@@ -19,7 +23,7 @@ export async function generateHumanTriage(input: { packageDir: string; bobOutput
   try {
     bobOutput = YAML.parse(loaded.text) as typeof bobOutput
   } catch (error) {
-    return triageError(input.outDir, `Invalid YAML (${loaded.sourcePath}): ${error instanceof Error ? error.message : String(error)}`)
+    return triageError(resolvedInput.outDir, `Invalid YAML (${loaded.sourcePath}): ${error instanceof Error ? error.message : String(error)}`)
   }
 
   const reviewId = bobOutput.review_summary?.review_id ?? "unknown"
@@ -50,19 +54,19 @@ export async function generateHumanTriage(input: { packageDir: string; bobOutput
     }))
   ]
 
-  await writeTextFile(path.join(input.outDir, "triage-result.yaml"), YAML.stringify({
+  await writeTextFile(path.join(resolvedInput.outDir, "triage-result.yaml"), YAML.stringify({
     schema_version: 1,
     review_id: reviewId,
     triaged_by: "",
     triaged_at: "",
     items
   }))
-  await writeTextFile(path.join(input.outDir, "accepted-findings.md"), renderFindings("採用候補のプレレビュー指摘", findings))
-  await writeTextFile(path.join(input.outDir, "questions-to-author.md"), renderQuestions("作成者への確認事項", questions))
-  await writeTextFile(path.join(input.outDir, "rejected-findings.md"), "# 棄却したプレレビュー指摘\n\ntriage-result.yaml の decision に基づいて人間が追記する。\n")
-  await writeTextFile(path.join(input.outDir, "follow-up-actions.md"), renderFollowUps(findings, questions))
+  await writeTextFile(path.join(resolvedInput.outDir, "accepted-findings.md"), renderFindings("採用候補のプレレビュー指摘", findings))
+  await writeTextFile(path.join(resolvedInput.outDir, "questions-to-author.md"), renderQuestions("作成者への確認事項", questions))
+  await writeTextFile(path.join(resolvedInput.outDir, "rejected-findings.md"), "# 棄却したプレレビュー指摘\n\ntriage-result.yaml の decision に基づいて人間が追記する。\n")
+  await writeTextFile(path.join(resolvedInput.outDir, "follow-up-actions.md"), renderFollowUps(findings, questions))
 
-  return { status: "ok", outDir: input.outDir, itemCount: items.length, bobOutputPath: loaded.sourcePath }
+  return { status: "ok", outDir: resolvedInput.outDir, itemCount: items.length, bobOutputPath: loaded.sourcePath }
 }
 
 function triageError(outDir: string, message: string): HumanTriageResult {

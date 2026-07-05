@@ -12,6 +12,7 @@ import type {
 } from "../model"
 import { reportedActionError } from "../reportedActionError"
 import type { ResultSinkRegistry } from "../resultSinkRegistry"
+import { reservedWorkflowStateKeyError } from "../stateKeys"
 import type { WorkflowEngineEventInput, WorkflowEngineOptions } from "../engineTypes"
 import { takeRetryResultRecoveryReason } from "./recoveryState"
 import {
@@ -62,6 +63,8 @@ async function executeAgentStep(input: {
   emitHandoffFailed: EngineEmitter
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { workflow, run, step } = input
+  const stateKeyError = step.resultKey ? reservedWorkflowStateKeyError(step.resultKey, "workflow resultKey") : undefined
+  if (stateKeyError) return { ok: false, error: stateKeyError }
   try {
     let agentText = step.resultKey ? run.state[step.resultKey] : undefined
     if (agentText === undefined) {
@@ -114,6 +117,8 @@ async function executeCommandStep(input: {
   emitCommandResult: EngineEmitter
 }): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
   const { workflow, run, step } = input
+  const stateKeyError = step.resultKey ? reservedWorkflowStateKeyError(step.resultKey, "workflow resultKey") : undefined
+  if (stateKeyError) return { ok: false, error: stateKeyError }
   const args = renderValue(step.action.args, { inputs: run.inputs, state: run.state, run, workflow, step })
   // renderValue 後の args が実際の実行値なので、承認・guardrails はテンプレート展開後に評価する。
   const guardrail = validateCommandGuardrails(workflow, step.action.provider, args)

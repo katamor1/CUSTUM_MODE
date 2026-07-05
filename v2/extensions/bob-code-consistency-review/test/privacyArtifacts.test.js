@@ -35,7 +35,7 @@ test("preprocessReview records generated artifact privacy notice in the review p
   fs.mkdirSync(outRoot, { recursive: true })
   const outDir = fs.mkdtempSync(path.join(outRoot, "review-privacy-"))
 
-  await preprocessReview({ workspaceRoot: repoRoot, inputPath: reviewInputPath, outDir, diffFixturePath })
+  await preprocessReview({ workspaceRoot: repoRoot, inputPath: reviewInputPath, outDir: path.relative(repoRoot, outDir), diffFixturePath })
 
   const manifest = fs.readFileSync(path.join(outDir, "manifest.yaml"), "utf8")
   const checks = fs.readFileSync(path.join(outDir, "deterministic-checks.md"), "utf8")
