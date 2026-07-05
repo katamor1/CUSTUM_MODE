@@ -88,7 +88,54 @@ test("Operation Hub model builds home setup catalog and run monitor sections", (
   assert.deepEqual(model.workflowCatalog.map((workflow) => workflow.id), ["qa.review"])
   assert.equal(model.workflowCatalog[0].requiredInputCount, 1)
   assert.equal(model.runMonitor[0].statusLabel, "人間確認待ち")
-  assert.ok(model.runMonitor[0].primaryActions.some((action) => action.id === "acceptCurrentStep"))
+  assert.ok(model.runMonitor[0].primaryActions.some((action) => (
+    action.id === "acceptAndRunNextStep" &&
+    action.commandId === "workflowRegister.acceptAndRunNextStep"
+  )))
+})
+
+test("Operation Hub offers the next-step action for idle running workflow runs", () => {
+  const { buildOperationHubModel } = require("../out/gui/operationHubModel")
+
+  const model = buildOperationHubModel({
+    workspaceName: "sample-repo",
+    workspaceRoots: ["C:\\work\\sample-repo"],
+    extensionStatus: [],
+    setup: {
+      bobRootPresent: true,
+      workflowsPresent: true,
+      runStatePresent: true,
+      mcpConfigPresent: true,
+      traceabilityPresent: false
+    },
+    workflows: [],
+    runs: [
+      {
+        root: "C:\\work\\sample-repo",
+        run: {
+          runId: "run-2",
+          workflowId: "qa.review",
+          workflowName: "QA Review",
+          status: "running",
+          currentStep: "generate",
+          inputs: {},
+          state: {},
+          steps: [
+            { id: "collect", title: "収集", type: "command", status: "completed" },
+            { id: "generate", title: "生成", type: "agent", status: "pending" }
+          ],
+          createdAt: "2026-07-05T01:00:00.000Z",
+          updatedAt: "2026-07-05T01:02:00.000Z"
+        }
+      }
+    ]
+  })
+
+  assert.ok(model.runMonitor[0].primaryActions.some((action) => (
+    action.id === "runNextStep" &&
+    action.commandId === "workflowRegister.runNextStep" &&
+    action.variant === "primary"
+  )))
 })
 
 test("Operation Hub html uses nonce protected scripts and data-action buttons", () => {
@@ -120,5 +167,13 @@ test("Operation Hub html uses nonce protected scripts and data-action buttons", 
   assert.match(html, /vscode\.postMessage/)
   assert.doesNotMatch(html, /onclick=/)
   assert.doesNotMatch(html, /eval\(/)
+  assert.ok(OPERATION_HUB_ALLOWED_ACTIONS.includes("acceptAndRunNextStep"))
   assert.ok(OPERATION_HUB_ALLOWED_ACTIONS.includes("openRunControl"))
+})
+
+test("Operation Hub provider routes accept-and-run-next with the run id", () => {
+  const source = readSrc("gui", "operationHubProvider.ts")
+
+  assert.match(source, /acceptAndRunNextStep: "workflowRegister\.acceptAndRunNextStep"/)
+  assert.match(source, /\["resumeRun", "retryCurrentStep", "acceptCurrentStep", "acceptAndRunNextStep", "runNextStep"/)
 })

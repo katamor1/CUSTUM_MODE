@@ -1,6 +1,6 @@
 # unitTestRunner VS Code利用手順書
 
-作成日: 2026-07-06  
+作成日: 2026-07-06
 対象版数: v0.1
 
 ## 1. 前提
@@ -41,9 +41,24 @@ D:\work\product\Product.dsw  # dswPath
 D:\work\unit_test_workspace  # outputRoot
 ```
 
-## 4. VS Code設定を行う
+## 4. Workflowパネルで設定する
 
-ワークスペース設定またはユーザー設定に以下を追加する。
+Activity Barの `Unit Test Runner` を開き、`Workflow` パネル上部の `設定` で必要なパスを指定する。各項目はファイル/フォルダ選択、または `パスを入力` で貼り付け入力できる。
+
+設定はWorkspace設定へ保存される。対象プロジェクトごとの `.code-workspace` またはフォルダ設定に残り、User設定には書かない。
+
+設定する項目:
+
+| 項目 | 内容 |
+|---|---|
+| プロジェクトルート | 本番ソースを読むルートフォルダ。未設定時は、VS Codeで開いた先頭workspace folder、単一フォルダを開いた場合はそのTOPフォルダを使う。 |
+| VC6 .dsw | 対象プロジェクトの `.dsw` ファイル。 |
+| 出力ルート | 生成物を書き出す外部フォルダ。本番ソースツリー外を指定する。 |
+| 既定構成 | 例: `Win32 Debug`。 |
+| 既定プロジェクト | ソースが複数プロジェクトに属する場合だけ指定する。 |
+| CLI実行ファイル | 通常は設定しない。外部CLIを使う場合だけexeを指定する。 |
+
+手動でWorkspace設定を書く場合は以下の形にする。
 
 ```json
 {
@@ -57,7 +72,7 @@ D:\work\unit_test_workspace  # outputRoot
 }
 ```
 
-CLI同梱VSIXを使う場合、`unitTestRunner.cliPath` は設定しない。同梱CLIではなく外部に配置したCLIを使う場合だけ、以下のように絶対パスで指定する。
+CLI同梱VSIXを使う場合、`unitTestRunner.cliPath` は設定しない。パネルでも `既定値に戻す` を選ぶ。同梱CLIではなく外部に配置したCLIを使う場合だけ、以下のように絶対パスで指定する。
 
 ```json
 {
@@ -71,7 +86,9 @@ CLI同梱VSIXを使う場合、`unitTestRunner.cliPath` は設定しない。同
 
 Activity Barの `Unit Test Runner` を開き、`Workflow` パネルを表示する。
 
-パネルには、上から下へ以下の工程が表示される。
+パネル上部には現在の設定状態が表示される。未設定の必須項目がある場合は `設定確認` が現在の推奨工程になる。設定が揃うと、次の推奨工程は `関数解析` へ進む。
+
+設定の下には、上から下へ以下の工程が表示される。
 
 1. 設定確認
 2. 関数解析
@@ -200,10 +217,11 @@ build/test系は生成ファイルや生成バイナリを扱うため、通常�
 |---|---|---|
 | `UnitTestRunner:` コマンドが出ない | VSIXがインストール済みか | `code --install-extension ...` 後にVS Codeを再起動する |
 | `Workflow` パネルが出ない | Activity Barの `Unit Test Runner` または拡張の有効状態 | VS Codeを再起動し、`Unit Test Runner` ビューを開く |
+| `ビューのデータ提供者が登録されていません` と表示される | VSIX更新後に拡張hostが古い状態の可能性 | `Developer: Reload Window` またはVS Code再起動を行う |
 | CLIが見つからない | VSIXに同梱exeが含まれるか、`cliPath` が誤っていないか | CLI同梱VSIXを作り直す。外部CLIを使う場合は絶対パスを設定する |
-| `sourceRoot` が空というエラー | VS Codeで開いたフォルダと設定 | `unitTestRunner.sourceRoot` を明示する |
-| `.dsw` が見つからない | `unitTestRunner.dswPath` | `.dsw` の絶対パスを設定する |
-| 生成物が本番ツリー内に出る | `outputRoot` | `sourceRoot` の外側に変更する |
+| `sourceRoot` が空というエラー | VS Codeで開いたフォルダと設定 | フォルダを開き直すか、パネルの `プロジェクトルート` で明示する |
+| `.dsw` が見つからない | `unitTestRunner.dswPath` | パネルの `VC6 .dsw` で `.dsw` を選択する |
+| 生成物が本番ツリー内に出る | `outputRoot` | パネルの `出力ルート` で `sourceRoot` の外側に変更する |
 | 関数名が解決されない | 選択範囲またはカーソル位置 | 関数名を選択して `Analyze Selected Function` を実行する |
 | レポートが開けない | 最後に解析したworkspace | `Open Output Workspace` で出力先を確認し、必要なら再解析する |
 | 次工程へ進まない | 対象ファイルの保存または確定状態 | ファイルを保存するか、`保存済みとして確定` を押す |

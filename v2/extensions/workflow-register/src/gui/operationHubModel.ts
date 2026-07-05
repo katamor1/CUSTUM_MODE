@@ -12,6 +12,7 @@ export const OPERATION_HUB_ALLOWED_ACTIONS = [
   "resumeRun",
   "retryCurrentStep",
   "acceptCurrentStep",
+  "acceptAndRunNextStep",
   "runNextStep",
   "openManualStepPanel",
   "pauseCurrentRun",
@@ -243,10 +244,11 @@ function buildWorkflowCatalog(workflows: OperationHubWorkflowInput[]): Operation
 
 function actionsForRun(run: WorkflowRunState): OperationHubAction[] {
   const inspect = { id: "inspectRunControl", label: "詳細", commandId: "workflowRegister.inspectRunControl", runId: run.runId } as const
+  const current = run.currentStep ? run.steps.find((step) => step.id === run.currentStep) : undefined
   switch (run.status) {
     case "reviewing":
       return [
-        { id: "acceptCurrentStep", label: "承認して次へ", commandId: "workflowRegister.acceptCurrentStep", runId: run.runId, variant: "primary" },
+        { id: "acceptAndRunNextStep", label: "承認して次へ", commandId: "workflowRegister.acceptAndRunNextStep", runId: run.runId, variant: "primary" },
         { id: "retryCurrentStep", label: "再試行", commandId: "workflowRegister.retryCurrentStep", runId: run.runId },
         inspect
       ]
@@ -267,6 +269,12 @@ function actionsForRun(run: WorkflowRunState): OperationHubAction[] {
         inspect
       ]
     case "running":
+      if (current?.status === "pending") {
+        return [
+          { id: "runNextStep", label: "次へ", commandId: "workflowRegister.runNextStep", runId: run.runId, variant: "primary" },
+          inspect
+        ]
+      }
       return [
         { id: "pauseCurrentRun", label: "一時停止", commandId: "workflowRegister.pauseCurrentRun", runId: run.runId },
         inspect

@@ -36,6 +36,7 @@ const ACTION_COMMANDS: Partial<Record<OperationHubActionId, string>> = {
   resumeRun: "workflowRegister.resumePausedRun",
   retryCurrentStep: "workflowRegister.retryCurrentStep",
   acceptCurrentStep: "workflowRegister.acceptCurrentStep",
+  acceptAndRunNextStep: "workflowRegister.acceptAndRunNextStep",
   runNextStep: "workflowRegister.runNextStep",
   openManualStepPanel: "workflowRegister.openManualStepPanel",
   pauseCurrentRun: "workflowRegister.pauseCurrentRun",
@@ -150,7 +151,7 @@ export function parseOperationHubMessage(message: unknown): OperationHubMessage 
 
 function commandArgsForAction(message: OperationHubMessage): unknown[] {
   if (message.action === "runWorkflow") return message.workflowId ? [message.workflowId] : []
-  if (["resumeRun", "retryCurrentStep", "acceptCurrentStep", "runNextStep", "openManualStepPanel", "pauseCurrentRun", "inspectRunControl", "openRunControl"].includes(message.action)) {
+  if (["resumeRun", "retryCurrentStep", "acceptCurrentStep", "acceptAndRunNextStep", "runNextStep", "openManualStepPanel", "pauseCurrentRun", "inspectRunControl", "openRunControl"].includes(message.action)) {
     return message.runId ? [message.runId] : []
   }
   return []
