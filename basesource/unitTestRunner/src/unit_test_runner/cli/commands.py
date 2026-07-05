@@ -18,6 +18,12 @@ from unit_test_runner.c_analyzer import list_functions
 from unit_test_runner.dsw_parser import discover_dsw_workspaces, parse_dsw as parse_dsw_workspace
 from unit_test_runner.execution import prepare_test_execution_evidence
 from unit_test_runner.path_utils import normalize_relative
+from unit_test_runner.reanalysis import (
+    reconcile_test_case_reports,
+    reanalyze_function_workflow,
+    select_regression_from_reports,
+)
+from unit_test_runner.reanalysis.reanalysis_models import ReanalysisPolicy
 from unit_test_runner.dossier import (
     analyze_function_workflow,
     finalize_function_dossier,
@@ -35,7 +41,7 @@ from unit_test_runner.vc6.dsp_parser import parse_dsp as parse_dsp_project
 from unit_test_runner.vc6.source_membership import map_source_membership
 
 from .errors import CLIError
-from .exit_codes import EXIT_INPUT_ERROR, EXIT_NOT_FOUND, EXIT_OK, EXIT_OUTPUT_ERROR
+from .exit_codes import EXIT_BUILD_PROBE_FAILED, EXIT_ENVIRONMENT_WARNING, EXIT_INPUT_ERROR, EXIT_NOT_FOUND, EXIT_OK, EXIT_OUTPUT_ERROR
 from .result import CLIResult
 
 
@@ -46,6 +52,7 @@ def dispatch(args: argparse.Namespace) -> CLIResult:
         "map-source": handle_map_source,
         "list-functions": handle_list_functions,
         "analyze-function": handle_analyze_function,
+        "reanalyze-function": handle_reanalyze_function,
         "generate-harness-skeleton": handle_generate_harness_skeleton,
         "build-probe": handle_build_probe,
         "analyze-build-errors": handle_analyze_build_errors,
@@ -55,6 +62,8 @@ def dispatch(args: argparse.Namespace) -> CLIResult:
         "finalize-dossier": handle_finalize_dossier,
         "prepare-review": handle_prepare_review,
         "generate-test-design": handle_generate_test_design,
+        "reconcile-test-cases": handle_reconcile_test_cases,
+        "select-regression-tests": handle_select_regression_tests,
     }
     return handlers[args.command](args)
 
@@ -209,6 +218,18 @@ def handle_list_functions(args: argparse.Namespace) -> CLIResult:
 
 
 def handle_analyze_function(args: argparse.Namespace) -> CLIResult:
+    if getattr(args, "reuse_existing_tests", False):
+        if args.finalize_dossier or args.run_tests:
+            raise CLIError(
+                "--reuse-existing-tests cannot be combined with --finalize-dossier or --run-tests.",
+                EXIT_INPUT_ERROR,
+                args.command,
+            )
+        return _run_reanalysis(args)
+    if args.apply_safe_completions and _phase_rank(args.phase) < _phase_rank("build"):
+        raise CLIError("--apply-safe-completions requires --phase build or --phase execution.", EXIT_INPUT_ERROR, args.command)
+    if args.run_tests and args.phase != "execution":
+        raise CLIError("--run-tests requires --phase execution.", EXIT_INPUT_ERROR, args.command)
     dsw = _existing_file(args.dsw, "dsw", args.command)
     workspace = _workspace_from_args(args.workspace, dsw)
     source = normalize_relative(_existing_source(workspace, args.source, args.command), workspace)
@@ -223,27 +244,33 @@ def handle_analyze_function(args: argparse.Namespace) -> CLIResult:
             args.project,
             apply_safe_completions=args.apply_safe_completions,
             run_tests=args.run_tests,
+            phase=args.phase,
         )
     except ValueError as exc:
         raise CLIError(str(exc), EXIT_NOT_FOUND, args.command) from exc
     payload = {
+        "phase": args.phase,
         "dossier": str(Path(args.out) / "reports" / "function_dossier.json"),
         "target": dossier["target"],
-        "source_digest": dossier.get("source_digest"),
-        "function_location": dossier.get("function_location"),
-        "function_signature": dossier.get("function_signature"),
-        "global_access": dossier.get("global_access"),
-        "call_report": dossier.get("call_report"),
-        "coverage_design": dossier.get("coverage_design"),
-        "boundary_equivalence_candidates": dossier.get("boundary_equivalence_candidates"),
-        "test_case_design": dossier.get("test_case_design"),
-        "harness_skeleton": dossier.get("harness_skeleton"),
-        "build_workspace": dossier.get("build_workspace"),
-        "build_probe": dossier.get("build_probe"),
-        "build_completion": dossier.get("build_completion"),
-        "test_execution": dossier.get("test_execution"),
-        "evidence": dossier.get("evidence"),
     }
+    for key in (
+        "source_digest",
+        "function_location",
+        "function_signature",
+        "global_access",
+        "call_report",
+        "coverage_design",
+        "boundary_equivalence_candidates",
+        "test_case_design",
+        "harness_skeleton",
+        "build_workspace",
+        "build_probe",
+        "build_completion",
+        "test_execution",
+        "evidence",
+    ):
+        if key in dossier:
+            payload[key] = dossier[key]
     if args.finalize_dossier:
         final_dossier = finalize_function_dossier(Path(args.out), function_name=args.function)
         payload["review"] = _dossier_payload(Path(args.out), final_dossier)
@@ -256,10 +283,70 @@ def handle_analyze_function(args: argparse.Namespace) -> CLIResult:
             legacy_payload=payload,
         )
     return CLIResult(
-        status="evidence_prepared",
+        status=_analyze_status_for_phase(args.phase),
         exit_code=EXIT_OK,
         command=args.command,
-        message="Function analysis generated. Use --finalize-dossier or finalize-dossier for dossier review packaging.",
+        message="Function analysis generated. Use --finalize-dossier or finalize-dossier for dossier review packaging. Use --phase harness, build, or execution to run downstream steps.",
+        data=payload,
+        legacy_payload=payload,
+    )
+
+
+def _phase_rank(phase: str) -> int:
+    return {"analysis": 1, "design": 2, "harness": 3, "build": 4, "execution": 5}[phase]
+
+
+def _analyze_status_for_phase(phase: str) -> str:
+    if phase == "execution":
+        return "evidence_prepared"
+    if phase == "build":
+        return "build_workspace_generated"
+    if phase == "harness":
+        return "harness_skeleton_generated"
+    return "analysis_completed"
+
+
+def handle_reanalyze_function(args: argparse.Namespace) -> CLIResult:
+    return _run_reanalysis(args)
+
+
+def _run_reanalysis(args: argparse.Namespace) -> CLIResult:
+    dsw = _existing_file(args.dsw, "dsw", args.command)
+    workspace = _workspace_from_args(args.workspace, dsw)
+    source = normalize_relative(_existing_source(workspace, args.source, args.command), workspace)
+    policy = ReanalysisPolicy(
+        generate_updated_test_case_design=args.generate_updated_test_case_design,
+        overwrite_test_case_design=args.overwrite_test_case_design,
+        include_low_confidence_matches=args.include_low_confidence_matches,
+    )
+    try:
+        result = reanalyze_function_workflow(
+            workspace,
+            dsw,
+            source,
+            args.function,
+            args.configuration,
+            args.out,
+            project_name=args.project,
+            previous_dossier_path=args.previous_dossier,
+            previous_test_case_design_path=args.previous_test_case_design,
+            policy=policy,
+        )
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        raise CLIError(str(exc), EXIT_INPUT_ERROR, args.command) from exc
+    reports = {key: str(value) for key, value in result["reports"].items()}
+    payload = {
+        "function": args.function,
+        "status": result["status"],
+        "reports": reports,
+        "previous_dossier": str(result["previous_dossier"]),
+        "previous_test_case_design": str(result["previous_test_case_design"]),
+    }
+    return CLIResult(
+        status="reanalysis_completed",
+        exit_code=EXIT_OK,
+        command=args.command,
+        message="Function reanalysis completed.",
         data=payload,
         legacy_payload=payload,
     )
@@ -334,12 +421,12 @@ def handle_build_probe(args: argparse.Namespace) -> CLIResult:
 
     if args.dossier:
         dossier = _existing_file(args.dossier, "dossier", args.command)
-        payload = build_probe(dossier, args.vc6_bin, args.dry_run)
+        payload = build_probe(dossier, args.vc6_bin, args.dry_run, args.vcvars)
         if args.out:
             _write_json(Path(args.out), payload, args.command)
         return CLIResult(
-            status="ok",
-            exit_code=EXIT_OK,
+            status="build_probe_failed" if payload.get("returncode", 0) not in {0, None} else "ok",
+            exit_code=EXIT_BUILD_PROBE_FAILED if payload.get("returncode", 0) not in {0, None} else EXIT_OK,
             command=args.command,
             message="Build probe completed.",
             data=payload,
@@ -363,9 +450,14 @@ def _build_probe_result(command: str, workspace: Path, workspace_report, probe_r
             "executed": probe_report.executed,
         },
     }
+    exit_code = EXIT_OK
+    if probe_report.status == "failed":
+        exit_code = EXIT_BUILD_PROBE_FAILED
+    elif probe_report.status == "environment_missing":
+        exit_code = EXIT_ENVIRONMENT_WARNING
     return CLIResult(
         status="build_workspace_generated" if not probe_report.executed else f"build_probe_{probe_report.status}",
-        exit_code=EXIT_OK,
+        exit_code=exit_code,
         command=command,
         message="Build workspace generated.",
         data=payload,
@@ -419,7 +511,7 @@ def handle_complete_build(args: argparse.Namespace) -> CLIResult:
         apply_safe_completions=args.apply_safe_completions,
         run_probe_after_apply=args.run_probe_after_apply,
         max_iterations=args.max_iterations,
-        generate_unknown_symbol_stubs=args.generate_unknown_symbol_stubs or True,
+        generate_unknown_symbol_stubs=args.generate_unknown_symbol_stubs,
         overwrite_existing_generated_stubs=args.overwrite_existing_generated_stubs,
     )
     plan, iteration = analyze_build_errors_from_workspace(workspace, source_root=Path(args.source_root) if args.source_root else None, policy=policy)
@@ -508,6 +600,58 @@ def handle_generate_test_design(args: argparse.Namespace) -> CLIResult:
     )
 
 
+def handle_reconcile_test_cases(args: argparse.Namespace) -> CLIResult:
+    policy = ReanalysisPolicy(
+        generate_updated_test_case_design=args.generate_updated_test_case_design,
+        include_low_confidence_matches=args.include_low_confidence_matches,
+    )
+    try:
+        result = reconcile_test_case_reports(
+            _existing_file(args.previous_test_case_design, "previous-test-case-design", args.command),
+            _existing_file(args.previous_coverage_design, "previous-coverage-design", args.command),
+            _existing_file(args.current_test_case_design, "current-test-case-design", args.command),
+            _existing_file(args.current_coverage_design, "current-coverage-design", args.command),
+            _existing_file(args.current_boundary_candidates, "current-boundary-candidates", args.command),
+            Path(args.out),
+            policy=policy,
+        )
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        raise CLIError(str(exc), EXIT_INPUT_ERROR, args.command) from exc
+    reports = {"test_case_reconciliation_report_json": str(result["out"])}
+    if result.get("updated_test_case_design_path"):
+        reports["updated_test_case_design_json"] = str(result["updated_test_case_design_path"])
+    payload = {"reports": reports}
+    return CLIResult(
+        status="test_case_reconciliation_completed",
+        exit_code=EXIT_OK,
+        command=args.command,
+        message="Test case reconciliation completed.",
+        data=payload,
+        legacy_payload=payload,
+    )
+
+
+def handle_select_regression_tests(args: argparse.Namespace) -> CLIResult:
+    try:
+        result = select_regression_from_reports(
+            _existing_file(args.change_impact, "change-impact", args.command),
+            _existing_file(args.reconciliation, "reconciliation", args.command),
+            Path(args.out),
+        )
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        raise CLIError(str(exc), EXIT_INPUT_ERROR, args.command) from exc
+    key = "regression_selection_csv" if Path(args.out).suffix.lower() == ".csv" else "regression_selection_json"
+    payload = {"reports": {key: str(result["out"])}}
+    return CLIResult(
+        status="regression_selection_completed",
+        exit_code=EXIT_OK,
+        command=args.command,
+        message="Regression selection completed.",
+        data=payload,
+        legacy_payload=payload,
+    )
+
+
 def handle_run_tests(args: argparse.Namespace) -> CLIResult:
     workspace = _existing_dir(args.workspace, "workspace", args.command)
     report, manifest = prepare_test_execution_evidence(
@@ -516,7 +660,7 @@ def handle_run_tests(args: argparse.Namespace) -> CLIResult:
         run_tests=args.run,
         dry_run=args.dry_run or not args.run,
         timeout_seconds=args.timeout,
-        allow_placeholder_tests=args.allow_placeholder_tests or True,
+        allow_placeholder_tests=args.allow_placeholder_tests,
         treat_placeholder_as_inconclusive=args.treat_placeholder_as_inconclusive,
     )
     payload = _evidence_payload(workspace, report, manifest)
