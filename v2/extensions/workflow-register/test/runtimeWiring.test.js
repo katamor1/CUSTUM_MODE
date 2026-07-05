@@ -42,7 +42,7 @@ test("completeStep command can be called silently by companion extensions", () =
 test("activation schedules delayed workflow reload retries after Bob finishes startup", () => {
   const source = readSrc("extension.ts")
 
-  assert.match(source, /const retryDelaysMs = \[3000, 10000\]/)
+  assert.match(source, /const retryDelaysMs = \[3000, 10000, 30000, 60000, 120000\]/)
   assert.match(source, /setTimeout\([\s\S]*service\.reload\(\{ showReport: false \}\)/)
 })
 

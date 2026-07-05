@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
 const { test } = require("node:test")
 
 const { parseWorkflowMarkdown } = require("../out/core/parser")
@@ -111,6 +113,20 @@ steps:
   assert.equal(parsed.workflow.engineSteps[0].action.provider, "sample.collect")
   assert.equal(parsed.workflow.engineSteps[1].type, "result")
   assert.equal(parsed.workflow.engineSteps[1].result.sinks[0].type, "file")
+})
+
+test("repository code consistency workflow is clean for strict registration", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..")
+  const filePath = path.join(repoRoot, ".bob", "workflows", "code-consistency-review", "WORKFLOW.md")
+  const text = fs.readFileSync(filePath, "utf8")
+  const parsed = parseWorkflowMarkdown({
+    sourceId: "workflow-register",
+    filePath: ".bob/workflows/code-consistency-review/WORKFLOW.md",
+    text
+  })
+
+  assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
+  assert.deepEqual(parsed.diagnostics.filter((line) => line.trimStart().startsWith("- warn:")), [])
 })
 
 test("v1 workflow parser preserves Bob adapter metadata from typed steps", () => {

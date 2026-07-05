@@ -1,0 +1,13 @@
+schemaVersion: bob-process-checklist/v1
+checklistId: code-precheck
+title: コード事前チェック
+checks:
+  - id: phase2-output-validated
+    title: Phase 2 Bob 出力の検証結果を確認する
+    required: true
+  - id: human-triage-reviewed
+    title: human triage の判定と未調査項目を確認する
+    required: true
+  - id: process-review-result-ready
+    title: 工程レビュー結果の証跡と findings を確認する
+    required: true

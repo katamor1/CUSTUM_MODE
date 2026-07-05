@@ -1,0 +1,23 @@
+schemaVersion: bob-workflow-template/v1
+templateId: process-code-precheck
+templateVersion: 1.0.0
+displayName: コード事前チェック
+description: Phase 2 のコード整合プレレビューを工程ワークフローとして実行する標準テンプレート。
+baseWorkflowPath: .bob/template-library/standard/process-code-precheck/WORKFLOW.md
+supportedLanguages: [c_cpp, csharp, java, javascript_typescript, python]
+supportedVcs: [git, bazaar, bzr]
+requiredFiles:
+  - .bob/process/process-catalog.yaml
+  - .bob/process/checklists/code-precheck.yaml
+customizable:
+  title: true
+  description: true
+  inputDefaults: [phase2ReviewInputPath, reviewPackagePath, bobOutputPath, triagePath, textEncoding]
+  checklistPathInput: checklistPath
+  promptSupplement: true
+  artifactOutputRoot: true
+  humanGate: true
+locked:
+  guardrails: true
+  commandProviders: true
+  resultSinkTypes: true

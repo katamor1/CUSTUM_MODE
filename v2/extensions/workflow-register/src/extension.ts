@@ -123,7 +123,7 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     vscode.commands.registerCommand("workflowRegister.inspectBranching", (runId?: string) => service.inspectBranching(runId))
   )
   service.reload({ showReport: false }).catch((error) => console.warn("Bob workflow registration failed", error))
-  const retryDelaysMs = [3000, 10000]
+  const retryDelaysMs = [3000, 10000, 30000, 60000, 120000]
   for (const delayMs of retryDelaysMs) {
     const timer = setTimeout(
       () => service.reload({ showReport: false }).catch((error) => {

@@ -1,0 +1,220 @@
+schemaVersion: bob-process-catalog/v1
+catalogId: phase3-process-workflows
+displayName: Phase 3 工程別 Bob ワークフロー
+version: 1
+workflowRoot: .bob/workflows
+runRoot: .bob-process-runs
+recordRoot: .bob-process-records
+workflows:
+  - name: process-code-doc-investigation
+    title: コード・文書調査
+    phase: investigation
+    workflowPath: .bob/workflows/process-code-doc-investigation/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - target_files
+      - investigation_request
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/investigation/investigation-report.md
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - investigation-review-gate
+  - name: process-qa-intake-analysis
+    title: QA 受付分析
+    phase: qa
+    workflowPath: .bob/workflows/process-qa-intake-analysis/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - qa_request
+      - target_files
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/qa-intake/analysis.md
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - qa-intake-gate
+  - name: process-external-spec-design
+    title: 外部仕様設計
+    phase: external_spec
+    workflowPath: .bob/workflows/process-external-spec-design/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - requirements
+      - target_files
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/external-spec/design-draft.md
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - external-spec-design-gate
+  - name: process-external-spec-review
+    title: 外部仕様レビュー
+    phase: external_spec
+    workflowPath: .bob/workflows/process-external-spec-review/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - requirements
+      - design_docs
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/external-spec/review-result.yaml
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - external-spec-review-gate
+  - name: process-internal-spec-design
+    title: 内部仕様設計
+    phase: internal_spec
+    workflowPath: .bob/workflows/process-internal-spec-design/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - external_spec
+      - target_files
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/internal-spec/design-draft.md
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - internal-spec-design-gate
+  - name: process-internal-spec-review
+    title: 内部仕様レビュー
+    phase: internal_spec
+    workflowPath: .bob/workflows/process-internal-spec-review/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - external_spec
+      - design_docs
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/internal-spec/review-result.yaml
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - internal-spec-review-gate
+  - name: process-coding-plan
+    title: コーディング計画
+    phase: coding
+    workflowPath: .bob/workflows/process-coding-plan/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - design_docs
+      - target_files
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/coding/plan.md
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - coding-plan-gate
+  - name: process-code-precheck
+    title: コード事前チェック
+    phase: coding
+    workflowPath: .bob/workflows/process-code-precheck/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - code
+      - review_package
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/code-precheck/review-result.yaml
+      - .bob-process-runs/{{run.id}}/code-precheck/phase2-handoff.json
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - code-precheck-triage-gate
+  - name: process-unit-test-design
+    title: 単体テスト設計
+    phase: unit_test
+    workflowPath: .bob/workflows/process-unit-test-design/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - design_docs
+      - code
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/unit-test/design.md
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - unit-test-design-gate
+  - name: process-unit-test-execution-review
+    title: 単体テスト実行レビュー
+    phase: unit_test
+    workflowPath: .bob/workflows/process-unit-test-execution-review/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - test_results
+      - test_docs
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/unit-test/execution-review.yaml
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - unit-test-execution-gate
+  - name: process-functional-test-design
+    title: 機能テスト設計
+    phase: functional_test
+    workflowPath: .bob/workflows/process-functional-test-design/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - requirements
+      - design_docs
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/functional-test/design.md
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - functional-test-design-gate
+  - name: process-functional-test-execution-review
+    title: 機能テスト実行レビュー
+    phase: functional_test
+    workflowPath: .bob/workflows/process-functional-test-execution-review/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - test_results
+      - test_docs
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/functional-test/execution-review.yaml
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - functional-test-execution-gate
+  - name: process-integration-test-design
+    title: 結合テスト設計
+    phase: integration_test
+    workflowPath: .bob/workflows/process-integration-test-design/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - requirements
+      - design_docs
+      - interfaces
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/integration-test/design.md
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - integration-test-design-gate
+  - name: process-common-review
+    title: 共通レビュー
+    phase: common
+    workflowPath: .bob/workflows/process-common-review/WORKFLOW.md
+    inputSchema: bob-process-input/v1
+    recordSchema: bob-process-record/v1
+    reviewResultSchema: process-review-result/v1
+    requiredInputs:
+      - review_target
+      - target_files
+    artifactOutputs:
+      - .bob-process-runs/{{run.id}}/common-review/review-result.yaml
+      - .bob-process-runs/{{run.id}}/evidence-index.json
+    humanGates:
+      - common-review-gate
