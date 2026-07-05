@@ -14,15 +14,15 @@
   拡張機能の目的、背景、スコープ、全体構成、入力モデル、traceability sidecar、review-package、workflow-register 連携、Bob にさせること / させないこと、セキュリティ方針、テスト方針をまとめた基本設計書です。
 
 - `detailed-design-ja.md`  
-  VS Code command、workflow-register provider、workspace 初期化、review-input 生成、AI draft、traceability sidecar / Webview、前処理 pipeline、VCS 差分収集、文書抽出、C / C++ 軽量解析、review-package 生成、Bob 出力検証、human triage、テスト観点を整理した詳細設計書です。
+  VS Code command、workflow-register provider、workspace 初期化、review-input 生成、AI draft、traceability sidecar / Webview、前処理 pipeline、VCS 差分収集、文書抽出、C / C++ 軽量解析、複数言語の汎用コード根拠生成、review-package 生成、Bob 出力検証、human triage、テスト観点を整理した詳細設計書です。
 
 ## テスト仕様書
 
 - `unit-test-spec-ja.md`  
-  workspace 初期化、review-input 作成、AI draft、traceability sidecar、前処理、文書抽出、C / C++ 軽量解析、review-package、Bob 出力 capture / validation、triage、workflow-register provider の単体テスト仕様書です。
+  workspace 初期化、review-input 作成、AI draft、traceability sidecar、前処理、文書抽出、C / C++ 軽量解析、複数言語の汎用コード根拠、review-package、Bob 出力 capture / validation、triage、workflow-register provider の単体テスト仕様書です。
 
 - `real-machine-test-spec-ja.md`  
-  VS Code、IBM Bob、workflow-register、Bob Workflow UI、Traceability Prep Webview、Git / Bazaar、Markdown / docx / xlsx、C / C++ ソースを含む実機テスト仕様書です。
+  VS Code、IBM Bob、workflow-register、Bob Workflow UI、Traceability Prep Webview、Git / Bazaar、Markdown / docx / xlsx、C / C++ と TypeScript / Python / Java などのソースを含む実機テスト仕様書です。
 
 ## 運用メモ
 

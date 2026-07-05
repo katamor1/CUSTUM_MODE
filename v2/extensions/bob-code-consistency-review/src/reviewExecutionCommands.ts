@@ -29,6 +29,7 @@ export async function runPreprocess(options?: unknown): Promise<unknown> {
   const diffFixturePath = optionalAbsolute(workspaceRoot, stringOption(record, "diffFixturePath"))
   const bzrPath = resolveTrustedBzrPath(record, config.get<string>("bzrPath", "bzr"))
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
+  const workflowRunId = stringOption(record, "workflowRunId")
   const limits = {
     maxDocumentBytes: numberOption(record, "maxDocumentBytes") ?? config.get<number>("maxDocumentBytes"),
     maxWorkbookSheets: numberOption(record, "maxWorkbookSheets") ?? config.get<number>("maxWorkbookSheets"),
@@ -39,7 +40,7 @@ export async function runPreprocess(options?: unknown): Promise<unknown> {
   }
 
   const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "コード整合レビュー用パッケージを作成しています" }, () =>
-    preprocessReview({ workspaceRoot, inputPath, outDir, diffFixturePath, bzrPath, textEncoding, limits })
+    preprocessReview({ workspaceRoot, inputPath, outDir, diffFixturePath, bzrPath, textEncoding, limits, workflowRunId })
   )
   notifyInfoWithReport(result.summary, path.join(result.packageDir, "deterministic-checks.md"))
   return result

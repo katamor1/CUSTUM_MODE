@@ -80,4 +80,4 @@ repository:
 - Bazaar 対応は読み取り専用の差分取得だけです。
 - commit / push / pull / update / revert などの Bazaar 操作は実行しません。
 - Bazaar の未コミット差分を直接扱う workflow ではなく、`base..head` の revision range 差分を使います。
-- C / C++ 解析は Bazaar unified diff の `=== modified file '...'` 形式と `+++ file` 形式を解釈します。
+- Bazaar unified diff の `=== modified file '...'` 形式と `+++ file` 形式を解釈し、C / C++ 解析または汎用コード根拠生成へ渡します。

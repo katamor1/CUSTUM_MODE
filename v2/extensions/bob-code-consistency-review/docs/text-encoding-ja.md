@@ -1,6 +1,6 @@
 # code-consistency-review の文字コード方針
 
-`bob-code-consistency-review` は、既存 C / C++ 製品で UTF-8 と Shift-JIS / CP932 系テキストが混在することを前提に、前処理で読み込むテキストを `bobCodeConsistency.textEncoding` に従って decode します。
+`bob-code-consistency-review` は、既存 C / C++ 製品や複数言語リポジトリで UTF-8 と Shift-JIS / CP932 系テキストが混在することを前提に、前処理で読み込むテキストを `bobCodeConsistency.textEncoding` に従って decode します。
 
 ## 設定
 
@@ -26,8 +26,8 @@
 
 - `review-input.yaml`
 - Markdown 文書: `.md`, `.markdown`
-- C / C++ ソース: `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hh`, `.hpp`, `.hxx`
-- Git 差分 stdout: `git diff --name-status`, `git diff --numstat`, `git diff --unified=80`
+- C / C++ と複数言語ソース: `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hh`, `.hpp`, `.hxx`, `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.cs`, `.java`, `.go`, `.rs`, `.sh`, `.sql`, `.json`, `.yaml`, `.yml`, `.txt`
+- Git 差分 stdout: `git diff --find-renames --name-status`, `git diff --find-renames --numstat`, `git diff --find-renames --unified=80`
 - Bazaar 差分 stdout: `bzr --no-aliases diff -r base..head`
 - `diffFixturePath` で指定した JSON fixture
 

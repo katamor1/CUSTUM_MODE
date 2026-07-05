@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本書は `extensions/bob-code-consistency-review` の実機テスト仕様を定義する。単体テストでは mock 化する VS Code Extension Host、IBM Bob、workflow-register、Bob Workflow UI、Webview、実ファイル、Git / Bazaar 差分、Markdown / docx / xlsx 文書、C / C++ ソースを含めて結合動作を確認する。
+本書は `extensions/bob-code-consistency-review` の実機テスト仕様を定義する。単体テストでは mock 化する VS Code Extension Host、IBM Bob、workflow-register、Bob Workflow UI、Webview、実ファイル、Git / Bazaar 差分、Markdown / docx / xlsx 文書、C / C++ ソース、TypeScript / Python / Java などの複数言語ソースを含めて結合動作を確認する。
 
 ## 2. テスト対象
 
@@ -13,7 +13,7 @@
 | Workflow | `.bob/workflows/code-consistency-review/WORKFLOW.md` |
 | 入力 | `review-input.yaml`, traceability catalog, AI draft JSON |
 | 出力 | `.bob-review/review-package`, `.bob-review/bob-output`, `.bob-review/human-triage`, `.bob-trace` |
-| VCS | Git 差分、Bazaar / bzr 差分、diff fixture |
+| VCS | Git 差分、Git rename / binary numstat、Bazaar / bzr 差分、diff fixture |
 | 文書形式 | Markdown、Word `.docx`、Excel `.xlsx` |
 | UI | Command Palette、QuickPick、Webview Traceability Prep、Bob Workflow UI |
 
@@ -61,6 +61,11 @@ npm run package
   src/
     sample.c
     sample.h
+    payment review.ts
+  tools/
+    reconcile.py
+  app/
+    PaymentReview.java
   tests/
     sample_test.c
 ```
@@ -101,6 +106,14 @@ int validate_input(const char *value) {
   printf("debug\n");
   return 0;
 }
+```
+
+### 4.5 Git 複数言語 sample
+
+同梱 sample `docs/workflows/code-consistency-review/examples/multi-language-git-review/` は、TypeScript、Python、Java の変更を baseline / head fixture として持つ。実機 smoke では次を使い、sandbox workspace 内に実 Git repo が作られることを確認する。
+
+```powershell
+powershell -File docs\workflows\code-consistency-review\integration\launch-bob-code-consistency-sandbox.ps1 -NoLaunch -Sample multi-language-git-review
 ```
 
 ## 5. 共通確認項目
@@ -244,6 +257,14 @@ int validate_input(const char *value) {
 | 手順 | 1. Git repository で変更を作成する。<br>2. valid `review-input.yaml` に `review.vcs: git`、base / head を設定する。<br>3. `Bob Code Consistency Review: 入力を前処理して Bob 用パッケージを作成` を実行する。 |
 | 期待結果 | `.bob-review/review-package` に manifest、changed files、evidence index、bob-input.md などが生成される。 |
 
+### CCR-RT-016A Git 複数言語 preprocess
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | C / C++ 以外の変更でも Git 差分からコード根拠を生成できることを確認する。 |
+| 手順 | 1. `multi-language-git-review` sample sandbox を作成する。<br>2. `feature/multi-language-git-review` と `main` を比較する `review-input.yaml` を使う。<br>3. preprocess を実行する。 |
+| 期待結果 | `changed-files.json` に `typescript`、`python`、`java` が入り、`evidence-index.json` と `code-slices/*.md` に `SRC-*` の汎用コード根拠が生成される。 |
+
 ### CCR-RT-017 Bazaar preprocess
 
 | 項目 | 内容 |
@@ -283,6 +304,14 @@ int validate_input(const char *value) {
 | 目的 | 変更関数、callee / caller、global、RT 禁止候補の抽出を確認する。 |
 | 手順 | 1. C / C++ source を変更する。<br>2. preprocess を実行する。<br>3. `changed-symbols.json` と `code-slices/*.md` を確認する。 |
 | 期待結果 | changed function、callee / caller、RT 禁止候補が warning / evidence に含まれる。 |
+
+### CCR-RT-021A 汎用コード根拠 fallback
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | 詳細解析できない言語、または C / C++ header / define-only 変更で関数 evidence が無い場合も Bob が参照できる根拠が残ることを確認する。 |
+| 手順 | 1. TypeScript / Python / Java 変更、または関数本体を含まない header 変更を用意する。<br>2. preprocess を実行する。<br>3. `changed-symbols.json`、`diff-context.md`、`code-slices/*.md` を確認する。 |
+| 期待結果 | file scope の汎用 symbol と `SRC-*` evidence が生成され、Bob output validator が参照可能な evidence として扱う。 |
 
 ### CCR-RT-022 review-package 内容確認
 
@@ -417,7 +446,7 @@ int validate_input(const char *value) {
 ## 8. 合格基準
 
 - CCR-RT-001 から CCR-RT-008 までの起動・初期化・review-input 作成の基本導線が合格する。
-- CCR-RT-016 から CCR-RT-022 までの preprocess / review-package 生成が合格する。
+- CCR-RT-016 から CCR-RT-022 までの preprocess / review-package 生成が合格する。複数言語 sample では `SRC-*` の汎用コード根拠が生成される。
 - CCR-RT-025 から CCR-RT-029 までの Bob output capture / validation / triage が合格する。
 - Bob Workflow UI 経由の command provider 実行が少なくとも preprocess / capture / validate / triage で成功する。
 - Developer Tools Console に未処理例外が残らない。
@@ -428,6 +457,6 @@ int validate_input(const char *value) {
 | 優先度 | 対象 |
 | --- | --- |
 | P0 | 起動、workspace 初期化、review-input 検証、preprocess、Bob output capture、validate、triage。 |
-| P1 | workflow-register provider、Bob Workflow UI、traceability Webview、AI draft 適用、Git / Bazaar 差分。 |
-| P2 | docx / xlsx 抽出、C / C++ 解析、multi-root、Shift-JIS / CP932、large diff。 |
+| P1 | workflow-register provider、Bob Workflow UI、traceability Webview、AI draft 適用、Git / Bazaar 差分、multi-language Git sample。 |
+| P2 | docx / xlsx 抽出、C / C++ 解析、汎用コード根拠 fallback、multi-root、Shift-JIS / CP932、large diff。 |
 | P3 | repair、diagnostics 説明、UI 表示細部、OS 差分。 |

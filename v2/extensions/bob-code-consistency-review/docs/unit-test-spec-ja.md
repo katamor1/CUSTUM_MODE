@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本書は `extensions/bob-code-consistency-review` の単体テスト仕様を定義する。対象は workspace 初期化、review-input 作成、AI draft、traceability sidecar、前処理 pipeline、文書抽出、C / C++ 軽量解析、review-package 生成、Bob 出力 capture / validation、triage、workflow-register provider である。
+本書は `extensions/bob-code-consistency-review` の単体テスト仕様を定義する。対象は workspace 初期化、review-input 作成、AI draft、traceability sidecar、前処理 pipeline、文書抽出、C / C++ 軽量解析、複数言語の汎用コード根拠生成、review-package 生成、Bob 出力 capture / validation、triage、workflow-register provider である。
 
 ## 2. テスト実行方式
 
@@ -26,10 +26,12 @@
 | `traceabilityDraftJson` | catalog に追加する AI draft JSON。 |
 | `gitDiffFixture` | name-status、numstat、unified diff を含む fixture。 |
 | `bazaarDiffFixture` | Bazaar mode 用の unified diff fixture。 |
+| `multiLanguageGitDiffFixture` | TypeScript、Python、Java、rename、空白入り path、binary numstat を含む Git fixture。 |
 | `markdownDoc` | REQ / BD / DD / TC ID を含む Markdown。 |
 | `docxDoc` | heading / paragraph / table を含む docx fixture。 |
 | `xlsxDoc` | sheet / row ID を含む xlsx fixture。 |
 | `cppSource` | 変更関数、callee、global、RT 禁止候補を含む C / C++ source。 |
+| `genericSource` | TypeScript、Python、Java など、hunk 単位 evidence を確認する source。 |
 | `bobOutputValid` | schema と evidence index に合う YAML。 |
 | `bobOutputInvalidEvidence` | 存在しない evidence_id を参照する YAML。 |
 
@@ -205,6 +207,16 @@
 - 入力: `review.vcs: "bazaar"`。
 - 期待結果: Bazaar 実行 args に `--no-aliases` が含まれる。
 
+### CCR-UT-034A LanguageClassifier: 拡張子から対応言語へ分類する
+
+- 入力: `.c`、`.hpp`、`.ts`、`.py`、`.cs`、`.java`、`.go`、`.rs`、`.sh`、`.sql`、`.json`、`.yaml`、`.md`、拡張子なし path。
+- 期待結果: `c`、`hpp`、`typescript`、`python`、`csharp`、`java`、`go`、`rust`、`shell`、`sql`、`json`、`yaml`、`markdown`、`text` / `unknown` に分類される。
+
+### CCR-UT-034B GitDiffCollector: rename / 空白入り path / binary numstat を扱う
+
+- 入力: `--find-renames` を含む Git stdout fixture。
+- 期待結果: renamed status、空白入り path、binary numstat の未確定行数が `DiffSummary` と warning に反映される。
+
 ### CCR-UT-035 DocumentExtractor: Markdown heading を evidence 化する
 
 - 入力: ID 付き Markdown。
@@ -234,6 +246,16 @@
 
 - 入力: `printf`、`malloc`、`sleep` などを含む source。
 - 期待結果: RT 禁止処理候補 warning / evidence が生成される。
+
+### CCR-UT-040A GenericCodeEvidenceAnalyzer: 非 C/C++ diff hunk から evidence を生成する
+
+- 入力: TypeScript、Python、Java などの unified diff。
+- 期待結果: hunk 単位の `SRC-*` evidence、file scope symbol、`code-slices/*.md` content が生成される。
+
+### CCR-UT-040B CodeChangeAnalyzer: C/C++ と汎用 evidence を統合する
+
+- 入力: C/C++ header 変更と TypeScript / Python / Java 変更を含む diff。
+- 期待結果: C/C++ で関数 evidence があれば維持し、関数 evidence が無い header / define-only 変更や非 C/C++ 変更には汎用 fallback evidence が生成される。
 
 ### CCR-UT-041 TraceabilityBuilder: evidence と code symbol の対応候補を生成する
 

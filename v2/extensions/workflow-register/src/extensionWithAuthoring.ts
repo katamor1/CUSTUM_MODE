@@ -7,6 +7,21 @@ import { explainWorkflowDiagnostics } from "./commands/explainWorkflowDiagnostic
 import { improveWorkflowWithAi } from "./commands/improveWorkflowWithAi"
 import { inspectRunDiagnostics } from "./commands/inspectRunDiagnostics"
 import {
+  collectEvidenceCommand,
+  generateCampaignSummaryCommand,
+  loadProcessInputCommand,
+  validateCatalogCommand,
+  validateReviewResultCommand,
+  writeProcessRecordCommand
+} from "./commands/processCommands"
+import {
+  checkReadinessCommand,
+  generateWorkflowCommand,
+  validateCustomizationCommand,
+  validateLibraryCommand,
+  validateProjectProfileCommand
+} from "./commands/templateCommands"
+import {
   inspectRunControl,
   pauseAfterCurrentStep,
   pauseBeforeNextAiCall,
@@ -27,6 +42,7 @@ import {
   validateWorkspaceWorkflows
 } from "./commands/validateWorkflow"
 import { openWorkflowBuilder } from "./commands/openWorkflowBuilder"
+import { openTemplateCustomizationStudio } from "./commands/openTemplateCustomizationStudio"
 import { createConfiguredWorkflowAiProvider } from "./core/workflowAiProviderFactory"
 import { WorkflowDiagnosticsReporter } from "./commands/workflowDiagnostics"
 import { showMarkdownReport } from "./reports"
@@ -55,6 +71,8 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
   const stepReviewOptions = { showMarkdownReport }
   const stepReviewBuilderOptions = { showMarkdownReport, sourceId: sourceId(), extensionUri: context.extensionUri }
   const runControlOptions = { showMarkdownReport }
+  const processCommandOptions = () => ({ workspaceRoot: requireWorkspaceRoot() })
+  const templateCommandOptions = () => ({ workspaceRoot: requireWorkspaceRoot() })
   context.subscriptions.push(
     diagnostics,
     runControlView,
@@ -89,6 +107,21 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     vscode.commands.registerCommand("workflowRegister.pauseBeforeNextAiCall", (runId?: string) => pauseBeforeNextAiCall(runControlOptions, runId)),
     vscode.commands.registerCommand("workflowRegister.resumePausedRun", (runId?: string) => resumePausedRun(runControlOptions, runId)),
     vscode.commands.registerCommand("workflowRegister.inspectRunControl", (runId?: string) => inspectRunControl(runControlOptions, runId)),
+    vscode.commands.registerCommand("bobProcess.validateCatalog", (input) => validateCatalogCommand(input, processCommandOptions())),
+    vscode.commands.registerCommand("bobProcess.loadProcessInput", (input) => loadProcessInputCommand(input, processCommandOptions())),
+    vscode.commands.registerCommand("bobProcess.collectEvidence", (input) => collectEvidenceCommand(input, processCommandOptions())),
+    vscode.commands.registerCommand("bobProcess.validateReviewResult", (input) => validateReviewResultCommand(input, processCommandOptions())),
+    vscode.commands.registerCommand("bobProcess.writeProcessRecord", (input) => writeProcessRecordCommand(input, processCommandOptions())),
+    vscode.commands.registerCommand("bobProcess.generateCampaignSummary", (input) => generateCampaignSummaryCommand(input, processCommandOptions())),
+    vscode.commands.registerCommand("bobTemplate.validateLibrary", (input) => validateLibraryCommand(input, templateCommandOptions())),
+    vscode.commands.registerCommand("bobTemplate.validateProjectProfile", (input) => validateProjectProfileCommand(input, templateCommandOptions())),
+    vscode.commands.registerCommand("bobTemplate.validateCustomization", (input) => validateCustomizationCommand(input, templateCommandOptions())),
+    vscode.commands.registerCommand("bobTemplate.generateWorkflow", (input) => generateWorkflowCommand(input, templateCommandOptions())),
+    vscode.commands.registerCommand("bobTemplate.checkReadiness", (input) => checkReadinessCommand(input, templateCommandOptions())),
+    vscode.commands.registerCommand(
+      "bobTemplate.openCustomizationStudio",
+      () => openTemplateCustomizationStudio({ extensionUri: context.extensionUri, workspaceRoot: requireTemplateWorkspaceRoot() })
+    ),
     vscode.commands.registerCommand(
       "workflowRegister.openCurrentStepInBuilder",
       (runId?: string) => openCurrentStepInBuilder(stepReviewBuilderOptions, runId)
@@ -116,4 +149,20 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     if (isWorkflowDocument(document)) validateTextDocument(document, { sourceId: sourceId(), diagnostics })
   }
   return api
+}
+
+function requireWorkspaceRoot(): string {
+  const folder = vscode.workspace.workspaceFolders?.[0]
+  if (!folder) {
+    throw new Error("bobProcess commands require an open workspace folder")
+  }
+  return folder.uri.fsPath
+}
+
+function requireTemplateWorkspaceRoot(): string {
+  const folder = vscode.workspace.workspaceFolders?.[0]
+  if (!folder) {
+    throw new Error("bobTemplate commands require an open workspace folder")
+  }
+  return folder.uri.fsPath
 }

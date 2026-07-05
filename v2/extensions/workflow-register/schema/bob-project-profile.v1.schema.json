@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bob-project-profile.v1.schema.json",
+  "title": "Bob Project Profile",
+  "type": "object",
+  "required": ["schemaVersion", "projectId", "targetLanguage", "vcs", "paths", "workflowPreferences"],
+  "properties": {
+    "schemaVersion": { "const": "bob-project-profile/v1" },
+    "projectId": { "type": "string", "minLength": 1 },
+    "displayName": { "type": "string" },
+    "targetLanguage": { "type": "string", "minLength": 1 },
+    "vcs": {
+      "type": "object",
+      "required": ["type", "root"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "root": { "type": "string", "minLength": 1 },
+        "noAliases": { "type": "boolean" },
+        "revision": { "type": "string" },
+        "branch": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "required": ["checklistPath", "artifactOutputRoot"],
+      "properties": {
+        "checklistPath": { "type": "string", "minLength": 1 },
+        "artifactOutputRoot": { "type": "string", "minLength": 1 },
+        "uatEvidencePath": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "workflowPreferences": {
+      "type": "object",
+      "required": ["requireHumanGate"],
+      "properties": {
+        "requireHumanGate": { "const": true },
+        "stepReviewPauseAfter": { "enum": ["everyStep", "agentAndCommand", "none"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

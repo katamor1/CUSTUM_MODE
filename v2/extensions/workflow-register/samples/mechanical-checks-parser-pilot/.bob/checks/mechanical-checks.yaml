@@ -1,0 +1,77 @@
+schema_version: bob-mechanical-checks/v1
+project_id: mechanical-checks-parser-pilot
+profiles:
+  - id: pre-code-review-parser-pilot
+    title: Parser pilot コードレビュー前チェック
+    gate: pre_code_review
+    checks:
+      - build-warning-delta
+      - static-analysis-sarif-delta
+      - reviewed-file-list-match
+checks:
+  - id: build-warning-delta
+    title: Build warning/error delta
+    runner: node
+    command: tools/mechanical-checks/build-warning-delta.js
+    cwd: .
+    timeout_seconds: 10
+    evidence:
+      collect:
+        - out/build/**/*.log
+    parser:
+      type: regex
+      input: evidence
+      baseline_evidence:
+        - out/build/baseline/**/*.log
+      target_evidence:
+        - out/build/target/**/*.log
+      warning_pattern: "warning"
+      error_pattern: "error"
+    pass_condition:
+      max_new_warnings: 0
+      max_new_errors: 0
+    allow_failure: false
+  - id: static-analysis-sarif-delta
+    title: Static analysis SARIF delta
+    runner: node
+    command: tools/mechanical-checks/static-analysis-sarif-delta.js
+    cwd: .
+    timeout_seconds: 10
+    evidence:
+      collect:
+        - out/analyzer/**/*.sarif
+    parser:
+      type: sarif
+      input: evidence
+      baseline_evidence:
+        - out/analyzer/baseline/**/*.sarif
+      target_evidence:
+        - out/analyzer/target/**/*.sarif
+      identity_columns:
+        - id
+        - file
+        - line
+    pass_condition:
+      max_new_findings: 0
+      allow_known_ids_file: .bob/checks/known-static-analysis.txt
+    allow_failure: false
+  - id: reviewed-file-list-match
+    title: Reviewed file list match CSV
+    runner: node
+    command: tools/mechanical-checks/reviewed-file-list-match.js
+    cwd: .
+    timeout_seconds: 10
+    evidence:
+      collect:
+        - out/review/**/*.csv
+    parser:
+      type: csv
+      input: evidence
+      id_column: id
+      file_column: file
+      line_column: line
+      message_column: message
+      severity_column: severity
+    pass_condition:
+      max_new_findings: 0
+    allow_failure: false

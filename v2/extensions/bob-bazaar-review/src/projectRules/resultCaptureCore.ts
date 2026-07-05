@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { renderReviewResultMarkdown } from "./markdown"
@@ -79,13 +79,14 @@ export async function handleReviewResultJson(
     }
   }
 
-  const artifacts = await saveReviewResultArtifacts(workspaceRoot, result)
+  const artifacts = await saveReviewResultArtifacts(workspaceRoot, result, options)
   return {
     status: "ok",
     source,
     reviewId: result.review_id,
     jsonPath: artifacts.jsonPath,
     markdownPath: artifacts.markdownPath,
+    metadataPath: artifacts.metadataPath,
     jsonText: `${JSON.stringify(result, null, 2)}\n`,
     valid: true,
     issueCount: 0,
@@ -208,20 +209,46 @@ function isReviewStatus(value: unknown): value is ReviewStatus {
   return typeof value === "string" && STATUSES.includes(value as ReviewStatus)
 }
 
-export async function saveReviewResultArtifacts(workspaceRoot: string, result: ReviewResult): Promise<SavedReviewResultArtifacts> {
+export async function saveReviewResultArtifacts(workspaceRoot: string, result: ReviewResult, options: CaptureReviewResultOptions = {}): Promise<SavedReviewResultArtifacts> {
   const resultsDir = path.join(workspaceRoot, ".bob", "review", "results")
   await fs.mkdir(resultsDir, { recursive: true })
 
   const baseName = sanitizeFilename(result.review_id || buildFallbackReviewId(result))
   const jsonPath = path.join(resultsDir, `${baseName}.json`)
   const markdownPath = path.join(resultsDir, `${baseName}.md`)
+  const metadataPath = path.join(resultsDir, `${baseName}.artifact-metadata.json`)
   const backupPaths = [
     await backupExistingFile(jsonPath),
-    await backupExistingFile(markdownPath)
+    await backupExistingFile(markdownPath),
+    await backupExistingFile(metadataPath)
   ].filter((backupPath): backupPath is string => Boolean(backupPath))
   await writeFileAtomic(jsonPath, `${JSON.stringify(result, null, 2)}\n`)
   await writeFileAtomic(markdownPath, `${renderReviewResultMarkdown(result)}\n`)
-  return { jsonPath, markdownPath, backupPaths }
+  await writeFileAtomic(metadataPath, `${JSON.stringify(buildArtifactMetadata(result, options), null, 2)}\n`)
+  return { jsonPath, markdownPath, metadataPath, backupPaths }
+}
+
+function buildArtifactMetadata(result: ReviewResult, options: CaptureReviewResultOptions): Record<string, unknown> {
+  return {
+    producer_extension: "bob-bazaar-review",
+    producer_version: "0.3.0",
+    workflow_run_id: options.workflowRunId ?? "",
+    source_vcs: result.vcs.type || "bazaar",
+    source_revision: sourceRevision(result),
+    input_hash: sha256Prefixed(result),
+    contains_sensitive_context: true,
+    human_review_required: true
+  }
+}
+
+function sourceRevision(result: ReviewResult): string {
+  if (result.vcs.revision) return result.vcs.revision
+  if (result.vcs.base_revision && result.vcs.target_revision) return `${result.vcs.base_revision}..${result.vcs.target_revision}`
+  return result.vcs.target_revision || result.vcs.base_revision || ""
+}
+
+function sha256Prefixed(value: unknown): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`
 }
 
 async function backupExistingFile(filePath: string): Promise<string | undefined> {

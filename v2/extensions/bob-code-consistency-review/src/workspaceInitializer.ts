@@ -78,9 +78,6 @@ analysis_options:
   include_ledgers: true
   max_call_depth: 2
   max_code_context_lines: 80
-  language:
-    - c
-    - h
 bob_options:
   prompt_template: consistency-review-v1
   output_format: yaml

@@ -1,0 +1,34 @@
+schema_version: 1
+review:
+  id: PHASE3-SANDBOX-001
+  title: timeout 制御の工程別確認
+  change_type: bugfix
+  purpose: timeout 時に ERR_TIMEOUT を返すことを確認する。
+  base: sandbox-base
+  head: sandbox-head
+artifacts:
+  requirements:
+    - path: docs/requirements/REQ-001.md
+      version: "1.0"
+      sections: [REQ-001]
+  detailed_design:
+    - path: docs/design/internal-spec.md
+      version: "1.0"
+      sections: [internal-timeout]
+  test_spec:
+    - path: docs/test/unit-test-plan.md
+      version: "1.0"
+      cases: [UT-TIMEOUT]
+review_focus:
+  - requirement-code-consistency
+  - design-code-consistency
+  - test-gap
+analysis_options:
+  include_callers: true
+  include_callees: true
+  language: [c]
+bob_options:
+  prompt_template: consistency-review-v1
+  output_format: yaml
+  require_evidence: true
+  forbid_final_approval: true

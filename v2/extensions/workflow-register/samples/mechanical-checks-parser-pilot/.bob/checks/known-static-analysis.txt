@@ -1,0 +1,2 @@
+# Static-analysis findings accepted for the parser pilot smoke.
+SA003

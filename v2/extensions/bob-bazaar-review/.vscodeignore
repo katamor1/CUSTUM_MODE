@@ -7,6 +7,8 @@ tsconfig.json
 
 # Dependency caches and package-manager files
 node_modules/**
+!node_modules/js-yaml/**
+!node_modules/argparse/**
 npm-debug.log*
 yarn.lock
 package-lock.json

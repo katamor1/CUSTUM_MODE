@@ -73,11 +73,14 @@ export function validateTriage(triage: any, reviewResult?: any): string[] {
   }
 
   const knownFindingIds = knownReviewFindingIds(reviewResult)
+  const triagedFindingIds = new Set<string>()
   triage.items.forEach((item: any, index: number) => {
     if (typeof item?.finding_id !== "string" || !item.finding_id.trim()) {
       issues.push(`items[${index}].finding_id is required`)
     } else if (knownFindingIds && !knownFindingIds.has(item.finding_id)) {
       issues.push(`items[${index}].finding_id is not present in review-result: ${item.finding_id}`)
+    } else if (typeof item?.finding_id === "string" && item.finding_id.trim()) {
+      triagedFindingIds.add(item.finding_id)
     }
     if (!TRIAGE_DECISIONS.includes(item?.decision)) {
       issues.push(`items[${index}].decision has invalid decision: ${item?.decision}`)
@@ -86,6 +89,13 @@ export function validateTriage(triage: any, reviewResult?: any): string[] {
       issues.push(`items[${index}].action is required when decision is accepted`)
     }
   })
+  if (knownFindingIds) {
+    for (const findingId of knownFindingIds) {
+      if (!triagedFindingIds.has(findingId)) {
+        issues.push(`missing triage item for review-result finding_id: ${findingId}`)
+      }
+    }
+  }
 
   const expected = summarizeTriageItems(triage.items.filter((item: any) => TRIAGE_DECISIONS.includes(item?.decision)))
   for (const decision of TRIAGE_DECISIONS) {
@@ -110,11 +120,13 @@ export function summarizeTriageItems(items: TriageItem[]): TriageSummary {
 function knownReviewFindingIds(reviewResult: any): Set<string> | undefined {
   if (!reviewResult) return undefined
   const ids = new Set<string>()
+  const findingRuleIds = new Set<string>()
   for (const finding of Array.isArray(reviewResult?.findings) ? reviewResult.findings : []) {
     if (typeof finding?.id === "string") ids.add(finding.id)
+    if (typeof finding?.rule_id === "string") findingRuleIds.add(finding.rule_id)
   }
   for (const checklist of Array.isArray(reviewResult?.checklist_results) ? reviewResult.checklist_results : []) {
-    if (checklist?.status === "fail" && typeof checklist?.rule_id === "string") {
+    if (checklist?.status === "fail" && typeof checklist?.rule_id === "string" && !findingRuleIds.has(checklist.rule_id)) {
       ids.add(`CHECKLIST-${checklist.rule_id}`)
     }
   }

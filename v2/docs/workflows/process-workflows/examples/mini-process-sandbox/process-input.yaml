@@ -1,0 +1,53 @@
+schemaVersion: bob-process-input/v1
+campaignId: phase3-sandbox
+workflowName: process-common-review
+phase: common
+targetLanguage: c_cpp
+targetSummary: サンプル制御関数の仕様、コード、テスト観点を工程別に確認する。
+vcs:
+  type: git
+  root: .
+  revision: sandbox
+options:
+  destructiveVcsOperations: false
+  requireHumanGate: true
+  textEncoding: shift_jis
+inputs:
+  investigation_request:
+    - path: docs/qa/QA-001.md
+      title: 調査依頼
+  qa_request:
+    - path: docs/qa/QA-001.md
+      title: QA 受付票
+  requirements:
+    - path: docs/requirements/REQ-001.md
+      title: 要求仕様
+  external_spec:
+    - path: docs/design/external-spec.md
+      title: 外部仕様
+  design_docs:
+    - path: docs/design/internal-spec.md
+      title: 内部仕様
+  interfaces:
+    - path: docs/design/interface.md
+      title: インターフェース仕様
+  code:
+    - path: src/sample_control.c
+      title: 対象コード
+      encoding: shift_jis
+  target_files:
+    - path: src/sample_control.c
+      title: 対象コード
+      encoding: shift_jis
+  review_target:
+    - path: docs/design/internal-spec.md
+      title: レビュー対象
+  test_docs:
+    - path: docs/test/unit-test-plan.md
+      title: 単体テスト計画
+  test_results:
+    - path: logs/unit-test-result.log
+      title: 単体テスト結果
+  review_package:
+    - path: review-input.yaml
+      title: Phase 2 review-input

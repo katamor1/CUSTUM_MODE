@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bob-workflow-template.v1.schema.json",
+  "title": "Bob Workflow Template",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "templateId",
+    "templateVersion",
+    "displayName",
+    "description",
+    "baseWorkflowPath",
+    "supportedLanguages",
+    "supportedVcs",
+    "customizable",
+    "locked"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bob-workflow-template/v1" },
+    "templateId": { "type": "string", "minLength": 1 },
+    "templateVersion": { "type": "string", "minLength": 1 },
+    "displayName": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "baseWorkflowPath": { "type": "string", "minLength": 1 },
+    "supportedLanguages": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "supportedVcs": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "requiredFiles": { "type": "array", "items": { "type": "string" } },
+    "customizable": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "boolean" },
+        "description": { "type": "boolean" },
+        "inputDefaults": { "type": "array", "items": { "type": "string" } },
+        "checklistPathInput": { "type": "string" },
+        "promptSupplement": { "type": "boolean" },
+        "artifactOutputRoot": { "type": "boolean" },
+        "humanGate": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "locked": {
+      "type": "object",
+      "required": ["guardrails", "commandProviders", "resultSinkTypes"],
+      "properties": {
+        "guardrails": { "const": true },
+        "commandProviders": { "const": true },
+        "resultSinkTypes": { "const": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -6,6 +6,7 @@ export interface CaptureReviewResultResult {
   reviewId?: string
   jsonPath?: string
   markdownPath?: string
+  metadataPath?: string
   jsonText?: string
   valid: boolean
   issueCount: number
@@ -16,6 +17,7 @@ export interface CaptureReviewResultResult {
 export interface SavedReviewResultArtifacts {
   jsonPath: string
   markdownPath: string
+  metadataPath: string
   backupPaths: string[]
 }
 
@@ -31,5 +33,6 @@ export interface CaptureReviewResultOptions {
   checklistVersion?: string
   project?: string
   workspaceRoot?: string
+  workflowRunId?: string
   workflowState?: Record<string, string>
 }

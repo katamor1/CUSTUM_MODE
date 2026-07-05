@@ -12,7 +12,7 @@ test("default action registry exposes a VS Code command provider", async () => {
     }
   })
 
-  assert.deepEqual(registry.list(), ["vscode.executeCommand"])
+  assert.deepEqual(registry.list(), ["vscode.executeCommand", "workflowRegister.runMechanicalChecks"])
   const result = await registry.execute("vscode.executeCommand", {
     args: ["sample.command", "one", 2],
     inputs: {}

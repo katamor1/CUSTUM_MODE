@@ -5,6 +5,7 @@
 `review-package` は、bob に投入する前に拡張機能が作成する根拠パッケージである。
 
 bob にリポジトリ全体や文書全体をそのまま渡すのではなく、レビュー対象に必要な情報を、根拠 ID 付きで整理して渡す。
+C / C++ は変更関数や周辺候補を深掘りし、TypeScript / JavaScript / Python / C# / Java / Go / Rust / Shell / SQL / JSON / YAML / Markdown / text / unknown は diff hunk 単位の汎用コード根拠として整理する。
 
 ## 2. 設計方針
 
@@ -128,9 +129,11 @@ prompts:
 }
 ```
 
+`language` は `c`、`cpp`、`h`、`hpp`、`typescript`、`javascript`、`python`、`csharp`、`java`、`go`、`rust`、`shell`、`sql`、`json`、`yaml`、`markdown`、`text`、`unknown` のいずれかである。Git rename は `status: "renamed"` として扱い、binary numstat で行数が得られない場合は `additions` / `deletions` を未確定にして warning に残す。
+
 ## 8. changed-symbols.json
 
-変更された関数、構造体、定数、グローバル変数などを保存する。
+変更された関数、構造体、定数、グローバル変数などを保存する。C / C++ 以外、または C / C++ header / define-only 変更で関数範囲を確定できない場合は、file scope の汎用 symbol を保存する。
 
 ```json
 {
@@ -156,7 +159,8 @@ bob が読む差分本文。
 
 方針:
 
-- 生 diff だけではなく、関数単位の説明を付ける。
+- 生 diff だけではなく、可能な場合は関数単位の説明を付ける。
+- 詳細解析できない言語でも hunk 単位の `SRC-*` evidence と `code-slices/*.md` を生成する。
 - 変更行の前後コンテキストを含める。
 - 長すぎるファイルは code-slices に分割する。
 - 削除されたロジックも省略しすぎない。
@@ -304,9 +308,9 @@ bob に最終的に投入する統合入力。
 7. トレーサビリティ候補
 8. 出力形式
 
-## 16. MVP で必須のファイル
+## 16. 現行 runtime で必須のファイル
 
-MVP では以下を必須とする。
+現行 runtime では以下を必須とする。
 
 - `manifest.yaml`
 - `input-normalized.json`

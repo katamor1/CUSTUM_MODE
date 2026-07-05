@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bob-workflow-customization.v1.schema.json",
+  "title": "Bob Workflow Customization",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "customizationId",
+    "templateId",
+    "templateVersion",
+    "baseTemplateHash",
+    "projectId",
+    "workflowName",
+    "customize"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bob-workflow-customization/v1" },
+    "customizationId": { "type": "string", "minLength": 1 },
+    "templateId": { "type": "string", "minLength": 1 },
+    "templateVersion": { "type": "string", "minLength": 1 },
+    "baseTemplateHash": { "type": "string", "minLength": 1 },
+    "projectId": { "type": "string", "minLength": 1 },
+    "workflowName": { "type": "string", "minLength": 1 },
+    "customize": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "inputs": {
+          "type": "object",
+          "properties": {
+            "defaults": { "type": "object" }
+          },
+          "additionalProperties": false
+        },
+        "checklist": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "prompts": {
+          "type": "object",
+          "properties": {
+            "supplement": { "type": "string" },
+            "terms": { "type": "object", "additionalProperties": { "type": "string" } }
+          },
+          "additionalProperties": false
+        },
+        "artifactOutputRoot": { "type": "string" },
+        "humanGate": {
+          "type": "object",
+          "properties": {
+            "required": { "const": true },
+            "stepReviewPauseAfter": { "enum": ["everyStep", "agentAndCommand", "none"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

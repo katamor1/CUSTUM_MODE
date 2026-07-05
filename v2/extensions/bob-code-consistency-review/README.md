@@ -308,7 +308,7 @@ analysis_options:
 
 | ファイル | 用途 |
 | --- | --- |
-| `manifest.yaml` | review-package の作成情報、対象範囲、テンプレート ID、根拠件数を記録する。 |
+| `manifest.yaml` | review-package の作成情報、対象範囲、テンプレート ID、根拠件数、`artifact_metadata` を記録する。 |
 | `input-normalized.json` | 検証済み `review-input.yaml` を正規化して保存する。 |
 | `changed-files.json` | Git / Bazaar 差分から得た変更ファイル一覧と warning を保存する。 |
 | `changed-symbols.json` | 変更関数、define、global 候補、call graph、RT 禁止処理候補を保存する。 |
@@ -331,7 +331,7 @@ analysis_options:
 | --- | --- |
 | `.md` / `.markdown` | Markdown 見出し単位でブロック化し、`sections` / `cases` / `rows` 指定に合う抜粋を抽出する。 |
 | `.docx` | `mammoth` で HTML 化し、見出し、段落、表を抽出する。 |
-| `.xlsx` | `xlsx` でシートと行を読み、指定シートや指定行に合う表形式の抜粋を作る。 |
+| `.xlsx` | `read-excel-file` でシートと行を読み、指定シートや指定行に合う表形式の抜粋を作る。 |
 
 既定の文書種別と evidence ID prefix は次の通りです。
 
@@ -348,9 +348,10 @@ analysis_options:
 
 | ファイル / ディレクトリ | 責務 |
 | --- | --- |
-| `src/extension.ts` | VS Code command 登録、workflow provider handler mapping、review-input 作成・AI draft・診断系 command handler の入口。 |
+| `src/extension.ts` | VS Code command 登録、workflow provider handler mapping、主要 command handler の入口。 |
 | `src/extensionCommandOptions.ts` | notification、workspace root 解決、path helper、string / boolean / array option、VCS / change type / review focus helper。 |
 | `src/reviewInputWizard.ts` | 対話式 `review-input.yaml` 作成 UI、文書候補選択、review metadata 収集。 |
+| `src/commands/reviewInputCommands.ts` | review-input 作成、AI draft 作成 / 反映、repair、診断説明の command handler。 |
 | `src/workflowProviderRegistration.ts` | `workflow-register` の action provider 登録と action provider から渡される option record の正規化。 |
 | `src/workspaceInitializer.ts` | `.bob/workflows/code-consistency-review/WORKFLOW.md` と `review-input.yaml` 雛形の初期化。 |
 | `src/traceabilityCommands.ts` | traceability AI draft 作成 / 反映、Traceability Prep Webview 起動、catalog gate 検証、accepted item からの `review-input.yaml` 生成。 |
@@ -359,7 +360,7 @@ analysis_options:
 | `src/webview/traceabilityPrepWebview.ts` | traceability item の人間承認 UI。 |
 | `src/triage/humanTriageHelper.ts` | 人間確認用 triage 成果物生成。 |
 
-次の分割候補は、`extension.ts` に残る `runCreateReviewInput`、`runPrepareAiReviewInputDraft`、`runApplyAiReviewInputDraft`、`runRepairReviewInput`、`runExplainReviewInputDiagnostics` を `reviewInputCommands.ts` へ切り出すことです。Command ID と `package.json` の contributes は互換性に直結するため、分割時も名称は変更しません。
+現在の追加分割は `src/commands/reviewInputCommands.ts` まで反映済みです。今後は追加 VSIX 分割ではなく、`docs/workflow-action-contracts-ja.md` と `docs/artifact-metadata-contract-ja.md` の contract、成果物 metadata、drift 防止テストで整合を保ちます。
 
 ## ビルド
 
@@ -384,7 +385,7 @@ npm run package
 
 ### 生成物
 
-主な生成物は `.bob-review/review-package`、`.bob-review/bob-output.yaml`、`.bob-review/triage`、`.bob-trace/traceability-catalog.json`、`.bob-trace/gate-report.md` です。review-package には `review-package` の manifest、document excerpts、diff context、evidence index、Bob 投入用 `bob-input.md` が含まれます。コード、文書抜粋、Bob 出力、triage 判断を含むため、共有前に内容を確認してください。
+主な生成物は `.bob-review/review-package`、`.bob-review/bob-output/`、`.bob-review/human-triage/`、`.bob-trace/traceability-catalog.json`、`.bob-trace/gate-report.md` です。review-package には `review-package` の manifest、`artifact_metadata`、document excerpts、diff context、evidence index、Bob 投入用 `bob-input.md` が含まれます。コード、文書抜粋、Bob 出力、triage 判断を含むため、共有前に内容を確認してください。
 
 ### VSIX サイズ
 

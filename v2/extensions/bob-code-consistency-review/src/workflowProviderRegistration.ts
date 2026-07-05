@@ -251,7 +251,8 @@ function workflowContextOptions(input: WorkflowActionExecutionInput): Record<str
     workflowFile: input.workflowFile,
     workflowFolderName: input.workflowFolderName,
     bobRoot: input.bobRoot,
-    workspaceRoot: input.workspaceRoot
+    workspaceRoot: input.workspaceRoot,
+    workflowRunId: input.runId
   }
 }
 

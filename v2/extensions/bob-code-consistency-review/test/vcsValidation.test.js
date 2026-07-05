@@ -37,6 +37,21 @@ test("collectGitDiff rejects unsafe Bazaar revisions before executing bzr", asyn
   )
 })
 
+test("collectGitDiff classifies renamed, spaced, and binary Git paths", async () => {
+  const workspace = createGitWorkspaceWithMixedPaths()
+  const diff = await collectGitDiff(reviewInput({ base: "main", head: "feature/mixed-paths", vcs: "git" }), { workspaceRoot: workspace })
+
+  const byPath = new Map(diff.files.map((file) => [file.path, file]))
+  assert.equal(byPath.get("src/payment review.ts")?.status, "renamed")
+  assert.equal(byPath.get("src/payment review.ts")?.language, "typescript")
+  assert.equal(byPath.get("src/payment review.ts")?.additions, 1)
+  assert.equal(byPath.get("src/payment review.ts")?.deletions, 1)
+  assert.equal(byPath.get("docs/review spec.md")?.language, "markdown")
+  assert.equal(byPath.get("assets/sample.bin")?.language, "unknown")
+  assert.equal(byPath.get("assets/sample.bin")?.additions, 0)
+  assert.equal(byPath.get("assets/sample.bin")?.deletions, 0)
+})
+
 test("command wiring rejects workflow arg bzrPath overrides", () => {
   const source = readSourceSet(["extension.ts", "reviewExecutionCommands.ts", "traceabilityCommands.ts", "extensionCommandOptions.ts"])
 
@@ -58,6 +73,37 @@ function createGitWorkspace() {
   fs.writeFileSync(path.join(workspace, "src", "example.txt"), "base\nhead\n")
   git(workspace, "add", ".")
   git(workspace, "commit", "-m", "head")
+  return workspace
+}
+
+function createGitWorkspaceWithMixedPaths() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "bob-git-mixed-paths-"))
+  fs.mkdirSync(path.join(workspace, "src"), { recursive: true })
+  fs.mkdirSync(path.join(workspace, "docs"), { recursive: true })
+  fs.mkdirSync(path.join(workspace, "assets"), { recursive: true })
+  fs.writeFileSync(path.join(workspace, "src", "payment.ts"), [
+    "export const status = 'base'",
+    "export const stableReviewMarker = 'same'",
+    ""
+  ].join("\n"), "utf8")
+  fs.writeFileSync(path.join(workspace, "docs", "review spec.md"), "# Review\n\nbase\n", "utf8")
+  fs.writeFileSync(path.join(workspace, "assets", "sample.bin"), Buffer.from([0, 1, 2, 3]))
+  git(workspace, "init", "-b", "main")
+  git(workspace, "config", "user.email", "bob-fixture@example.local")
+  git(workspace, "config", "user.name", "Bob Fixture")
+  git(workspace, "add", ".")
+  git(workspace, "commit", "-m", "baseline")
+  git(workspace, "switch", "-c", "feature/mixed-paths")
+  fs.renameSync(path.join(workspace, "src", "payment.ts"), path.join(workspace, "src", "payment review.ts"))
+  fs.writeFileSync(path.join(workspace, "src", "payment review.ts"), [
+    "export const status = 'head'",
+    "export const stableReviewMarker = 'same'",
+    ""
+  ].join("\n"), "utf8")
+  fs.writeFileSync(path.join(workspace, "docs", "review spec.md"), "# Review\n\nbase\nhead\n", "utf8")
+  fs.writeFileSync(path.join(workspace, "assets", "sample.bin"), Buffer.from([4, 5, 6, 7, 8]))
+  git(workspace, "add", "-A", ".")
+  git(workspace, "commit", "-m", "mixed paths")
   return workspace
 }
 

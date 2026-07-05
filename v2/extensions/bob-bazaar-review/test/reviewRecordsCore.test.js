@@ -182,6 +182,30 @@ test("triage draft generation covers findings and failed checklist rules without
   const issues = validateTriage(badTriage, reviewResult)
   assert.match(issues.join("\n"), /invalid decision/)
   assert.match(issues.join("\n"), /summary.accepted/)
+
+  const missingChecklistTriage = {
+    ...triage,
+    items: triage.items.filter((item) => item.finding_id !== "CHECKLIST-UT-001"),
+    summary: {
+      accepted: 0,
+      rejected: 0,
+      needs_investigation: 1,
+      deferred: 0
+    }
+  }
+  assert.match(validateTriage(missingChecklistTriage, reviewResult).join("\n"), /missing triage item.*CHECKLIST-UT-001/)
+
+  const missingFindingTriage = {
+    ...triage,
+    items: triage.items.filter((item) => item.finding_id !== "F-001"),
+    summary: {
+      accepted: 0,
+      rejected: 0,
+      needs_investigation: 1,
+      deferred: 0
+    }
+  }
+  assert.match(validateTriage(missingFindingTriage, reviewResult).join("\n"), /missing triage item.*F-001/)
 })
 
 test("campaign summary aggregates valid records and exposes missing triage", async () => {

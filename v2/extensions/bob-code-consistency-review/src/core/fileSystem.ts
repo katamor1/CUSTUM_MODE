@@ -21,7 +21,9 @@ const WORKSPACE_PATH_POLICIES: Record<WorkspacePathKind, WorkspacePathPolicy> = 
   "review-package-output": {
     label: "reviewPackagePath",
     description: ".bob-review/<review-package-directory>",
-    allow: (segments) => segments[0] === ".bob-review" && segments.length >= 2 && !["bob-output", "human-triage"].includes(segments[1])
+    allow: (segments) => segmentEquals(segments[0], ".bob-review") &&
+      segments.length >= 2 &&
+      !["bob-output", "human-triage"].some((reserved) => segmentEquals(segments[1], reserved))
   },
   "bob-output": {
     label: "bobOutputPath",
@@ -36,12 +38,16 @@ const WORKSPACE_PATH_POLICIES: Record<WorkspacePathKind, WorkspacePathPolicy> = 
   "traceability-catalog": {
     label: "traceabilityCatalogPath",
     description: ".bob-trace/*.json outside ai-traceability-draft",
-    allow: (segments) => segments[0] === ".bob-trace" && segments[1] !== "ai-traceability-draft" && /\.json$/i.test(segments[segments.length - 1])
+    allow: (segments) => segmentEquals(segments[0], ".bob-trace") &&
+      !segmentEquals(segments[1], "ai-traceability-draft") &&
+      /\.json$/i.test(segments[segments.length - 1])
   },
   "traceability-gate-report": {
     label: "traceabilityGateReportPath",
     description: ".bob-trace/*.md outside ai-traceability-draft",
-    allow: (segments) => segments[0] === ".bob-trace" && segments[1] !== "ai-traceability-draft" && /\.md$/i.test(segments[segments.length - 1])
+    allow: (segments) => segmentEquals(segments[0], ".bob-trace") &&
+      !segmentEquals(segments[1], "ai-traceability-draft") &&
+      /\.md$/i.test(segments[segments.length - 1])
   },
   "traceability-ai-draft-output": {
     label: "aiTraceabilityDraftPromptPath",
@@ -119,7 +125,11 @@ export function relativePosix(from: string, to: string): string {
 }
 
 function startsWithSegments(segments: string[], prefix: string[]): boolean {
-  return prefix.every((segment, index) => segments[index] === segment)
+  return prefix.every((segment, index) => segmentEquals(segments[index], segment))
+}
+
+function segmentEquals(left: string | undefined, right: string): boolean {
+  return typeof left === "string" && left.toLowerCase() === right.toLowerCase()
 }
 
 function assertRealPathInsideWorkspace(root: string, target: string, label: string, originalValue: string): void {

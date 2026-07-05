@@ -377,14 +377,13 @@ AI プロバイダーは `workflowRegister.aiProviderCommand` で指定します
 | `src/extensionWithAuthoring.ts` | core activation に検証、AI 補助、GUI Builder command を追加する entry。 |
 | `src/bobApi.ts` | Bob 拡張 API の取得と source-like object への安全な変換。 |
 | `src/reports.ts` | attempt 実行、戻り値整形、Markdown report 表示 helper。 |
-| `src/bobWorkflowRunner.ts` | Bob task と `WorkflowEngine` を接続する adapter。`BobWorkflowEngineRunner` と現時点の `StepRuntime` を保持する。 |
+| `src/bobWorkflowRunner.ts` | Bob task と `WorkflowEngine` を接続する adapter。 |
+| `src/bobStepRuntime.ts` | Bob UI 実行専用の `StepRuntime`。VS Code UI、result handoff、guardrail、active step state を扱う。 |
 | `src/bobWorkflowFactory.ts` | Bob workflow object と Bob step array の構築。 |
 | `src/bobWorkflowMessages.ts` | workflow 開始、step 継続、command result、workflow state を Bob chat へ送る message 生成。 |
 | `src/bobTaskInputs.ts` | Bob task metadata / message から workflow input を抽出する。 |
 | `src/taskSnapshotRecovery.ts` | task snapshot から `lastAssistantText` を復旧候補として取得する。 |
 | `src/resultHandoff.ts` | assistant 出力を file / command sink へ渡す。 |
-
-今後の分割候補は `StepRuntime` です。VS Code UI、result handoff、guardrail、active step state に触るため、純粋 helper ではなく Bob UI 実行専用 runtime として扱います。
 
 ## 設定
 
@@ -397,7 +396,7 @@ AI プロバイダーは `workflowRegister.aiProviderCommand` で指定します
 | `workflowRegister.taskSnapshots.enabled` | `true` | Bob UI 実行時に task snapshot を保存する。 |
 | `workflowRegister.taskSnapshots.maxBytes` | `262144` | 1 snapshot JSON の最大サイズ。 |
 | `workflowRegister.taskSnapshots.maxPerRun` | `50` | 1 run に保持する snapshot 数。 |
-| `workflowRegister.taskSnapshots.includeMessages` | `true` | snapshot に Bob chat messages を含める。 |
+| `workflowRegister.taskSnapshots.includeMessages` | `false` | 既定では Bob chat messages を含めません。診断に必要な場合だけ明示的に有効化する。 |
 | `workflowRegister.taskSnapshots.pruneOnSave` | `true` | snapshot 保存時に古い snapshot を削除する。 |
 
 ## ビルド

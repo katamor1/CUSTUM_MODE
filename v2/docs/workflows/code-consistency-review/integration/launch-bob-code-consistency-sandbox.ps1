@@ -1,7 +1,7 @@
 param(
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..")).Path,
   [string]$SandboxRoot = (Join-Path $env:TEMP ("bob-workflow-integration-{0}" -f (Get-Date -Format "yyyyMMdd-HHmmss"))),
-  [ValidateSet("simple-timeout-bugfix", "ai-verification-matrix", "live-traceability-sidecar")]
+  [ValidateSet("simple-timeout-bugfix", "ai-verification-matrix", "live-traceability-sidecar", "multi-language-git-review")]
   [string]$Sample = "simple-timeout-bugfix",
   [string]$CodeCommand = "code",
   [switch]$NoLaunch
@@ -110,6 +110,28 @@ function Initialize-LiveTraceabilitySidecarWorkspace {
   Invoke-CheckedCommand $GitCommand @("commit", "-m", "live traceability sidecar head") $WorkspaceDir
 }
 
+function Initialize-MultiLanguageGitReviewWorkspace {
+  param([string]$RepoRoot, [string]$WorkspaceDir)
+  $SamplePath = Join-Path $RepoRoot "docs\workflows\code-consistency-review\examples\multi-language-git-review"
+  $SampleRoot = Resolve-RequiredPath $SamplePath "multi-language-git-review sample"
+  $WorkspaceCommonDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\workspace-common") "multi-language-git-review workspace-common fixture"
+  $BaselineDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\baseline") "multi-language-git-review baseline fixture"
+  $HeadDir = Resolve-RequiredPath (Join-Path $SampleRoot "fixtures\head") "multi-language-git-review head fixture"
+  $GitCommand = Resolve-CommandPath "git"
+
+  Copy-DirectoryContents $WorkspaceCommonDir $WorkspaceDir
+  Copy-DirectoryContents $BaselineDir $WorkspaceDir
+  Invoke-CheckedCommand (Resolve-CommandPath "git") @("init", "-b", "main") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("config", "user.email", "bob-fixture@example.local") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("config", "user.name", "Bob Fixture") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("add", ".") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("commit", "-m", "baseline") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("switch", "-c", "feature/multi-language-git-review") $WorkspaceDir
+  Copy-DirectoryContents $HeadDir $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("add", ".") $WorkspaceDir
+  Invoke-CheckedCommand $GitCommand @("commit", "-m", "multi-language git review head") $WorkspaceDir
+}
+
 $RepoRoot = Resolve-RequiredPath $RepoRoot "Repository root"
 $BobExtensionPath = Resolve-RequiredPath (Join-Path $RepoRoot "bob2\bob-code") "Expanded IBM Bob extension"
 $WorkflowRegisterVsix = Resolve-RequiredPath (Join-Path $RepoRoot "extensions\workflow-register\workflow-register-0.1.0.vsix") "workflow-register VSIX"
@@ -127,6 +149,8 @@ if ($Sample -eq "ai-verification-matrix") {
   Initialize-AiVerificationMatrixWorkspace $RepoRoot $WorkspaceDir
 } elseif ($Sample -eq "live-traceability-sidecar") {
   Initialize-LiveTraceabilitySidecarWorkspace $RepoRoot $WorkspaceDir
+} elseif ($Sample -eq "multi-language-git-review") {
+  Initialize-MultiLanguageGitReviewWorkspace $RepoRoot $WorkspaceDir
 } else {
   Initialize-SimpleTimeoutWorkspace $RepoRoot $WorkspaceDir
 }

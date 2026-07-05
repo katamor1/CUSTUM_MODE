@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { applyTemplate, loadPromptTemplates } from "../templates/templateLoader"
 import { relativePosix, writeJsonFile, writeTextFile } from "./fileSystem"
 import { normalizeReviewProcessingLimits, truncateUtf8Text, type ReviewProcessingLimits } from "./limits"
@@ -39,6 +39,7 @@ export async function buildReviewPackage(input: {
   codeAnalysis: CodeAnalysisResult
   traceability: TraceabilityResult
   limits?: Partial<ReviewProcessingLimits>
+  workflowRunId?: string
 }): Promise<string[]> {
   const { outDir, reviewInput, diff, documents, codeAnalysis, traceability } = input
   const limits = normalizeReviewProcessingLimits(input.limits)
@@ -92,19 +93,28 @@ export async function buildReviewPackage(input: {
   const bobInput = limitBobInput(bobInputSource, limits, packageWarnings)
   deterministicChecks = buildDeterministicChecks(documents, codeAnalysis, traceability, packageWarnings)
 
-  await writeTextFile(path.join(outDir, "manifest.yaml"), buildManifest(reviewInput, diff, evidence, input.workspaceRoot, outDir, packageWarnings, generationId))
+  await writeTextFile(path.join(outDir, "manifest.yaml"), buildManifest(reviewInput, diff, evidence, input.workspaceRoot, outDir, packageWarnings, generationId, input.workflowRunId))
   await writeTextFile(path.join(outDir, "deterministic-checks.md"), deterministicChecks)
   await writeTextFile(path.join(outDir, "bob-input.md"), bobInput)
   return packageWarnings
 }
 
-function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: EvidenceRef[], workspaceRoot: string, outDir: string, packageWarnings: string[], generationId: string): string {
+function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: EvidenceRef[], workspaceRoot: string, outDir: string, packageWarnings: string[], generationId: string, workflowRunId?: string): string {
   return [
     "package_version: 1",
     `generation_id: ${generationId}`,
     `created_at: ${JSON.stringify(new Date().toISOString())}`,
     "created_by: bob-code-consistency-review",
     "preprocess_version: 0.1.0",
+    "artifact_metadata:",
+    "  producer_extension: bob-code-consistency-review",
+    "  producer_version: 0.1.0",
+    `  workflow_run_id: ${yamlScalar(workflowRunId ?? "")}`,
+    `  source_vcs: ${yamlScalar(diff.vcs ?? "git")}`,
+    `  source_revision: ${yamlScalar(sourceRevision(diff))}`,
+    `  input_hash: ${sha256Prefixed({ reviewInput, diff: diffHashInput(diff) })}`,
+    "  contains_sensitive_context: true",
+    "  human_review_required: true",
     "repository:",
     `  vcs: ${diff.vcs ?? "git"}`,
     diff.vcsRoot ? `  root: ${JSON.stringify(relativePosix(workspaceRoot, diff.vcsRoot))}` : undefined,
@@ -130,6 +140,30 @@ function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: Ev
     ...packageWarnings.map((warning) => `  - ${JSON.stringify(warning)}`),
     ""
   ].filter((line): line is string => line !== undefined).join("\n")
+}
+
+function sourceRevision(diff: DiffSummary): string {
+  if (diff.base && diff.head) return `${diff.base}..${diff.head}`
+  return diff.head || diff.base || ""
+}
+
+function diffHashInput(diff: DiffSummary): Record<string, unknown> {
+  return {
+    vcs: diff.vcs ?? "git",
+    vcsRoot: diff.vcsRoot,
+    base: diff.base,
+    head: diff.head,
+    files: diff.files,
+    warnings: diff.warnings
+  }
+}
+
+function sha256Prefixed(value: unknown): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`
+}
+
+function yamlScalar(value: string): string {
+  return /^[A-Za-z0-9_.:/@+-]+$/.test(value) ? value : JSON.stringify(value)
 }
 
 async function cleanManagedPackageOutputs(outDir: string): Promise<void> {

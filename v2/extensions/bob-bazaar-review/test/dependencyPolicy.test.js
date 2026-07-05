@@ -15,7 +15,7 @@ test("bob-bazaar-review dependency policy requires a committed lockfile with pro
   assert.equal(packageJson.scripts["unused:report"], "node ../../scripts/run-unused-checks.js")
   assert.equal(packageJson.scripts["artifact:policy"], "node ../../scripts/check-artifact-size-policy.js --max-bytes 12000 templates")
   assert.equal(packageJson.scripts["audit:prod"], "npm audit --omit=dev --audit-level=high")
-  assert.equal(packageJson.scripts["package:policy"], "node ../../scripts/check-vsix-policy.js --max-bytes 200000")
+  assert.equal(packageJson.scripts["package:policy"], "node ../../scripts/check-vsix-policy.js --max-bytes 350000")
   assert.equal(packageJson.devDependencies.knip, "^5.0.0")
   assert.equal(packageJson.devDependencies.depcheck, "^1.4.7")
   assert.equal(packageJson.devDependencies["ts-prune"], "^0.10.3")
@@ -29,6 +29,13 @@ test("bob-bazaar-review dependency policy requires a committed lockfile with pro
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"))
   const rootPackage = lock.packages?.[""]
   assert.deepEqual(Object.keys(rootPackage?.dependencies ?? {}).sort(), Object.keys(packageJson.dependencies ?? {}).sort())
+  if (Object.keys(packageJson.dependencies ?? {}).length > 0) {
+    assert.equal(packageJson.scripts.package, "vsce package", "runtime dependencies must be collected by vsce")
+    for (const dependencyName of Object.keys(packageJson.dependencies)) {
+      assert.ok(vscodeignore.includes(`!node_modules/${dependencyName}/**`), `${dependencyName} must be included in the VSIX`)
+    }
+    assert.ok(vscodeignore.includes("!node_modules/argparse/**"), "js-yaml runtime transitive dependency must be included in the VSIX")
+  }
 
   const missingLicenses = Object.entries(lock.packages ?? {})
     .filter(([packagePath, info]) => packagePath && !info.dev)

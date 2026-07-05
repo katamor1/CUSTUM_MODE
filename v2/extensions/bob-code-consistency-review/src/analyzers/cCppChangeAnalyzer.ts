@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
-import { languageFromPath } from "../core/gitDiffCollector"
+import { classifyLanguageFromPath, isCLikeLanguage } from "../core/languageClassifier"
 import { pathExists, readTextFile, resolveWorkspacePath, toPosixPath } from "../core/fileSystem"
 import type { CodeAnalysisResult } from "../core/analysisTypes"
 import type { DiffSummary } from "../core/diffTypes"
@@ -21,8 +21,6 @@ import {
 type AnalyzeCppChangesOptions = { workspaceRoot: string; textEncoding?: string }
 type SourceResolution = { filePath?: string; warning?: string }
 
-const C_LIKE_LANGUAGES = new Set(["c", "cpp", "h", "hpp"])
-
 export async function analyzeCppChanges(
   diff: DiffSummary,
   reviewInput: ReviewInput,
@@ -42,10 +40,12 @@ export async function analyzeCppChanges(
   const sourceRoot = diff.vcsRoot ?? options.workspaceRoot
   let functionIndex = 1
   let codeEvidenceIndex = 1
+  let cLikeFileSeen = false
 
   for (const file of diff.files) {
-    const language = file.language ?? languageFromPath(file.path)
-    if (!C_LIKE_LANGUAGES.has(language)) continue
+    const language = file.language ?? classifyLanguageFromPath(file.path)
+    if (!isCLikeLanguage(language)) continue
+    cLikeFileSeen = true
     const resolved = await resolveSourceFile(sourceRoot, file.path)
     if (!resolved.filePath) {
       warnings.push(resolved.warning ?? `変更された C/C++ ファイルがワークスペース内で見つかりません: ${file.path}`)
@@ -125,7 +125,7 @@ export async function analyzeCppChanges(
     for (const candidate of detectRtForbidden(fileDiffLines, file.path)) rtForbiddenCandidates.push(candidate)
   }
 
-  if (changedSymbols.length === 0) warnings.push("VCS 差分から変更 C/C++ 関数を特定できませんでした。")
+  if (cLikeFileSeen && changedSymbols.length === 0) warnings.push("VCS 差分から変更 C/C++ 関数を特定できませんでした。")
 
   const summaryMarkdown = renderSummary(changedSymbols, defines, globals, callGraph, rtForbiddenCandidates, reviewInput)
   return {

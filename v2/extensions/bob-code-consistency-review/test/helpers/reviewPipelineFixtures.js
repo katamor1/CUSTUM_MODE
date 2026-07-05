@@ -11,6 +11,7 @@ const diffFixturePath = path.join(sampleRoot, "scaffold", "tests", "fixtures", "
 const bobOutputFixturePath = path.join(sampleRoot, "scaffold", "tests", "fixtures", "bob-output.valid.yaml")
 const aiMatrixRoot = path.join(sampleRoot, "examples", "ai-verification-matrix")
 const aiMatrixExpectedOutputPath = path.join(aiMatrixRoot, "bob-output.expected.sample.yaml")
+const multiLanguageRoot = path.join(sampleRoot, "examples", "multi-language-git-review")
 
 function createAiVerificationMatrixWorkspace() {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "bob-ai-matrix-"))
@@ -108,6 +109,22 @@ function createShiftJisMixedWorkspace() {
   return workspace
 }
 
+function createMultiLanguageGitReviewWorkspace() {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "bob-multilang-review-"))
+  copyFixtureTree(path.join(multiLanguageRoot, "fixtures", "workspace-common"), workspace)
+  copyFixtureTree(path.join(multiLanguageRoot, "fixtures", "baseline"), workspace)
+  git(workspace, "init", "-b", "main")
+  git(workspace, "config", "user.email", "bob-fixture@example.local")
+  git(workspace, "config", "user.name", "Bob Fixture")
+  git(workspace, "add", ".")
+  git(workspace, "commit", "-m", "baseline")
+  git(workspace, "switch", "-c", "feature/multi-language-git-review")
+  copyFixtureTree(path.join(multiLanguageRoot, "fixtures", "head"), workspace)
+  git(workspace, "add", ".")
+  git(workspace, "commit", "-m", "multi-language head")
+  return workspace
+}
+
 function writeShiftJis(filePath, text) {
   fs.writeFileSync(filePath, iconv.encode(text, "shift_jis"))
 }
@@ -128,6 +145,7 @@ module.exports = {
   aiMatrixRoot,
   bobOutputFixturePath,
   createAiVerificationMatrixWorkspace,
+  createMultiLanguageGitReviewWorkspace,
   createShiftJisMixedWorkspace,
   diffFixturePath,
   repoRoot,

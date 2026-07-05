@@ -93,11 +93,19 @@ test("kind-aware output resolver rejects absolute, escaped, and misplaced genera
     /reviewPackagePath must be under/
   )
   assert.throws(
+    () => resolveWorkspacePathForKind(workspaceRoot, ".bob-review/Bob-Output/review-package", "review-package-output"),
+    /reviewPackagePath must be under/
+  )
+  assert.throws(
     () => resolveWorkspacePathForKind(workspaceRoot, ".bob-review/review-package/bob-output.yaml", "bob-output"),
     /bobOutputPath must be under/
   )
   assert.throws(
     () => resolveWorkspacePathForKind(workspaceRoot, ".bob-review/traceability-catalog.json", "traceability-catalog"),
+    /traceabilityCatalogPath must be under/
+  )
+  assert.throws(
+    () => resolveWorkspacePathForKind(workspaceRoot, ".bob-trace/AI-Traceability-Draft/catalog.json", "traceability-catalog"),
     /traceabilityCatalogPath must be under/
   )
 })

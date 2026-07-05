@@ -58,6 +58,15 @@
           "type": "string",
           "minLength": 1
         },
+        "vcs": {
+          "type": "string",
+          "enum": ["git", "bazaar", "bzr"],
+          "default": "git"
+        },
+        "vcs_root": {
+          "type": "string",
+          "minLength": 1
+        },
         "ticket_ids": {
           "type": "array",
           "items": {
@@ -161,7 +170,26 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["c", "cpp", "h", "hpp"]
+            "enum": [
+              "c",
+              "cpp",
+              "h",
+              "hpp",
+              "typescript",
+              "javascript",
+              "python",
+              "csharp",
+              "java",
+              "go",
+              "rust",
+              "shell",
+              "sql",
+              "json",
+              "yaml",
+              "markdown",
+              "text",
+              "unknown"
+            ]
           },
           "uniqueItems": true
         }

@@ -19,14 +19,17 @@ extensions/bob-code-consistency-review/
     workspaceInitializer.ts
     workspaceResolver.ts
     analyzers/
+      codeChangeAnalyzer.ts
       cCppChangeAnalyzer.ts
       documentExtractor.ts
+      genericCodeEvidenceAnalyzer.ts
       traceabilityBuilder.ts
     core/
       bobOutputCapture.ts
       bobOutputValidator.ts
       fileSystem.ts
       gitDiffCollector.ts
+      languageClassifier.ts
       pipeline.ts
       reviewInputAiDraftProvider.ts
       reviewInputBuilder.ts
@@ -263,7 +266,7 @@ interface TraceabilityCatalog {
 1. `validateReviewInput(inputPath, workspaceRoot)` で YAML と artifact path を検証する。
 2. `collectGitDiff()` または Bazaar diff 収集を実行する。
 3. `extractDocuments()` で文書 evidence を抽出する。
-4. `analyzeCppChanges()` で C / C++ 変更を軽量解析する。
+4. `analyzeCodeChanges()` で C / C++ 専用解析と汎用コード evidence 生成を統合実行する。
 5. `buildTraceability()` で対応候補を作る。
 6. `buildReviewPackage()` で成果物を出力する。
 
@@ -285,16 +288,18 @@ interface TraceabilityCatalog {
 Git では次を実行する。
 
 ```text
-git diff --name-status <base> <head>
-git diff --numstat <base> <head>
-git diff --unified=80 <base> <head>
+git diff --find-renames --name-status <base> <head>
+git diff --find-renames --numstat <base> <head>
+git diff --find-renames --unified=80 <base> <head>
 ```
 
 `diffFixturePath` が指定された場合は Git を実行せず fixture JSON を読み込む。
 
 review input または option で Bazaar / bzr が指定された場合、`bzrPath` を使い、必ず `--no-aliases` を付けて差分を取得する。Bazaar 出力も `textEncoding` の decode 対象である。
 
-`DiffSummary` は base、head、files、unifiedDiff、warnings を持つ。`files` は path、status、additions、deletions、language、test file flag、interface candidate flag を持つ。
+`DiffSummary` は base、head、files、unifiedDiff、warnings を持つ。`files` は path、status、additions、deletions、language、test file flag、interface candidate flag を持つ。Git rename は `renamed` status として扱い、binary numstat は追加削除行数を未確定として警告に残す。
+
+`languageClassifier.ts` は拡張子から `c`、`cpp`、`h`、`hpp`、`typescript`、`javascript`、`python`、`csharp`、`java`、`go`、`rust`、`shell`、`sql`、`json`、`yaml`、`markdown`、`text`、`unknown` に分類する。`analysis_options.language` が未指定の場合は全対応言語を対象にし、指定された場合だけ変更ファイルをその言語集合に絞る。
 
 ## 16. Document Extractor 詳細
 
@@ -311,11 +316,19 @@ review input または option で Bazaar / bzr が指定された場合、`bzrPa
 
 Markdown は見出しごとに block 化する。`.docx` は `mammoth.convertToHtml()` と `cheerio` で heading、paragraph、table を抽出する。`.xlsx` は `xlsx` で workbook を読み、指定 sheets または全 sheets を走査する。
 
-## 17. C / C++ Change Analyzer 詳細
+## 17. Code Change Analyzer 詳細
+
+`analyzeCodeChanges()` は pipeline から呼ばれる唯一のコード解析入口である。C / C++ 系ファイルは `cCppChangeAnalyzer` へ渡し、その他の対応言語は `genericCodeEvidenceAnalyzer` へ渡す。C / C++ の header / define-only 変更で関数 evidence が生成されない場合も、変更 hunk が残っていれば汎用 fallback evidence を生成し、Bob が参照できる `SRC-*` を失わない。
+
+### 17.1 C / C++ Change Analyzer
 
 `c` / `cpp` / `h` / `hpp` の変更ファイルを対象とする。`analyzeCppChanges()` は unified diff から変更行と token を抽出し、source file を読み込み、正規表現ベースで関数範囲を検出する。変更行を含む関数を changed function とし、callee / direct caller、`#define`、global、RT 禁止処理候補、code slice、code evidence を生成する。
 
 関数検出は軽量な正規表現ベースであり、完全な C / C++ 意味解析ではない。
+
+### 17.2 Generic Code Evidence Analyzer
+
+`genericCodeEvidenceAnalyzer` は TypeScript、JavaScript、Python、C#、Java、Go、Rust、Shell、SQL、JSON、YAML、Markdown、text、unknown を対象に、unified diff の file / hunk 単位で `SRC-xxxx` evidence を生成する。詳細な AST 解析は行わず、path、language、status、hunk header、追加削除行、前後コンテキストを `code-slices/*.md` と `evidence-index.json` に残す。`changed-symbols.json` には file scope の汎用 symbol を出力し、traceability map と Bob 出力検証から参照できるようにする。
 
 ## 18. Traceability Builder 詳細
 
@@ -455,9 +468,12 @@ templates/.bob/workflows/code-consistency-review/WORKFLOW.md
 | `traceabilityPrepController` | action apply、model build、preview。 |
 | `traceabilityCommands` | AI draft prompt、draft text resolution、catalog 反映、review-input 生成。 |
 | `reviewInputValidator` | schema error、missing artifact。 |
-| `gitDiffCollector` | name-status / numstat parse、language 判定、fixture 利用、Bazaar mode。 |
+| `languageClassifier` | 拡張子分類、supported language enum、`analysis_options.language` filter。 |
+| `gitDiffCollector` | name-status / numstat parse、rename、binary numstat、language 判定、fixture 利用、Bazaar mode。 |
 | `documentExtractor` | Markdown / docx / xlsx 抽出、selector、evidence ID。 |
+| `codeChangeAnalyzer` | C / C++ 解析と汎用 evidence fallback の統合。 |
 | `cCppChangeAnalyzer` | function range、changed function、callee / caller、RT 禁止候補。 |
+| `genericCodeEvidenceAnalyzer` | 非 C/C++ diff hunk、file scope symbol、code slice 生成。 |
 | `traceabilityBuilder` | evidence と code symbol の対応候補。 |
 | `reviewPackageBuilder` | 生成ファイル、evidence-index、bob-input。 |
 | `bobOutputCapture` | fenced YAML、schema_version 開始、parse error。 |

@@ -26,6 +26,8 @@ review:
   purpose: "timeout 時に正しいエラーを返すようにする"
   base: main
   head: feature/fix-timeout
+  vcs: git
+  vcs_root: "."
   ticket_ids:
     - ISSUE-123
 
@@ -80,6 +82,8 @@ review_focus:
 | purpose | yes | string | 変更目的 |
 | base | yes | string | 比較元ブランチまたはコミット |
 | head | yes | string | 比較先ブランチまたはコミット |
+| vcs | no | enum | `git` / `bazaar` / `bzr`。未指定時は `git` |
+| vcs_root | no | string | workspace root と VCS root が異なる場合の相対または絶対 path |
 | ticket_ids | no | string[] | 関連チケット ID |
 | author_note | no | string | 作成者からの補足 |
 | out_of_scope | no | string[] | 今回対象外にする内容 |
@@ -139,6 +143,7 @@ analysis_options:
   language:
     - c
     - cpp
+    - typescript
 
 bob_options:
   prompt_template: consistency-review-v1
@@ -148,12 +153,15 @@ bob_options:
   forbid_final_approval: true
 ```
 
+`analysis_options.language` は任意である。未指定の場合は対応言語をフィルタせず、`c`、`cpp`、`h`、`hpp`、`typescript`、`javascript`、`python`、`csharp`、`java`、`go`、`rust`、`shell`、`sql`、`json`、`yaml`、`markdown`、`text`、`unknown` を対象にする。指定した場合だけ、変更ファイルの言語をその集合に絞る。
+
 ## 6. バリデーションルール
 
 ### 6.1 エラーにする条件
 
 - `schema_version` が未指定。
 - `review.base` または `review.head` が未指定。
+- `review.vcs` が `git` / `bazaar` / `bzr` 以外。
 - `review.change_type` が定義外。
 - `artifacts` が空。
 - 指定された文書パスが存在しない。
@@ -193,9 +201,9 @@ bob_options:
 }
 ```
 
-## 8. MVP で対応する範囲
+## 8. 現行 runtime で必須の範囲
 
-MVP では以下までを必須とする。
+現行 runtime では以下までを必須とする。
 
 - `schema_version`
 - `review.id`
@@ -210,4 +218,4 @@ MVP では以下までを必須とする。
 - `artifacts.test_spec`
 - `review_focus`
 
-`analysis_options` と `bob_options` は MVP では既定値でもよい。
+`review.vcs`、`review.vcs_root`、`analysis_options`、`bob_options` は既定値でもよい。`review.vcs` 未指定時は Git として扱う。

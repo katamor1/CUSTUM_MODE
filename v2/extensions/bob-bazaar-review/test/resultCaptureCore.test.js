@@ -54,7 +54,9 @@ test("explicit review-result text is validated and saved as JSON and Markdown", 
   const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-review-capture-"))
   const raw = JSON.stringify(validReviewResult("BRR-EXPLICIT-001"), null, 2)
 
-  const result = await captureReviewResultText(workspaceRoot, `\`\`\`json\n${raw}\n\`\`\``, "command argument")
+  const result = await captureReviewResultText(workspaceRoot, `\`\`\`json\n${raw}\n\`\`\``, "command argument", {
+    workflowRunId: "run-bazaar-001"
+  })
 
   assert.equal(result.status, "ok")
   assert.equal(result.source, "command argument")
@@ -62,8 +64,21 @@ test("explicit review-result text is validated and saved as JSON and Markdown", 
   assert.equal(result.valid, true)
   assert.match(result.jsonPath, /BRR-EXPLICIT-001\.json$/)
   assert.match(result.markdownPath, /BRR-EXPLICIT-001\.md$/)
+  assert.match(result.metadataPath, /BRR-EXPLICIT-001\.artifact-metadata\.json$/)
   assert.deepEqual(JSON.parse(await fs.readFile(result.jsonPath, "utf8")).review_id, "BRR-EXPLICIT-001")
   assert.match(await fs.readFile(result.markdownPath, "utf8"), /BRR-EXPLICIT-001/)
+  const metadata = JSON.parse(await fs.readFile(result.metadataPath, "utf8"))
+  assert.deepEqual(metadata, {
+    producer_extension: "bob-bazaar-review",
+    producer_version: "0.3.0",
+    workflow_run_id: "run-bazaar-001",
+    source_vcs: "bazaar",
+    source_revision: "2",
+    input_hash: metadata.input_hash,
+    contains_sensitive_context: true,
+    human_review_required: true
+  })
+  assert.match(metadata.input_hash, /^sha256:[a-f0-9]{64}$/)
 })
 
 test("saving a duplicate review-result preserves previous JSON and Markdown backups", async () => {

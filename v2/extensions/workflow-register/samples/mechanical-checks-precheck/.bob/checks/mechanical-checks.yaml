@@ -1,0 +1,30 @@
+schema_version: bob-mechanical-checks/v1
+project_id: mechanical-checks-sample
+profiles:
+  - id: pre-code-review
+    title: コードレビュー前チェック
+    gate: pre_code_review
+    checks:
+      - pre-code-review-smoke
+checks:
+  - id: pre-code-review-smoke
+    title: Node smoke 機械チェック
+    runner: node
+    command: tools/mechanical-checks/pre-code-review-smoke.js
+    cwd: .
+    args:
+      - "${BASE_REVISION}"
+      - "${TARGET_REVISION}"
+    timeout_seconds: 10
+    evidence:
+      collect:
+        - build/logs/**/*.log
+    parser:
+      type: regex
+      warning_pattern: "warning"
+      error_pattern: "error"
+    pass_condition:
+      max_new_warnings: 0
+      max_new_errors: 0
+    severity_on_fail: error
+    allow_failure: false

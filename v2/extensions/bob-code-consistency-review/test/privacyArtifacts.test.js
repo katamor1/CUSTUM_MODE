@@ -35,12 +35,27 @@ test("preprocessReview records generated artifact privacy notice in the review p
   fs.mkdirSync(outRoot, { recursive: true })
   const outDir = fs.mkdtempSync(path.join(outRoot, "review-privacy-"))
 
-  await preprocessReview({ workspaceRoot: repoRoot, inputPath: reviewInputPath, outDir: path.relative(repoRoot, outDir), diffFixturePath })
+  await preprocessReview({
+    workspaceRoot: repoRoot,
+    inputPath: reviewInputPath,
+    outDir: path.relative(repoRoot, outDir),
+    diffFixturePath,
+    workflowRunId: "run-privacy-001"
+  })
 
   const manifest = fs.readFileSync(path.join(outDir, "manifest.yaml"), "utf8")
   const checks = fs.readFileSync(path.join(outDir, "deterministic-checks.md"), "utf8")
   assert.match(manifest, /privacy_notice:/)
   assert.match(manifest, /\.bob-review\/ and \.bob-trace\/ai-traceability-draft\//)
+  assert.match(manifest, /artifact_metadata:/)
+  assert.match(manifest, /producer_extension: bob-code-consistency-review/)
+  assert.match(manifest, /producer_version: 0\.1\.0/)
+  assert.match(manifest, /workflow_run_id: run-privacy-001/)
+  assert.match(manifest, /source_vcs: git/)
+  assert.match(manifest, /source_revision: fixture-base\.\.fixture-head/)
+  assert.match(manifest, /input_hash: sha256:[a-f0-9]{64}/)
+  assert.match(manifest, /contains_sensitive_context: true/)
+  assert.match(manifest, /human_review_required: true/)
   assert.match(checks, /生成物は社内設計書・顧客仕様・ソースコード・raw diff を含む可能性があります/)
 })
 

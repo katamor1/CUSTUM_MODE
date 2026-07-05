@@ -7,6 +7,7 @@ const { test } = require("node:test")
 const { preprocessReview } = require("../out/core/pipeline")
 const {
   createAiVerificationMatrixWorkspace,
+  createMultiLanguageGitReviewWorkspace,
   createShiftJisMixedWorkspace,
   diffFixturePath,
   repoRoot,
@@ -116,4 +117,31 @@ test("preprocessReview preserves Shift-JIS review input, documents, source, and 
   assert.ok(changedSymbols.defines.includes("STATUS_AUDIT"))
   assert.ok(changedSymbols.rt_forbidden_candidates.some((candidate) => candidate.symbol === "printf"))
   assert.ok(changedSymbols.symbols.some((symbol) => symbol.name === "Payment_CheckStatus"))
+})
+
+test("preprocessReview builds generic code evidence for a multi-language git diff", async () => {
+  const workspace = createMultiLanguageGitReviewWorkspace()
+  const outDir = path.join(workspace, ".bob-review", "review-package")
+  const result = await preprocessReview({ workspaceRoot: workspace, inputPath: path.join(workspace, "review-input.yaml"), outDir: ".bob-review/review-package" })
+
+  const changedFiles = JSON.parse(fs.readFileSync(path.join(outDir, "changed-files.json"), "utf8"))
+  const changedSymbols = JSON.parse(fs.readFileSync(path.join(outDir, "changed-symbols.json"), "utf8"))
+  const evidenceIndex = JSON.parse(fs.readFileSync(path.join(outDir, "evidence-index.json"), "utf8"))
+  const bobInput = fs.readFileSync(path.join(outDir, "bob-input.md"), "utf8")
+
+  assert.equal(result.status, "ok")
+  assert.ok(changedFiles.files.some((file) => file.path === "src/payment review.ts" && file.language === "typescript"))
+  assert.ok(changedFiles.files.some((file) => file.path === "tools/reconcile.py" && file.language === "python"))
+  assert.ok(changedFiles.files.some((file) => file.path === "app/PaymentReview.java" && file.language === "java"))
+  assert.ok(changedSymbols.symbols.some((symbol) => symbol.file === "src/payment review.ts" && symbol.kind === "unknown"))
+  assert.ok(changedSymbols.symbols.some((symbol) => symbol.file === "tools/reconcile.py" && symbol.kind === "unknown"))
+  assert.ok(changedSymbols.symbols.some((symbol) => symbol.file === "app/PaymentReview.java" && symbol.kind === "unknown"))
+  assert.ok(evidenceIndex.evidence.some((item) => item.source === "src/payment review.ts" && item.evidence_id.startsWith("SRC-")))
+  assert.ok(evidenceIndex.evidence.some((item) => item.source === "tools/reconcile.py" && item.evidence_id.startsWith("SRC-")))
+  assert.ok(evidenceIndex.evidence.some((item) => item.source === "app/PaymentReview.java" && item.evidence_id.startsWith("SRC-")))
+  assert.match(bobInput, /汎用コード変更根拠/)
+  assert.match(bobInput, /typescript/)
+  assert.match(bobInput, /python/)
+  assert.match(bobInput, /java/)
+  assert.doesNotMatch(bobInput, /VCS 差分から変更 C\/C\+\+ 関数を特定できませんでした/)
 })

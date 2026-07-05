@@ -4,15 +4,15 @@
 
 この文書は、`bob_builtin_analyze` に含まれる主要3拡張機能について、中程度以下の AI が安全に読み書きしやすい単位へ分割する観点で見直した結果をまとめる。
 
-最終確認時点では、`workflow-register` の低リスク helper 分離、`bob-bazaar-review` の Bazaar review command / review-result validation command 分離、`bob-code-consistency-review` の traceability / review execution command 分離まで反映済みである。
+最終確認時点では、`workflow-register` の低リスク helper 分離と `StepRuntime` 分離、`bob-bazaar-review` の Bazaar review command / review-result validation command 分離、`bob-code-consistency-review` の traceability / review execution / review-input command 分離まで反映済みである。
 
 ## 対象拡張
 
 | 拡張 | 主な役割 | 現状評価 |
 |---|---|---|
-| `extensions/workflow-register` | `.bob/workflows/*/WORKFLOW.md` の登録、実行、step review、Bob連携 | parser / engine / reports / Bob API helper は分割済み。`bobWorkflowRunner.ts` の低リスク helper 分離を実施済み。次は `StepRuntime` の単独分離が候補。 |
+| `extensions/workflow-register` | `.bob/workflows/*/WORKFLOW.md` の登録、実行、step review、Bob連携 | parser / engine / reports / Bob API helper は分割済み。`bobStepRuntime.ts` に `StepRuntime` を分離済み。 |
 | `extensions/bob-bazaar-review` | Bazaar 差分・リビジョン範囲からレビュー packet を作成し Bob へ渡す | workflow-register bridge、Bazaar review command、review-result validation command を分離済み。`extension.ts` は command 登録と小さな orchestration に寄っている。 |
-| `extensions/bob-code-consistency-review` | 要求・設計・テスト仕様とコード変更の整合プレレビュー用 input / preprocess / output 検証 | command option / wizard / workflow provider / workspace initializer / traceability commands / review execution commands を分離済み。次は review-input command 群の分割が候補。 |
+| `extensions/bob-code-consistency-review` | 要求・設計・テスト仕様とコード変更の整合プレレビュー用 input / preprocess / output 検証 | command option / wizard / workflow provider / workspace initializer / traceability commands / review execution commands / review-input commands を分離済み。次は追加分割ではなく contract と成果物 metadata の drift 防止が対象。 |
 
 ## 1. workflow-register
 
@@ -36,40 +36,19 @@ Bob UI 実行 adapter である `src/bobWorkflowRunner.ts` から、比較的低
 
 既存の外部 import を壊さないよう、`bobWorkflowRunner.ts` から `createBobWorkflow` / `extractTaskWorkflowInputs` / `recoverResultTextFromSnapshots` を再 export している。
 
-### 現在 `bobWorkflowRunner.ts` に残る責務
+### 現在の Bob UI 実行責務
 
 - `BobWorkflowEngineRunner`
-- `StepRuntime`
+- `src/bobStepRuntime.ts` の `StepRuntime`
 - Bob task と `WorkflowEngine` の接続
 - Bob chat への step message / command result / agent output 同期
 - `WorkflowExecutionHooks` から task snapshot を保存する処理
 - manual completion 待ちと `task.setStepComplete()` の同期
 - result handoff 失敗時の復旧候補取得
 
-### 次に切る対象
+### 現在の次対象
 
-`StepRuntime` は VS Code UI、result handoff、guardrail、active step state に触るため、次 PR で単独分離する。
-
-推奨ファイル:
-
-```text
-src/bobStepRuntime.ts
-```
-
-含める候補:
-
-- `StepRuntime`
-- `captureHeldStepResult`
-- `getTaskMessageCount`
-
-注意点:
-
-- `validateCommandGuardrails`
-- `executeResultHandoff`
-- `vscode.window.showQuickPick`
-- `vscode.commands.executeCommand`
-
-に依存するため、最初から純粋関数として扱わない。
+`StepRuntime` は `src/bobStepRuntime.ts` へ分離済みである。次対象は追加分割ではなく、`docs/workflow-action-contracts-ja.md` で公開 API と provider ID を固定し、README / contract の drift 防止テストで古い記述が戻らないようにすることである。
 
 ## 2. bob-bazaar-review
 
@@ -239,19 +218,11 @@ preprocess / capture / validate / triage は `.bob-review` 成果物を読み書
 - `runRepairReviewInput`
 - `runExplainReviewInputDiagnostics`
 
-### 次に切る対象
+### 現在の次対象
 
-#### `reviewInputCommands.ts`
+#### contract / metadata drift 防止
 
-含める候補:
-
-- `runCreateReviewInput`
-- `runPrepareAiReviewInputDraft`
-- `runApplyAiReviewInputDraft`
-- `runRepairReviewInput`
-- `runExplainReviewInputDiagnostics`
-
-`runInitializeWorkspace` は `workspaceInitializer.ts` の薄い wrapper なので、`extension.ts` に残してもよい。さらに entry を薄くしたい場合のみ `workspaceCommands.ts` へ移す。
+`reviewInputCommands.ts` は `src/commands/reviewInputCommands.ts` へ分離済みである。次対象は追加 VSIX 分割や shared package 化ではなく、workflow action contract、成果物 metadata、README / 設計文書の現状同期を drift 防止テストで固定することである。
 
 ## 推奨実施順
 
@@ -262,9 +233,9 @@ preprocess / capture / validate / triage は `.bob-review` 成果物を読み書
 5. `workflow-register`: `bobApi.ts` / `reports.ts` 追加（実施済み）
 6. `bob-bazaar-review`: `bazaarReviewCommands.ts` / `reviewResultValidationCommand.ts` 分割（実施済み）
 7. `bob-code-consistency-review`: `workflowProviderRegistration.ts` / `workspaceInitializer.ts` / `traceabilityCommands.ts` / `reviewExecutionCommands.ts` 分割（実施済み）
-8. `bob-code-consistency-review`: `reviewInputCommands.ts`
-9. `workflow-register`: `bobStepRuntime.ts`
-10. `bob-bazaar-review`: 必要になった時点で provider / project rules / MCP command の小分割
+8. `bob-code-consistency-review`: `reviewInputCommands.ts`（実施済み）
+9. `workflow-register`: `bobStepRuntime.ts`（実施済み）
+10. 3拡張共通: workflow action contract と成果物 metadata contract の固定
 
 ## AI が扱いやすい粒度の目安
 

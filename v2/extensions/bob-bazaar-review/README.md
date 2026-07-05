@@ -110,7 +110,7 @@ GUI は次の `.bob` ファイルを確認します。
 
 この拡張は、`workflow-register` から呼び出される action provider を提供します。代表例は同梱ワークフロー `bazaar-project-rule-review` です。
 
-リファクタリング後は、workflow-register API 接続、workflow action input の解釈、capture option 変換を `src/workflowRegisterBridge.ts` に分離しています。revision / range review packet 作成は `src/bazaarReviewCommands.ts`、active editor の review-result JSON 検証は `src/reviewResultValidationCommand.ts` に分離済みです。`extension.ts` は command 登録、workflow provider 登録、project rules 読み込み、review packet 検索、MCP 設定、GUI 起動を中心に扱います。
+リファクタリング後は、workflow-register API 接続、workflow action input の解釈、capture option 変換を `src/workflow/workflowRegisterBridge.ts` に分離しています。revision / range review packet 作成は `src/bazaar/bazaarReviewCommands.ts`、active editor の review-result JSON 検証は `src/projectRules/reviewResultValidationCommand.ts` に分離済みです。`extension.ts` は command 登録、workflow provider 登録、project rules 読み込み、review packet 検索、MCP 設定、GUI 起動を中心に扱います。
 
 ### コンテキスト収集
 
@@ -184,9 +184,10 @@ Bob Bazaar Review: クリップボードからレビュー結果を保存
 ```text
 .bob/review/results/<review_id>.json
 .bob/review/results/<review_id>.md
+.bob/review/results/<review_id>.artifact-metadata.json
 ```
 
-Markdown は `renderReviewResultMarkdown` で生成され、件数、チェックリスト、evidence、findings を確認できます。検証に失敗した場合は、問題点を Markdown レポートとして表示します。
+Markdown は `renderReviewResultMarkdown` で生成され、件数、チェックリスト、evidence、findings を確認できます。metadata sidecar は review-result JSON 本体に混ぜず、producer、workflow run、VCS revision、input hash、人間確認要否を記録します。検証に失敗した場合は、問題点を Markdown レポートとして表示します。
 
 ## Phase 1 レビュー実績 record
 
@@ -294,15 +295,17 @@ Bob には JSON を先に返し、その後に Markdown checklist を出力す�
 | ファイル / ディレクトリ | 責務 |
 | --- | --- |
 | `src/extension.ts` | VS Code command 登録、workflow provider 登録、GUI 起動、MCP 設定、project rules 読み込み、review packet 検索。 |
-| `src/bazaarReviewCommands.ts` | `reviewRevision` / `reviewRange`、Bazaar client 作成、project rules section 付与、Bob context / clipboard / file 保存の選択 UI。 |
-| `src/reviewResultValidationCommand.ts` | active editor / selection からの review-result JSON 検証と Markdown report 表示。 |
-| `src/workflowRegisterBridge.ts` | workflow-register API 取得、action provider 型、workflow input helper、capture option 変換。 |
-| `src/reviewGui*` / `src/webview/*` | Bazaar review GUI と初期化 UI。 |
+| `src/bazaar/bazaarReviewCommands.ts` | `reviewRevision` / `reviewRange`、Bazaar client 作成、project rules section 付与、Bob context / clipboard / file 保存の選択 UI。 |
+| `src/projectRules/reviewResultValidationCommand.ts` | active editor / selection からの review-result JSON 検証と Markdown report 表示。 |
+| `src/workflow/workflowRegisterBridge.ts` | workflow-register API 取得、action provider 型、workflow input helper、capture option 変換。 |
+| `src/ui/` / `src/webview/` | Bazaar review GUI と初期化 UI。 |
+| `src/workflow/` | workflow-register provider 登録と workflow context 変換。 |
+| `src/workspace/` | workspace root、`.bob` 初期化、path helper。 |
 | `src/projectRules/*` | checklist / schema / review-result 検証と Markdown 変換。 |
 | `src/records/*` | Phase 1 review record、triage、campaign summary、record command。 |
 | `src/mcp/*` | 読み取り専用 Bazaar MCP server と project rules MCP tool。 |
 
-次の分割候補は、`extension.ts` に残る `registerWorkflowProviders`、`collectReviewContext`、`loadReviewRules`、`configureMcp`、`initProjectRules` です。Command ID と workflow action provider ID は互換性に直結するため、分割時も名称は変更しません。
+公開 contract は `docs/workflow-action-contracts-ja.md`、成果物 metadata contract は `docs/artifact-metadata-contract-ja.md` に固定しています。追加 VSIX 分割は行わず、Command ID と workflow action provider ID は変更しません。
 
 ## 設定
 
@@ -377,7 +380,7 @@ code --install-extension bob-bazaar-review-0.3.0.vsix
 
 ### VSIX サイズ
 
-`npm run package:policy` は VSIX サイズの上限を `200000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` は VSIX に同梱しません。
+`npm run package:policy` は VSIX サイズの上限を `350000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` は VSIX に同梱しません。
 
 ### 暗黙依存
 

@@ -1,7 +1,7 @@
-import * as path from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { readTextFile, resolveWorkspacePathStrict, toPosixPath } from "./fileSystem"
+import { classifyLanguageFromPath } from "./languageClassifier"
 import { decodeTextBuffer } from "./textEncoding"
 import { normalizeReviewProcessingLimits, truncateUtf8Text, type ReviewProcessingLimits } from "./limits"
 import type { DiffSummary } from "./diffTypes"
@@ -31,9 +31,9 @@ export async function collectGitDiff(reviewInput: ReviewInput, options: { worksp
 async function collectStandardGitDiff(reviewInput: ReviewInput, options: { workspaceRoot: string; vcsRoot: string; textEncoding?: string }): Promise<DiffSummary> {
   const base = await resolveGitRevision(reviewInput.review.base, options.vcsRoot, options.textEncoding)
   const head = await resolveGitRevision(reviewInput.review.head, options.vcsRoot, options.textEncoding)
-  const nameStatus = await runGitText(["diff", "--name-status", base, head], options.vcsRoot, 20 * 1024 * 1024, options.textEncoding)
-  const numstat = await runGitText(["diff", "--numstat", base, head], options.vcsRoot, 20 * 1024 * 1024, options.textEncoding)
-  const unifiedDiff = await runGitText(["diff", "--unified=80", base, head], options.vcsRoot, 50 * 1024 * 1024, options.textEncoding)
+  const nameStatus = await runGitText(["diff", "--find-renames", "--name-status", base, head], options.vcsRoot, 20 * 1024 * 1024, options.textEncoding)
+  const numstat = await runGitText(["diff", "--find-renames", "--numstat", base, head], options.vcsRoot, 20 * 1024 * 1024, options.textEncoding)
+  const unifiedDiff = await runGitText(["diff", "--find-renames", "--unified=80", base, head], options.vcsRoot, 50 * 1024 * 1024, options.textEncoding)
 
   const counts = parseNumstat(numstat)
   const files = nameStatus.split(/\r?\n/).flatMap((line) => {
@@ -148,13 +148,19 @@ function parseNumstat(text: string): Map<string, { additions: number; deletions:
     if (parts.length < 3) continue
     const additions = Number.parseInt(parts[0], 10)
     const deletions = Number.parseInt(parts[1], 10)
-    const filePath = parts[2]
+    const filePath = normalizeNumstatPath(parts.slice(2).join("\t"))
     result.set(toPosixPath(filePath), {
       additions: Number.isFinite(additions) ? additions : 0,
       deletions: Number.isFinite(deletions) ? deletions : 0
     })
   }
   return result
+}
+
+function normalizeNumstatPath(filePath: string): string {
+  const renamed = filePath.match(/^(.*)\{(.+?) => (.+?)\}(.*)$/)
+  if (!renamed) return filePath
+  return `${renamed[1]}${renamed[3]}${renamed[4]}`
 }
 
 function parseBazaarDiffFiles(text: string): DiffSummary["files"] {
@@ -252,10 +258,5 @@ function normalizeDiffPath(filePath: string): string {
 }
 
 export function languageFromPath(filePath: string): string {
-  const extension = path.extname(filePath).toLowerCase()
-  if (extension === ".c") return "c"
-  if ([".cc", ".cpp", ".cxx"].includes(extension)) return "cpp"
-  if (extension === ".h") return "h"
-  if ([".hh", ".hpp", ".hxx"].includes(extension)) return "hpp"
-  return extension.replace(/^\./, "") || "unknown"
+  return classifyLanguageFromPath(filePath)
 }

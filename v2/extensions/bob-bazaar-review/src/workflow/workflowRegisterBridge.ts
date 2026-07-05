@@ -104,6 +104,7 @@ function captureOptionsFromWorkflowContext(context: Record<string, unknown>): Ca
     expectedRuleIds: expectedRuleIdsFromState(workflowState),
     reviewResultSchema: reviewResultSchemaFromState(workflowState),
     workspaceRoot: stringInput(context.workflowRoot),
+    workflowRunId: stringInput(context.runId),
     workflowState
   }
 }

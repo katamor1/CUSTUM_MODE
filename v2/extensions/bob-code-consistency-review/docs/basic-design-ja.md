@@ -33,10 +33,11 @@
 - traceability sidecar catalog の読み込み、編集、検証、gate report 生成。
 - traceability AI draft 用 prompt の生成、AI draft JSON の catalog 反映。
 - traceability catalog からの `review-input.yaml` 生成。
-- Git 差分の収集。
+- Git 差分、rename、空白入り path、binary numstat、変更言語分類の収集。
 - review input で `review.vcs` が Bazaar / bzr の場合の Bazaar 差分取得。
 - Markdown / Word `.docx` / Excel `.xlsx` からの根拠抜粋。
 - C / C++ の軽量変更解析。
+- C / C++ 以外の対応言語に対する diff hunk 単位の汎用コード根拠生成。
 - traceability map の生成。
 - `review-package` の生成。
 - Bob 投入用 `bob-input.md` と prompt template の生成。
@@ -83,12 +84,14 @@ VS Code Extension Host
        ├─ core/
        │    ├─ reviewInputBuilder / Discovery / AiDraft / Diagnostics
        │    ├─ traceabilityCatalog / Store / Validation / PrepController
-       │    ├─ gitDiffCollector / pipeline / reviewPackageBuilder
+       │    ├─ languageClassifier / gitDiffCollector / pipeline / reviewPackageBuilder
        │    ├─ bobOutputCapture / bobOutputValidator
        │    └─ textEncoding / fileSystem / schemaLoader
        ├─ analyzers/
        │    ├─ documentExtractor
+       │    ├─ codeChangeAnalyzer
        │    ├─ cCppChangeAnalyzer
+       │    ├─ genericCodeEvidenceAnalyzer
        │    └─ traceabilityBuilder
        ├─ webview/traceabilityPrepWebview
        └─ triage/humanTriageHelper
@@ -115,10 +118,13 @@ workflow-register
 | Traceability Commands | AI draft、catalog 検証、Webview、review-input 生成 | `src/traceabilityCommands.ts` |
 | Traceability Prep Webview | domains / items / links / decisions / gate / preview 編集 UI | `src/webview/traceabilityPrepWebview.ts` |
 | Review Input Validator | `review-input.yaml` の schema 検証と関連文書存在確認 | `src/core/reviewInputValidator.ts` |
+| Language Classifier | 拡張子から review 対応言語を分類し、`analysis_options.language` filter と diff collector で共有する | `src/core/languageClassifier.ts` |
 | Git / Bazaar Diff Collector | 差分、変更ファイル、numstat、unified diff の収集 | `src/core/gitDiffCollector.ts` |
 | Text Encoding | UTF-8 / Shift-JIS / CP932 系 decode | `src/core/textEncoding.ts` |
 | Document Extractor | Markdown / docx / xlsx から根拠抜粋を生成 | `src/analyzers/documentExtractor.ts` |
+| Code Change Analyzer | C / C++ 深掘り解析と汎用コード根拠生成を統合する orchestrator | `src/analyzers/codeChangeAnalyzer.ts` |
 | C/C++ Change Analyzer | 変更関数、call graph 候補、define / global / RT 禁止候補の抽出 | `src/analyzers/cCppChangeAnalyzer.ts` |
+| Generic Code Evidence Analyzer | 詳細解析対象外の言語でも diff hunk 単位の `SRC-*` evidence と `code-slices/*.md` を生成 | `src/analyzers/genericCodeEvidenceAnalyzer.ts` |
 | Traceability Builder | 文書根拠とコード根拠の対応候補を作る | `src/analyzers/traceabilityBuilder.ts` |
 | Review Package Builder | review-package のファイル群と `bob-input.md` を生成 | `src/core/reviewPackageBuilder.ts` |
 | Bob Output Capture | Bob 出力 YAML を抽出して保存 | `src/core/bobOutputCapture.ts` |
@@ -145,6 +151,8 @@ workflow-register
 | `review_focus` | Bob に重点確認させる整合観点。 |
 | `analysis_options` | 解析深度、言語、台帳利用などのオプション。 |
 | `bob_options` | prompt template、output format、evidence 必須など。 |
+
+`analysis_options.language` は任意である。未指定の場合、C / C++、TypeScript、JavaScript、Python、C#、Java、Go、Rust、Shell、SQL、JSON、YAML、Markdown、text、unknown を含む全対応言語を対象にする。指定した場合だけ、その言語集合に変更ファイルをフィルタする。
 
 ### 7.2 ReviewInputDraft
 
@@ -181,7 +189,7 @@ status は `proposed`、`accepted`、`rejected`、`deprecated` である。`acce
 | `manifest.yaml` | package 作成情報、対象範囲、template ID、evidence 件数。 |
 | `input-normalized.json` | 検証済み `review-input.yaml` の正規化結果。 |
 | `changed-files.json` | VCS 差分から得た変更ファイル一覧。 |
-| `changed-symbols.json` | 変更関数、define、global、call graph、RT 候補。 |
+| `changed-symbols.json` | C / C++ の変更関数、define、global、call graph、RT 候補、および汎用言語のファイル単位シンボル。 |
 | `document-index.json` | documents と warning。 |
 | `evidence-index.json` | Bob 出力検証に使う evidence metadata。本文は含めない。 |
 | `traceability-map.json` | traceability rows と warning。 |
@@ -249,9 +257,9 @@ Bob 出力は YAML として扱い、既定では `.bob-review/bob-output/bob-ou
 `preprocessReview()` は次の順で処理する。
 
 1. `review-input.yaml` を検証する。
-2. Git または Bazaar diff を収集する。
+2. Git または Bazaar diff を収集し、変更ファイルの言語を分類する。
 3. 文書根拠を抽出する。
-4. C / C++ 変更を軽量解析する。
+4. `codeChangeAnalyzer` で C / C++ は軽量解析し、その他の対応言語は diff hunk 単位の汎用コード根拠を生成する。
 5. traceability map を作る。
 6. review-package を生成する。
 
@@ -354,9 +362,10 @@ templates/.bob/workflows/code-consistency-review/WORKFLOW.md
 - review-input wizard / discovery / builder / AI draft / diagnostics / repair を検証する。
 - traceability catalog、validation、gate report、Webview controller、AI draft 適用、review-input 生成を検証する。
 - `review-input.yaml` schema validation を検証する。
-- Git / Bazaar diff collector の changed files / language 判定を検証する。
+- language classifier と Git / Bazaar diff collector の changed files / language 判定を検証する。
 - Markdown / docx / xlsx の文書抽出を検証する。
 - C / C++ 変更解析の changed function / code evidence 生成を検証する。
+- 汎用コード根拠生成の hunk evidence / code-slices 生成を検証する。
 - `review-package` の生成ファイル一覧と内容を検証する。
 - Bob output capture の fenced YAML 抽出を検証する。
 - Bob output validator の schema / evidence 参照検証を検証する。

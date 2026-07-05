@@ -1,0 +1,12 @@
+schema_version: 1
+sample: multi-language-git-review
+expected:
+  - id: ML-GIT-001
+    outcome: ok
+    description: changed-files.json records TypeScript, Python, and Java language names.
+  - id: ML-GIT-002
+    outcome: ok
+    description: evidence-index.json contains SRC evidence for each changed non-C/C++ file.
+  - id: ML-GIT-003
+    outcome: ok
+    description: bob-input.md includes the generic code evidence summary.

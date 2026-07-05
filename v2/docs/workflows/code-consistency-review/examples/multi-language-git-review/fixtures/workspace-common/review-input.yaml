@@ -1,0 +1,51 @@
+schema_version: 1
+
+review:
+  id: REVIEW-MULTILANG-001
+  title: "複数言語 Git 差分の整合プレレビュー"
+  change_type: maintenance
+  purpose: "TypeScript、Python、Java の同一しきい値変更が要求と整合しているかを確認する。"
+  base: main
+  head: feature/multi-language-git-review
+  vcs: git
+  ticket_ids:
+    - TICKET-ML-001
+  author_note: "C/C++ 深掘り解析ではなく、汎用コード根拠の生成を確認する fixture。"
+
+artifacts:
+  requirements:
+    - path: docs/requirements-multilang.md
+      version: "1.0"
+      sections:
+        - REQ-ML-001
+  basic_design:
+    - path: docs/basic-design-multilang.md
+      version: "1.0"
+      sections:
+        - BD-ML-001
+  test_spec:
+    - path: docs/test-spec-multilang.md
+      version: "1.0"
+      cases:
+        - TC-ML-001
+
+review_focus:
+  - requirement-code-consistency
+  - design-code-consistency
+  - test-gap
+
+analysis_options:
+  include_callers: true
+  include_callees: true
+  include_global_access: true
+  include_struct_impact: true
+  include_ledgers: true
+  max_call_depth: 2
+  max_code_context_lines: 80
+
+bob_options:
+  prompt_template: consistency-review-v1
+  output_format: yaml
+  require_evidence: true
+  allow_questions: true
+  forbid_final_approval: true
