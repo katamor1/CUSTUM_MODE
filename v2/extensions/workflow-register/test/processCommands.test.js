@@ -76,6 +76,16 @@ test("process command metadata is activated, contributed, and registered", () =>
   }
 })
 
+test("process and template command registrations resolve workspace root from command input", () => {
+  const extensionSource = readSourceSet(["extensionWithAuthoring.ts"])
+
+  assert.match(extensionSource, /processCommandOptions\(input\)/)
+  assert.match(extensionSource, /templateCommandOptions\(input\)/)
+  assert.doesNotMatch(extensionSource, /validateCatalogCommand\(input, processCommandOptions\(\)\)/)
+  assert.doesNotMatch(extensionSource, /validateLibraryCommand\(input, templateCommandOptions\(\)\)/)
+  assert.match(extensionSource, /workspaceRootFromCommandInput/)
+})
+
 test("process command handlers validate catalog/input, collect evidence, write records, and summarize campaign metrics", async () => {
   const root = await commandWorkspace()
   const repoRoot = path.resolve(__dirname, "..", "..", "..")
@@ -140,4 +150,26 @@ test("process command handlers validate catalog/input, collect evidence, write r
   assert.equal(summary.status, "ok", summary.diagnostics.join("\n"))
   assert.equal(summary.summary.recordCount, 1)
   assert.deepEqual(summary.summary.statusCounts, { completed: 1 })
+})
+
+test("writeProcessRecordCommand normalizes manual approval decisions before validation", async () => {
+  const root = await commandWorkspace()
+
+  const record = await writeProcessRecordCommand({
+    record: {
+      schemaVersion: PROCESS_RECORD_SCHEMA_VERSION,
+      campaignId: "campaign-alpha",
+      runId: "run-approval",
+      workflowName: "process-common-review",
+      phase: "common",
+      status: "completed",
+      inputPath: "process-input.yaml",
+      artifactRoot: ".bob-process-runs/run-approval",
+      humanGate: { required: true, status: "approved" }
+    }
+  }, { workspaceRoot: root })
+
+  assert.equal(record.status, "ok", record.diagnostics.join("\n"))
+  const written = yaml.load(await fs.readFile(path.join(root, record.relativePath), "utf8"))
+  assert.equal(written.humanGate.status, "accepted")
 })

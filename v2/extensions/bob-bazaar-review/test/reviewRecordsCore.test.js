@@ -206,6 +206,22 @@ test("triage draft generation covers findings and failed checklist rules without
     }
   }
   assert.match(validateTriage(missingFindingTriage, reviewResult).join("\n"), /missing triage item.*F-001/)
+
+  const duplicateFindingTriage = {
+    ...triage,
+    items: [
+      triage.items[0],
+      { ...triage.items[0], reason: "duplicate item" },
+      triage.items[1]
+    ],
+    summary: {
+      accepted: 0,
+      rejected: 0,
+      needs_investigation: 3,
+      deferred: 0
+    }
+  }
+  assert.match(validateTriage(duplicateFindingTriage, reviewResult).join("\n"), /duplicate finding_id.*F-001/)
 })
 
 test("campaign summary aggregates valid records and exposes missing triage", async () => {
@@ -310,4 +326,81 @@ test("review packet artifacts are written under the campaign record and protect 
   assert.equal(await fs.readFile(second.packetPath, "utf8"), "# Packet v2\n")
   assert.equal(second.backupPaths.length, 1)
   assert.equal(await fs.readFile(second.backupPaths[0], "utf8"), "# Packet v1\n")
+})
+
+test("review record path segments reject Windows-reserved characters and device names", async () => {
+  const {
+    writeReviewPacketArtifact
+  } = require("../out/records/reviewRecordStore")
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-record-id-safety-"))
+
+  await assert.rejects(
+    () => writeReviewPacketArtifact(workspaceRoot, "campaign:bad", "review-1", "# Packet\n"),
+    /campaign_id must be a safe path segment/
+  )
+  await assert.rejects(
+    () => writeReviewPacketArtifact(workspaceRoot, "CON", "review-1", "# Packet\n"),
+    /campaign_id must be a safe path segment/
+  )
+  await assert.rejects(
+    () => writeReviewPacketArtifact(workspaceRoot, "campaign-1", "review.", "# Packet\n"),
+    /review_id must be a safe path segment/
+  )
+})
+
+test("review packet artifacts can be written to the record input path when customized", async () => {
+  const {
+    writeReviewPacketArtifactAtPath
+  } = require("../out/records/reviewRecordStore")
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-custom-packet-artifact-"))
+
+  const written = await writeReviewPacketArtifactAtPath(workspaceRoot, ".custom/campaign/review-packet.md", "# Custom Packet\n")
+
+  assert.equal(path.relative(workspaceRoot, written.packetPath), path.join(".custom", "campaign", "review-packet.md"))
+  assert.equal(await fs.readFile(written.packetPath, "utf8"), "# Custom Packet\n")
+  await assert.rejects(
+    () => writeReviewPacketArtifactAtPath(workspaceRoot, "../outside.md", "# Outside\n"),
+    /workspace-relative path escapes workspace/
+  )
+})
+
+test("review record command quality gate validates review-result schema by default", () => {
+  const {
+    buildReviewRecordQualityGate
+  } = require("../out/records/reviewRecordCommandCore")
+  const validReviewResult = {
+    review_id: "valid-review",
+    vcs: { type: "bazaar" },
+    checklist_results: [
+      {
+        rule_id: "RT-001",
+        title: "RT thread has no blocking I/O",
+        status: "pass",
+        severity: "error",
+        confidence: "high",
+        evidence: [{ summary: "checked the call path" }],
+        reason: "no blocking I/O was added"
+      }
+    ],
+    findings: [],
+    summary: {
+      pass: 1,
+      fail: 0,
+      unknown: 0,
+      not_applicable: 0,
+      blocked: 0
+    }
+  }
+  const invalidReviewResult = {
+    ...validReviewResult,
+    summary: {
+      ...validReviewResult.summary,
+      pass: 0
+    }
+  }
+
+  assert.equal(buildReviewRecordQualityGate(validReviewResult).schema_valid, true)
+  const invalidGate = buildReviewRecordQualityGate(invalidReviewResult)
+  assert.equal(invalidGate.schema_valid, false)
+  assert.equal(invalidGate.checklist_count_matches, false)
 })

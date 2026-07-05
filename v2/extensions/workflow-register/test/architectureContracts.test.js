@@ -55,3 +55,25 @@ test("workflow-register README is synchronized with the split runtime and task s
   assert.match(readme, /workflowRegister\.taskSnapshots\.includeMessages`\s*\|\s*`false`/)
   assert.match(readme, /既定では Bob chat messages を含めません/)
 })
+
+test("workflow-register docs cover template customization studio and snapshot defaults", () => {
+  const readme = fs.readFileSync(path.join(extensionRoot, "README.md"), "utf8")
+  const basicDesign = fs.readFileSync(path.join(extensionRoot, "docs", "basic-design-ja.md"), "utf8")
+  const detailedDesign = fs.readFileSync(path.join(extensionRoot, "docs", "detailed-design-ja.md"), "utf8")
+  const unitTestSpec = fs.readFileSync(path.join(extensionRoot, "docs", "unit-test-spec-ja.md"), "utf8")
+  const realMachineSpec = fs.readFileSync(path.join(extensionRoot, "docs", "real-machine-test-spec-ja.md"), "utf8")
+
+  for (const [name, text] of [
+    ["README", readme],
+    ["basic design", basicDesign],
+    ["detailed design", detailedDesign],
+    ["unit test spec", unitTestSpec],
+    ["real machine test spec", realMachineSpec]
+  ]) {
+    assert.match(text, /Template Customization Studio|テンプレートカスタマイズ Studio/, `${name} must document Template Customization Studio`)
+  }
+
+  assert.match(detailedDesign, /workflowRegister\.taskSnapshots\.includeMessages`\s*\|\s*`false`/)
+  assert.match(unitTestSpec, /WR-UT-036[\s\S]*WR-UT-039/)
+  assert.match(realMachineSpec, /WR-RT-036[\s\S]*bzr --no-aliases/)
+})

@@ -18,7 +18,14 @@ export async function resolveBobWorkspaceFolder(options: ResolveMarkerWorkspaceO
 }
 
 async function resolveMarkerWorkspaceFolder(marker: string, label: string, options: ResolveMarkerWorkspaceOptions): Promise<vscode.WorkspaceFolder | undefined> {
-  if (options.explicitRoot) return folderFromRoot(path.resolve(options.explicitRoot))
+  if (options.explicitRoot) {
+    const explicitRoot = path.resolve(options.explicitRoot)
+    if (await rootHasMarker(explicitRoot, marker)) return folderFromRoot(explicitRoot)
+    if (options.allowPick !== false) {
+      await vscode.window.showWarningMessage(`${label} 明示rootに ${marker} が見つかりません: ${explicitRoot}`)
+    }
+    return undefined
+  }
   if (options.workflowRoot && await rootHasMarker(options.workflowRoot, marker)) {
     return folderFromRoot(path.resolve(options.workflowRoot))
   }

@@ -1,7 +1,7 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import { dump, load } from "js-yaml"
-import { workspacePath } from "../process/processPaths"
+import { isPathInside, workspacePath } from "../process/processPaths"
 import {
   CUSTOMIZATION_SCHEMA_VERSION,
   PROJECT_PROFILE_SCHEMA_VERSION,
@@ -23,6 +23,7 @@ const TEMPLATE_LIBRARY_ROOT = ".bob/template-library"
 const STANDARD_TEMPLATE_ID = "process-code-precheck"
 const DEFAULT_CHECKLIST_PATH = ".bob/process/checklists/code-precheck.yaml"
 const DEFAULT_ARTIFACT_ROOT = ".bob-process-runs/{{run.id}}/code-precheck"
+const BAZAAR_PROMPT_SUPPLEMENT = "Bazaar 操作では bzr --no-aliases を使う。"
 
 export interface TemplateLibraryEntry {
   templatePath: string
@@ -100,6 +101,11 @@ export type TemplateStudioGenerateResult =
       status: "ok"
       workflowPath: string
       backupPath?: string
+      backupPaths: {
+        projectProfilePath?: string
+        customizationPath?: string
+        workflowPath?: string
+      }
     })
   | TemplateStudioWorkflowError
 
@@ -156,6 +162,7 @@ export async function listTemplateLibrary(workspaceRoot: string): Promise<Templa
 }
 
 export function createDefaultStudioModel(template: TemplateLibraryEntry): TemplateCustomizationStudioModel {
+  const vcsType = template.supportedVcs.includes("git") ? "git" : template.supportedVcs[0] ?? "none"
   return {
     templatePath: template.templatePath,
     templateId: template.templateId,
@@ -164,7 +171,7 @@ export function createDefaultStudioModel(template: TemplateLibraryEntry): Templa
     projectId: "sample-project",
     displayName: "Sample Project",
     targetLanguage: template.supportedLanguages[0] ?? "c_cpp",
-    vcsType: template.supportedVcs.includes("git") ? "git" : template.supportedVcs[0] ?? "none",
+    vcsType,
     vcsRoot: ".",
     checklistPath: defaultChecklistPath(template),
     artifactOutputRoot: DEFAULT_ARTIFACT_ROOT,
@@ -173,7 +180,7 @@ export function createDefaultStudioModel(template: TemplateLibraryEntry): Templa
     title: template.displayName,
     description: template.description,
     inputDefaults: { ...template.inputDefaults },
-    promptSupplement: "Bazaar 操作では bzr --no-aliases を使う。",
+    promptSupplement: defaultPromptSupplementForVcs(vcsType),
     requireHumanGate: true,
     stepReviewPauseAfter: "agentAndCommand"
   }
@@ -206,6 +213,7 @@ export function buildProjectProfileFromStudioModel(model: TemplateCustomizationS
 }
 
 export function buildCustomizationFromStudioModel(model: TemplateCustomizationStudioModel): WorkflowCustomization {
+  const promptSupplement = effectivePromptSupplement(model)
   return {
     schemaVersion: CUSTOMIZATION_SCHEMA_VERSION,
     customizationId: model.workflowName,
@@ -219,7 +227,7 @@ export function buildCustomizationFromStudioModel(model: TemplateCustomizationSt
       description: model.description,
       inputs: { defaults: { ...model.inputDefaults } },
       checklist: { path: model.checklistPath },
-      prompts: { supplement: model.promptSupplement },
+      prompts: promptSupplement ? { supplement: promptSupplement } : undefined,
       artifactOutputRoot: model.artifactOutputRoot,
       humanGate: {
         required: true,
@@ -301,13 +309,19 @@ export async function generateWorkflowFromStudioModel(
   const preview = await previewWorkflowFromStudioModel(workspaceRoot, model)
   if (preview.status !== "ok") return preview
   const workflowPath = preview.relativePath
-  const backupPath = await backupExistingWorkflow(workspaceRoot, workflowPath)
-  await Promise.all([
-    writeWorkspaceYaml(workspaceRoot, preview.projectProfilePath, preview.projectProfile),
-    writeWorkspaceYaml(workspaceRoot, preview.customizationPath, preview.customization),
-    writeWorkspaceText(workspaceRoot, workflowPath, preview.workflowMarkdown)
-  ])
-  return { ...preview, status: "ok", workflowPath, backupPath }
+  try {
+    const backupPaths = {
+      projectProfilePath: await backupExistingWorkspaceFile(workspaceRoot, preview.projectProfilePath),
+      customizationPath: await backupExistingWorkspaceFile(workspaceRoot, preview.customizationPath),
+      workflowPath: await backupExistingWorkspaceFile(workspaceRoot, workflowPath)
+    }
+    await writeWorkspaceYaml(workspaceRoot, preview.projectProfilePath, preview.projectProfile)
+    await writeWorkspaceYaml(workspaceRoot, preview.customizationPath, preview.customization)
+    await writeWorkspaceText(workspaceRoot, workflowPath, preview.workflowMarkdown)
+    return { ...preview, status: "ok", workflowPath, backupPath: backupPaths.workflowPath, backupPaths }
+  } catch (error) {
+    return { ...preview, status: "error", diagnostics: [...preview.diagnostics, errorMessage(error)], workflowMarkdown: preview.workflowMarkdown }
+  }
 }
 
 export async function writeWorkflowDiffPreviewFromStudioModel(
@@ -380,20 +394,47 @@ async function writeWorkspaceYaml(workspaceRoot: string, relativePath: string, v
 
 async function writeWorkspaceText(workspaceRoot: string, relativePath: string, text: string): Promise<void> {
   const absolutePath = workspacePath(workspaceRoot, relativePath)
+  await assertWorkspaceWriteTarget(workspaceRoot, relativePath, absolutePath)
   await fs.mkdir(path.dirname(absolutePath), { recursive: true })
   await fs.writeFile(absolutePath, text.endsWith("\n") ? text : `${text}\n`, "utf8")
 }
 
-async function backupExistingWorkflow(workspaceRoot: string, workflowPath: string): Promise<string | undefined> {
-  const absolutePath = workspacePath(workspaceRoot, workflowPath)
+async function backupExistingWorkspaceFile(workspaceRoot: string, relativePath: string): Promise<string | undefined> {
+  const absolutePath = workspacePath(workspaceRoot, relativePath)
+  await assertWorkspaceWriteTarget(workspaceRoot, relativePath, absolutePath)
   try {
     await fs.stat(absolutePath)
   } catch {
     return undefined
   }
-  const backupPath = `${path.posix.dirname(workflowPath)}/WORKFLOW.backup-${timestamp()}.md`
+  const parsed = path.posix.parse(relativePath.replace(/\\/g, "/"))
+  const backupPath = `${parsed.dir}/${parsed.name}.backup-${timestamp()}${parsed.ext}`
   await fs.copyFile(absolutePath, workspacePath(workspaceRoot, backupPath))
   return backupPath
+}
+
+async function assertWorkspaceWriteTarget(workspaceRoot: string, relativePath: string, absolutePath: string): Promise<void> {
+  const [workspaceRealPath, existingRealPath] = await Promise.all([
+    fs.realpath(workspaceRoot),
+    realpathNearestExisting(absolutePath)
+  ])
+  if (!isPathInside(workspaceRealPath, existingRealPath)) {
+    throw new Error(`${relativePath}: symlink escape outside workspace`)
+  }
+}
+
+async function realpathNearestExisting(absolutePath: string): Promise<string> {
+  let current = absolutePath
+  while (true) {
+    try {
+      await fs.lstat(current)
+      return fs.realpath(current)
+    } catch {
+      const parent = path.dirname(current)
+      if (parent === current) throw new Error(`no existing parent for ${absolutePath}`)
+      current = parent
+    }
+  }
 }
 
 async function findMetadataFiles(workspaceRoot: string, relativeRoot: string, diagnostics: string[]): Promise<string[]> {
@@ -497,6 +538,15 @@ function defaultChecklistPath(template: TemplateLibraryEntry): string {
     return String(template.inputDefaults[template.checklistPathInput])
   }
   return DEFAULT_CHECKLIST_PATH
+}
+
+function defaultPromptSupplementForVcs(vcsType: string): string {
+  return vcsType === "bazaar" || vcsType === "bzr" ? BAZAAR_PROMPT_SUPPLEMENT : ""
+}
+
+function effectivePromptSupplement(model: TemplateCustomizationStudioModel): string {
+  if (model.promptSupplement.trim()) return model.promptSupplement
+  return defaultPromptSupplementForVcs(model.vcsType)
 }
 
 function relativePath(workspaceRoot: string, absolutePath: string): string {

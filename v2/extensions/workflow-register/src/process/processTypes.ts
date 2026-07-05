@@ -1,3 +1,9 @@
+/**
+ * 工程 workflow の永続 artifact に書き込む schemaVersion 値。
+ *
+ * process catalog、input、record、review result は別 workflow や後続集計から参照されるため、
+ * 文字列値は実装詳細ではなく互換性契約として扱う。
+ */
 export const PROCESS_CATALOG_SCHEMA_VERSION = "bob-process-catalog/v1" as const
 export const PROCESS_INPUT_SCHEMA_VERSION = "bob-process-input/v1" as const
 export const PROCESS_RECORD_SCHEMA_VERSION = "bob-process-record/v1" as const
@@ -143,6 +149,12 @@ export interface ProcessInputOptions {
   textEncoding?: string
 }
 
+/**
+ * 工程 workflow の開始時に host が検証する入力 contract。
+ *
+ * VCS root、workspace path、破壊的操作の opt-in は信頼境界なので、workflow 本文や
+ * AI 生成テキストではなく、この構造を読んだ command 側で再検証する。
+ */
 export interface ProcessInput {
   schemaVersion: typeof PROCESS_INPUT_SCHEMA_VERSION
   campaignId: string
@@ -223,6 +235,12 @@ export interface ProcessRecordMetrics {
   failedChecks?: number
 }
 
+/**
+ * 工程実行後に保存する監査用 record。
+ *
+ * inputPath、artifactRoot、reviewResultPath は生成物の追跡点であり、humanGate は
+ * AI や自動検査ではなく人間確認が必要だったかを後段集計へ伝える契約である。
+ */
 export interface ProcessRecord {
   schemaVersion: typeof PROCESS_RECORD_SCHEMA_VERSION
   campaignId: string

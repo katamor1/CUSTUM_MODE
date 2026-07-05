@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import * as vscode from "vscode"
 import { resolveWorkspaceRelativePath } from "./reviewRecordPaths"
+import { buildReviewRecordQualityGate } from "./reviewRecordCommandCore"
 import {
   REVIEW_RECORD_SCHEMA_VERSION,
   type ReviewRecord,
@@ -13,7 +14,7 @@ import {
   readTriage,
   validateReviewRecord,
   writeCampaignSummaryArtifacts,
-  writeReviewPacketArtifact,
+  writeReviewPacketArtifactAtPath,
   writeReviewRecord,
   writeTriage
 } from "./reviewRecordStore"
@@ -69,11 +70,12 @@ export async function createReviewRecord(input: ReviewRecordCommandInput = {}): 
   const reviewPacketPath = input.reviewPacketPath ?? `.bob-review-records/campaigns/${campaignId}/records/${reviewId}/review-packet.md`
   const triageYamlPath = input.triageYamlPath ?? `.bob-review-records/campaigns/${campaignId}/records/${reviewId}/triage.yaml`
   if (typeof input.reviewPacketText === "string") {
-    await writeReviewPacketArtifact(workspaceRoot, campaignId, reviewId, input.reviewPacketText, {
+    await writeReviewPacketArtifactAtPath(workspaceRoot, reviewPacketPath, input.reviewPacketText, {
       backupExisting: input.backupExistingPacket ?? true
     })
   }
   const reviewResult = await readJsonArtifact(workspaceRoot, reviewResultJsonPath)
+  const qualityGate = buildReviewRecordQualityGate(reviewResult, input.schemaValid)
 
   const record: ReviewRecord = {
     schema_version: REVIEW_RECORD_SCHEMA_VERSION,
@@ -96,12 +98,7 @@ export async function createReviewRecord(input: ReviewRecordCommandInput = {}): 
       review_result_markdown: reviewResultMarkdownPath,
       triage_yaml: triageYamlPath
     },
-    quality_gate: {
-      schema_valid: input.schemaValid ?? true,
-      checklist_count_matches: true,
-      evidence_required_satisfied: true,
-      findings_have_rule_id: reviewFindingsHaveRuleIds(reviewResult)
-    },
+    quality_gate: qualityGate,
     metrics: input.metrics ?? defaultMetrics(reviewResult),
     notes: "notes.md"
   }
@@ -162,12 +159,27 @@ export async function generateReviewCampaignSummary(input: ReviewRecordCommandIn
 }
 
 async function resolveWorkspaceRoot(input: ReviewRecordCommandInput): Promise<string> {
-  if (input.workspaceRoot) return input.workspaceRoot
+  if (input.workspaceRoot) return validateOpenWorkspaceRoot(input.workspaceRoot)
   const folders = vscode.workspace.workspaceFolders ?? []
   if (folders.length === 1) return folders[0].uri.fsPath
   const picked = await vscode.window.showWorkspaceFolderPick({ placeHolder: "Bazaar review record の workspace を選択" })
   if (!picked) throw new Error("workspaceRoot is required")
   return picked.uri.fsPath
+}
+
+function validateOpenWorkspaceRoot(value: string): string {
+  const folders = vscode.workspace.workspaceFolders ?? []
+  if (folders.length === 0) throw new Error("workspaceRoot requires an open workspace folder")
+  const resolved = path.resolve(value)
+  if (!folders.some((folder) => isInsideOrSame(folder.uri.fsPath, resolved))) {
+    throw new Error(`workspaceRoot must be inside an open workspace folder: ${value}`)
+  }
+  return resolved
+}
+
+function isInsideOrSame(root: string, target: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(target))
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
 async function resolveCampaignId(input: ReviewRecordCommandInput): Promise<string> {
@@ -216,7 +228,6 @@ async function copyMissingOnly(sourceDir: string, targetDir: string): Promise<vo
     }
   }
 }
-
 async function showIssuesOrOk(issues: string[], okMessage: string): Promise<void> {
   if (issues.length === 0) {
     await vscode.window.showInformationMessage(okMessage)
@@ -256,9 +267,4 @@ function defaultMetrics(reviewResult: any): ReviewRecord["metrics"] {
     findings_needs_investigation: findingsTotal,
     findings_deferred: 0
   }
-}
-
-function reviewFindingsHaveRuleIds(reviewResult: any): boolean {
-  const findings = Array.isArray(reviewResult?.findings) ? reviewResult.findings : []
-  return findings.every((finding: any) => typeof finding?.rule_id === "string" && finding.rule_id.trim().length > 0)
 }

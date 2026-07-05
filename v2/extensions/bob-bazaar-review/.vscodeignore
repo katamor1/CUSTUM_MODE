@@ -1,5 +1,6 @@
 # Source and build configuration not needed at runtime
 src/**
+docs/**
 *.ts
 out/**/*.map
 *.tsbuildinfo

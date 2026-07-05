@@ -55,6 +55,35 @@ test("MCP server rejects cwd outside configured allowed roots", async () => {
   assert.match(message.result.content[0].text, /cwd is outside allowed roots/)
 })
 
+test("MCP server rejects cwd when allowed roots are not configured", async () => {
+  const serverPath = path.join(extensionRoot, "out", "mcp", "server.js")
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-mcp-unconfigured-"))
+  const request = {
+    jsonrpc: "2.0",
+    id: 9,
+    method: "tools/call",
+    params: {
+      name: "project_rules_get_checklist",
+      arguments: { cwd: workspaceRoot }
+    }
+  }
+
+  const child = spawnSync(process.execPath, [serverPath], {
+    input: mcpFrame(request),
+    env: {
+      ...process.env,
+      BOB_BAZAAR_ALLOWED_ROOTS: ""
+    },
+    timeout: 5000
+  })
+
+  assert.equal(child.status, 0, child.stderr.toString("utf8"))
+  const message = readMcpMessage(child.stdout)
+  assert.equal(message.id, 9)
+  assert.equal(message.result.isError, true)
+  assert.match(message.result.content[0].text, /allowed roots are not configured/)
+})
+
 test("MCP server accepts cwd inside configured allowed roots", async () => {
   const serverPath = path.join(extensionRoot, "out", "mcp", "server.js")
   const allowedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-bazaar-mcp-allowed-"))

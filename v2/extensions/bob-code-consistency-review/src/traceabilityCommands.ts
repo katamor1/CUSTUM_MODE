@@ -8,7 +8,7 @@ import {
   readTraceabilityCatalog,
   validateAndWriteTraceabilityGateReport
 } from "./core/traceabilityCatalogStore"
-import { pathExists, readTextFile, resolveWorkspacePathForKind } from "./core/fileSystem"
+import { pathExists, readTextFile, resolveWorkspacePathForKind, resolveWorkspacePathStrict } from "./core/fileSystem"
 import { writeReviewInputFromDraft } from "./core/reviewInputBuilder"
 import {
   absolute,
@@ -196,7 +196,7 @@ async function resolveTraceabilityDraftText(input: {
   ])
 
   for (const candidate of candidates) {
-    const filePath = resolveWorkspaceContainedPath(input.workspaceRoot, candidate)
+    const filePath = resolveTraceabilityDraftPath(input.workspaceRoot, candidate)
     if (!filePath) continue
     if (await pathExists(filePath)) return readTextFile(filePath, input.textEncoding)
   }
@@ -226,11 +226,12 @@ function cleanPathCandidate(value: string): string | undefined {
   return trimmed
 }
 
-function resolveWorkspaceContainedPath(workspaceRoot: string, value: string): string | undefined {
-  const resolved = path.resolve(path.isAbsolute(value) ? value : path.join(workspaceRoot, value))
-  const relative = path.relative(path.resolve(workspaceRoot), resolved)
-  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return resolved
-  return undefined
+function resolveTraceabilityDraftPath(workspaceRoot: string, value: string): string | undefined {
+  try {
+    return resolveWorkspacePathStrict(workspaceRoot, value, "traceabilityDraftJsonPath")
+  } catch {
+    return undefined
+  }
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {

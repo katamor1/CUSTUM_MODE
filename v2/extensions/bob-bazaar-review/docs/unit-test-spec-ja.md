@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本書は `extensions/bob-bazaar-review` の単体テスト仕様を定義する。対象は Bazaar CLI wrapper、文字コード、workspace 解決、review packet、workflow-register bridge、project rules、review-result capture、MCP server、直接レビュー command である。
+本書は `extensions/bob-bazaar-review` の単体テスト仕様を定義する。対象は Bazaar CLI wrapper、文字コード、workspace 解決、review packet、workflow-register bridge、project rules、review-result capture、MCP server、review record / triage / summary、直接レビュー command である。
 
 ## 2. テスト実行方式
 
@@ -210,6 +210,45 @@
 
 - 入力: 同梱 `WORKFLOW.md`。
 - 期待結果: `schemaVersion`、`requires`、`preflight`、`guardrails.requireApproval`、`artifacts`、`completion`、typed `steps` を含む。
+
+### BZR-UT-037 MCP Server: write tools は既定非公開
+
+- 入力: env 未指定の `tools/list` と `project_rules_init` call。
+- 期待結果: `project_rules_init` は `tools/list` に出ず、直接 call は `isError: true` になる。
+
+### BZR-UT-038 MCP Server: allowed roots 未設定 cwd を拒否する
+
+- 入力: `BOB_BAZAAR_ALLOWED_ROOTS` 未設定の Bazaar tool call。
+- 期待結果: `BOB_BAZAAR_ALLOWED_ROOTS` または `BOB_BAZAAR_ALLOW_UNRESTRICTED_CWD=1` を要求する error を返す。
+
+### BZR-UT-039 ReviewRecords: record / triage / summary を生成・検証する
+
+- 入力: 保存済み review-result、review packet、campaign template。
+- 期待結果: `record.yaml`、`triage.yaml`、`summary.json` / `summary.md` が作成され、invalid decision / missing triage / summary mismatch を検出する。
+
+### BZR-UT-040 ReviewRecords: path segment と artifact path を検証する
+
+- 入力: Windows 予約文字、device name、workspace escape を含む campaignId / reviewId / artifact path。
+- 期待結果: record / triage / packet artifact の保存前に拒否する。
+
+### BZR-UT-041 ResultCaptureCore: metadata producer version は package version と一致する
+
+- 入力: valid review-result。
+- 期待結果: artifact metadata の `producer_version` が `package.json` の version と一致する。
+
+## 4.1 実テスト対応表
+
+| 観点 | 主な testcase ID | 実テスト file |
+| --- | --- | --- |
+| Bazaar CLI wrapper / no-aliases / unsafe revision | BZR-UT-001〜005 | `test/bazaarClient.test.js`, `test/bazaarReviewCommandWiring.test.js` |
+| 文字コード | BZR-UT-006〜008 | `test/extensionEncoding.test.js` |
+| workspace root / explicit root | BZR-UT-009〜010 | `test/workspaceRoots.test.js`, `test/reviewGuiInitialTarget.test.js` |
+| review packet / revision info / direct commands | BZR-UT-011〜017 | `test/reviewLimits.test.js`, `test/reviewTarget.test.js`, `test/bazaarReviewCommandWiring.test.js` |
+| workflow bridge / provider / step completion | BZR-UT-018〜021、035〜036 | `test/workflowBridge.test.js`, `test/workflowProviderRegistration.test.js`, `test/workflowStepCompletion.test.js`, `test/workflowTemplate.test.js` |
+| project rules / capture / validation / result store | BZR-UT-022〜031、041 | `test/projectRulesPath.test.js`, `test/resultCaptureCore.test.js`, `test/reviewResultsStore.test.js`, `test/mcpServerVersion.test.js` |
+| MCP server / write tools / allowed roots | BZR-UT-032〜034、037〜038 | `test/mcpWriteTools.test.js`, `test/mcpAllowedRoots.test.js`, `test/mcpRequestLimit.test.js`, `test/mcpSourceLayout.test.js` |
+| review record / triage / campaign summary | BZR-UT-039〜040 | `test/reviewRecordsCore.test.js`, `test/reviewRecordCommands.test.js`, `test/phase1RecordTemplates.test.js` |
+| docs / source layout contracts | BZR-UT-036 | `test/architectureContracts.test.js`, `test/extensionSourceLayout.test.js` |
 
 ## 5. 非機能観点
 

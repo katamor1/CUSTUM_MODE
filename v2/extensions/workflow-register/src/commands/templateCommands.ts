@@ -25,6 +25,8 @@ export interface TemplateCommandOptions {
 }
 
 export interface TemplateCommandInput {
+  workspaceRoot?: string
+  workflowRoot?: string
   templatePath?: string
   projectProfilePath?: string
   customizationPath?: string

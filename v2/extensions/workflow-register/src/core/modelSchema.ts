@@ -1,5 +1,11 @@
 import type { ResultSinkDefinition } from "./modelSinks"
 
+/**
+ * WORKFLOW.md から読み込む schema version の互換性契約。
+ *
+ * legacy は既存定義の継続読み込み用であり、新しい runtime metadata を追加しても
+ * 既存 workflow の識別と移行判定に使う値はここで固定する。
+ */
 export type WorkflowSchemaVersion = "legacy" | "workflow-register/v1"
 export type WorkflowStepType = "command" | "agent" | "manual" | "result"
 export type WorkflowStepCompletionMode = "auto" | "manual"
@@ -57,6 +63,12 @@ export interface WorkflowGuardrailsDefinition {
   requireApproval?: WorkflowApprovalRuleDefinition[]
 }
 
+/**
+ * workflow step が生成した成果物の書き込み契約。
+ *
+ * artifact path はテンプレート展開後に result sink へ渡される生成物境界であり、
+ * 未解決テンプレートや workspace 外 path の扱いは writer 側の安全確認に委ねる。
+ */
 export interface WorkflowArtifactDefinition {
   id: string
   producedBy?: string
@@ -152,6 +164,12 @@ export interface WorkflowManualApprovalDefinition {
   message?: string
 }
 
+/**
+ * action provider へ渡す command step の公開境界。
+ *
+ * provider ID は workflow 定義と拡張側 provider 登録を結び付ける互換性契約である。
+ * args はテンプレート展開後に guardrails と承認判定へ渡されるため、型で信頼済みとは扱わない。
+ */
 export interface WorkflowActionDefinition {
   provider: string
   args?: unknown
@@ -215,6 +233,12 @@ export interface WorkflowTodoDefinition {
   raw?: string
 }
 
+/**
+ * parser と runtime が共有する正規化済み workflow 定義。
+ *
+ * schema 由来の値と runtime metadata を同じ object で運ぶため、ID、provider、
+ * artifact、guardrails の互換性境界を下位 engine が読み違えないようここで固定する。
+ */
 export interface CoreWorkflowDefinition {
   id: string
   logicalWorkflowId?: string

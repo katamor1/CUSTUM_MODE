@@ -83,6 +83,44 @@ test("buildReviewContextResult uses explicit workspace path when packet redacts 
   assert.equal(result.workspacePath, "C:\\repo\\trunk")
 })
 
+test("buildReviewContextResult parses GUI target metadata headings", () => {
+  const { buildReviewContextResult } = require("../out/workflow/workflowBridge")
+  const packet = [
+    "# Bazaar Revision Review Request",
+    "",
+    "VCS: Bazaar",
+    "Repository root: C:\\repo\\trunk",
+    "Review mode: revisionRange",
+    "Revision target: 120..125",
+    "",
+    "## Bazaar レビュー対象メタデータ",
+    "",
+    "- mode: revisionRange",
+    "- target: 120..125",
+    "- base_revision: 120",
+    "- target_revision: 125",
+    "",
+    "### メッセージ / status",
+    "",
+    "```text",
+    "Range status",
+    "```",
+    "",
+    "### 変更ファイル",
+    "",
+    "- modified: src/main.c",
+    "- added: docs/rules.md"
+  ].join("\n")
+
+  const result = buildReviewContextResult(packet)
+
+  assert.equal(result.message, "Range status")
+  assert.deepEqual(result.changedFiles, [
+    { path: "src/main.c", status: "modified" },
+    { path: "docs/rules.md", status: "added" }
+  ])
+})
+
 test("review packet state preserves the Bazaar repository root for workflow context", () => {
   const {
     REVIEW_PACKET_STATE_KEY,

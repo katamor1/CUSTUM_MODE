@@ -20,7 +20,19 @@ import {
 } from "./toolSchemas"
 import type { McpToolResponse, RequiredAllowedCwd, ToolDef } from "./toolTypes"
 
+/**
+ * MCP write tool を有効化する明示 opt-in の環境変数。
+ *
+ * read-only tool と違い project_rules_init は workspace に副作用を持つため、
+ * host 起動時の環境で許可された場合だけ実行可能にする。
+ */
 export const ENABLE_WRITE_TOOLS_ENV = "BOB_BAZAAR_ENABLE_WRITE_TOOLS"
+/**
+ * 副作用を持つ project rules MCP tool の allowlist。
+ *
+ * tool 追加時に read/write の境界を見落とさないよう、書き込み系は名前で固定して
+ * requireWriteToolEnabled を通過させる。
+ */
 export const PROJECT_RULES_WRITE_TOOL_NAMES = new Set(["project_rules_init"])
 
 const PROJECT_RULES_TOOL_NAMES = new Set([
@@ -77,6 +89,12 @@ export function isProjectRulesTool(name: string): boolean {
   return PROJECT_RULES_TOOL_NAMES.has(name)
 }
 
+/**
+ * Project rules 用 MCP tool を host 権限で実行する入口。
+ *
+ * cwd は requiredAllowedCwd で許可済み workspace に制限し、Webview や AI が渡した
+ * args は tool ごとの validator と write-tool opt-in を通すまで信頼しない。
+ */
 export async function callProjectRulesTool(
   name: string,
   args: unknown,

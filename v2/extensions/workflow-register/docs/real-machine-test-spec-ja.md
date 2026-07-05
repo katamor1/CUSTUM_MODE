@@ -431,6 +431,14 @@ Pause smoke test.
 | 手順 | 1. singleStep で途中 run を作る。<br>2. VS Code window を reload する。<br>3. 同じ workflow / inputs で次 step を実行する。 |
 | 期待結果 | 同じ runId の run が再利用される。Bob task handle が必要な active step は復元対象外であることを確認する。 |
 
+### WR-RT-036 Template Customization Studio
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | Template Customization Studio で標準テンプレートから workflow を生成し、安全な上書きと readiness を確認する。 |
+| 手順 | 1. `Bob Workflow: テンプレートカスタマイズ Studio` を実行する。<br>2. 標準テンプレートを選択し、`targetLanguage`、`vcs.type`、phase artifact root、input default を編集する。<br>3. Preview / Diff / Readiness を確認する。<br>4. Generate を実行する。<br>5. 既存生成物がある状態で再度 Generate を実行する。 |
+| 期待結果 | 候補は template metadata と一致し、number / boolean / null defaults が保持される。Bazaar profile だけ `bzr --no-aliases` prompt supplement を持ち、Git profile には混入しない。workspace 外または symlink escape の生成先は拒否される。既存 profile / customization / workflow は backup 後に上書きされる。 |
+
 ## 7. 実機テスト結果記録テンプレート
 
 | 項目 | 記入欄 |
@@ -453,7 +461,7 @@ Pause smoke test.
 - WR-RT-001 から WR-RT-010 までの smoke / basic flow が合格する。
 - run state、run control、task snapshot が設計どおりの保存先に作成される。
 - Bob UI 実行と standalone 実行で run state の矛盾がない。
-- Explorer view / Status Bar / Diagnostics / GUI Builder が実機上で操作可能である。
+- Explorer view / Status Bar / Diagnostics / GUI Builder / Template Customization Studio が実機上で操作可能である。
 - failed / held / reviewing / paused の復旧導線が Command Palette から利用できる。
 - Developer Tools Console に未処理例外が残らない。
 
@@ -463,5 +471,5 @@ Pause smoke test.
 | --- | --- |
 | P0 | 起動、workflow 登録、Bob UI full、singleStep、manual completion、run.json 保存。 |
 | P1 | step review、pause / resume、Run Control View、task snapshot、result handoff。 |
-| P2 | GUI Builder、AI authoring、multi-root、snapshot pruning / maxBytes。 |
+| P2 | GUI Builder、Template Customization Studio、AI authoring、multi-root、snapshot pruning / maxBytes。 |
 | P3 | sourceId / sourceName 設定、duplicate ID、OS 差分確認。 |

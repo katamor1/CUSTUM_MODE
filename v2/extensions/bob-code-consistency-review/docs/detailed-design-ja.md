@@ -108,6 +108,12 @@ extensions/bob-code-consistency-review/
 | `bobCodeConsistency.triagePath` | `.bob-review/human-triage` | 人間 triage 出力先。 |
 | `bobCodeConsistency.bzrPath` | `bzr` | review input が Bazaar / bzr の場合に使う Bazaar 実行ファイル。 |
 | `bobCodeConsistency.textEncoding` | `auto` | 入力文書、C/C++ ソース、Git/Bazaar 差分 stdout、fixture の読み取り文字コード。 |
+| `bobCodeConsistency.maxDocumentBytes` | `5242880` | 1 文書あたりの読み取り上限。Markdown は上限まで読み、docx / xlsx は上限超過時に抽出を中止する。 |
+| `bobCodeConsistency.maxWorkbookSheets` | `20` | xlsx 抽出で処理する最大 sheet 数。 |
+| `bobCodeConsistency.maxRowsPerSheet` | `500` | xlsx 抽出で 1 sheet あたり処理する最大 data row 数。 |
+| `bobCodeConsistency.maxExcerptBytesPerDocument` | `65536` | 1 evidence excerpt あたりの最大 UTF-8 bytes。超過時は warning とともに切り詰める。 |
+| `bobCodeConsistency.maxRawDiffBytes` | `1048576` | review-package と Bob input に含める raw unified diff の最大 UTF-8 bytes。 |
+| `bobCodeConsistency.maxBobInputBytes` | `2097152` | 生成する `bob-input.md` の最大 UTF-8 bytes。 |
 
 workflow や他拡張から呼ぶ場合は、同名 option を `args` / `inputs` / workflow context で渡せる。明示 option は設定値より優先する。
 
@@ -314,7 +320,7 @@ review input または option で Bazaar / bzr が指定された場合、`bzrPa
 | `ledgers` | `ledger` | `LEDGER` |
 | `tickets` | `ticket` | `TICKET` |
 
-Markdown は見出しごとに block 化する。`.docx` は `mammoth.convertToHtml()` と `cheerio` で heading、paragraph、table を抽出する。`.xlsx` は `xlsx` で workbook を読み、指定 sheets または全 sheets を走査する。
+Markdown は見出しごとに block 化する。`.docx` は `mammoth.convertToHtml()` と `cheerio` で heading、paragraph、table を抽出する。`.xlsx` は `read-excel-file` で workbook を読み、指定 sheets または全 sheets を走査する。既知脆弱性のある `xlsx` package には依存しない。
 
 ## 17. Code Change Analyzer 詳細
 

@@ -13,6 +13,8 @@ export interface ProcessCommandOptions {
 }
 
 export interface ProcessCommandInput {
+  workspaceRoot?: string
+  workflowRoot?: string
   catalogPath?: string
   inputPath?: string
   evidenceIndexPath?: string
@@ -101,7 +103,7 @@ export async function writeProcessRecordCommand(
   options: ProcessCommandOptions
 ): Promise<ProcessCommandResult> {
   return runProcessCommand(async () => {
-    const record = input.record ?? (await readWorkspaceData(options.workspaceRoot, requiredPath(input.recordPath, "recordPath"))).data
+    const record = normalizeRecordForWrite(input.record ?? (await readWorkspaceData(options.workspaceRoot, requiredPath(input.recordPath, "recordPath"))).data)
     const written = await writeProcessRecord(options.workspaceRoot, record)
     return ok({
       absolutePath: written.absolutePath,
@@ -166,4 +168,21 @@ function ok(extra: Record<string, unknown>): ProcessCommandResult {
 
 function error(diagnostics: string[]): ProcessCommandResult {
   return { status: "error", diagnostics, message: diagnostics.join("; ") }
+}
+
+function normalizeRecordForWrite(record: unknown): unknown {
+  if (!isRecord(record) || !isRecord(record.humanGate)) return record
+  const status = record.humanGate.status
+  if (status !== "approved") return record
+  return {
+    ...record,
+    humanGate: {
+      ...record.humanGate,
+      status: "accepted"
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

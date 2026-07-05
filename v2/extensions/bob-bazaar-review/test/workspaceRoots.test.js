@@ -87,6 +87,20 @@ test("Bazaar workspace resolver falls back to a single top folder when no .bzr m
   assert.equal(resolved.uri.fsPath, workspace)
 })
 
+test("Bazaar workspace resolver rejects explicit roots without the requested marker", async () => {
+  const root = await tempRoot()
+  const explicitRoot = path.join(root, "not-bazaar")
+  await fs.mkdir(explicitRoot, { recursive: true })
+
+  const { resolveBazaarWorkspaceFolder } = loadBazaarResolver({
+    workspaceFolders: []
+  })
+
+  const resolved = await resolveBazaarWorkspaceFolder({ explicitRoot, allowPick: false })
+
+  assert.equal(resolved, undefined)
+})
+
 function loadBazaarResolver({ workspaceFolders, showQuickPick = async () => undefined }) {
   const modulePath = require.resolve("../out/workspace/workspaceResolver.js")
   delete require.cache[modulePath]

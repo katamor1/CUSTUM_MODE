@@ -8,6 +8,8 @@ import {
 } from "./revisionInfo"
 import type { TargetMode } from "../ui/reviewGuiTypes"
 
+const TARGET_MODES = new Set<string>(["singleRevision", "revisionRange", "workingTreeSinceRevision"])
+
 export interface TargetRequest {
   mode: TargetMode
   revision?: string
@@ -51,9 +53,13 @@ export function parseTargetRequest(message: any): TargetRequest {
 }
 
 export function validateTargetRequest(request: TargetRequest): void {
+  if (!TARGET_MODES.has(String(request.mode))) throw new Error(`Unsupported review mode: ${request.mode}`)
   if (request.mode === "singleRevision" && !request.revision) throw new Error("リビジョンは必須です。")
   if (request.mode === "revisionRange" && (!request.baseRevision || !request.targetRevision)) {
     throw new Error("基準リビジョンと比較先リビジョンは必須です。")
+  }
+  if (request.mode === "workingTreeSinceRevision" && request.targetRevision) {
+    throw new Error("作業ツリーレビューでは比較先リビジョンを指定できません。")
   }
 }
 
@@ -106,29 +112,33 @@ export async function prepareTarget(
     }
   }
 
-  const topRevision = request.baseRevision ?? await client.revno(root)
-  const [diff, status] = await Promise.all([
-    client.diffWorkingTree(root, topRevision),
-    client.status(root).catch(() => undefined)
-  ])
-  const entries = parseChangedFileEntries(diff.stdout)
-  return {
-    root,
-    diff,
-    info: {
-      mode: "workingTreeSinceRevision",
-      targetLabel: `${topRevision}..作業ツリー`,
-      baseRevision: topRevision,
-      targetRevision: "作業ツリー",
-      author: "作業ツリー",
-      committer: "作業ツリー",
-      timestamp: "未コミット",
-      message: status?.stdout?.trim() || `リビジョン ${topRevision} 以降の未コミット変更`,
-      changedFileCount: entries.length,
-      changedFiles: entries.map((entry) => entry.path),
-      changedFileEntries: entries
+  if (request.mode === "workingTreeSinceRevision") {
+    const topRevision = request.baseRevision ?? await client.revno(root)
+    const [diff, status] = await Promise.all([
+      client.diffWorkingTree(root, topRevision),
+      client.status(root).catch(() => undefined)
+    ])
+    const entries = parseChangedFileEntries(diff.stdout)
+    return {
+      root,
+      diff,
+      info: {
+        mode: "workingTreeSinceRevision",
+        targetLabel: `${topRevision}..作業ツリー`,
+        baseRevision: topRevision,
+        targetRevision: "作業ツリー",
+        author: "作業ツリー",
+        committer: "作業ツリー",
+        timestamp: "未コミット",
+        message: status?.stdout?.trim() || `リビジョン ${topRevision} 以降の未コミット変更`,
+        changedFileCount: entries.length,
+        changedFiles: entries.map((entry) => entry.path),
+        changedFileEntries: entries
+      }
     }
   }
+
+  throw new Error(`Unsupported review mode: ${request.mode}`)
 }
 
 export function buildTargetMetadataSection(info: TargetInfo): string {

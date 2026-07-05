@@ -4,13 +4,15 @@ import * as path from "node:path"
 import { formatError, McpStdioReader, respond, respondError } from "./jsonRpc"
 import type { JsonRpcMessage } from "./jsonRpc"
 import { createMcpToolRegistry } from "./tools"
+import { EXTENSION_NAME, EXTENSION_VERSION } from "../shared/extensionMetadata"
 
-const SERVER_VERSION = "0.3.0"
 const DEFAULT_MAX_REQUEST_BYTES = 1024 * 1024
 const MAX_REQUEST_BYTES = readPositiveIntegerEnv("BOB_BAZAAR_MCP_MAX_REQUEST_BYTES", DEFAULT_MAX_REQUEST_BYTES)
 const ALLOWED_ROOTS_ENV = "BOB_BAZAAR_ALLOWED_ROOTS"
+const ALLOW_UNRESTRICTED_CWD_ENV = "BOB_BAZAAR_ALLOW_UNRESTRICTED_CWD"
 const ENABLE_WRITE_TOOLS_ENV = "BOB_BAZAAR_ENABLE_WRITE_TOOLS"
 const allowedRootInputs = readPathListEnv(ALLOWED_ROOTS_ENV)
+const allowUnrestrictedCwd = process.env[ALLOW_UNRESTRICTED_CWD_ENV] === "1"
 let allowedRootsPromise: Promise<string[]> | undefined
 
 const tools = createMcpToolRegistry({
@@ -25,7 +27,7 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
       respond(message.id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "bob-bazaar-review", version: SERVER_VERSION }
+        serverInfo: { name: EXTENSION_NAME, version: EXTENSION_VERSION }
       })
       return
     }
@@ -40,7 +42,8 @@ async function handleMessage(message: JsonRpcMessage): Promise<void> {
     }
 
     if (message.method === "tools/call") {
-      const result = await tools.callTool(message.params?.name, message.params?.arguments ?? {})
+      const call = parseToolCallParams(message.params)
+      const result = await tools.callTool(call.name, call.arguments)
       respond(message.id, result)
       return
     }
@@ -62,8 +65,28 @@ async function requiredAllowedCwd(args: unknown, name: string): Promise<string> 
   return assertAllowedCwd(value)
 }
 
+function parseToolCallParams(params: unknown): { name: string; arguments: unknown } {
+  if (!isRecord(params)) {
+    throw new Error("tools/call params must be an object")
+  }
+  if (typeof params.name !== "string" || !params.name.trim()) {
+    throw new Error("Missing required tools/call string parameter: name")
+  }
+  return {
+    name: params.name,
+    arguments: params.arguments ?? {}
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
 async function assertAllowedCwd(cwd: string): Promise<string> {
-  if (allowedRootInputs.length === 0) return cwd
+  if (allowedRootInputs.length === 0) {
+    if (allowUnrestrictedCwd) return fs.realpath(cwd)
+    throw new Error(`allowed roots are not configured; set ${ALLOWED_ROOTS_ENV} or ${ALLOW_UNRESTRICTED_CWD_ENV}=1`)
+  }
 
   // MCP tool の cwd はエージェント入力なので、realpath 後に明示許可 root 配下だけへ閉じ込める。
   const resolvedCwd = await fs.realpath(cwd)

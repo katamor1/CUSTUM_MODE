@@ -6,7 +6,7 @@ const path = require("node:path")
 const test = require("node:test")
 
 const { captureBobOutput } = require("../out/core/bobOutputCapture")
-const { resolveWorkspacePathForKind } = require("../out/core/fileSystem")
+const { resolveWorkspacePathForKind, resolveWorkspacePathStrict } = require("../out/core/fileSystem")
 const { preprocessReview } = require("../out/core/pipeline")
 const { discoverReviewInputCandidates } = require("../out/core/reviewInputDiscovery")
 const { validateReviewInput } = require("../out/core/reviewInputValidator")
@@ -110,6 +110,27 @@ test("kind-aware output resolver rejects absolute, escaped, and misplaced genera
   )
 })
 
+test("kind-aware output resolver accepts custom workspace-relative generated artifact paths", async () => {
+  const workspaceRoot = await makeWorkspace()
+
+  assert.equal(
+    path.relative(workspaceRoot, resolveWorkspacePathForKind(workspaceRoot, ".custom/review-package", "review-package-output")),
+    path.join(".custom", "review-package")
+  )
+  assert.equal(
+    path.relative(workspaceRoot, resolveWorkspacePathForKind(workspaceRoot, ".custom/bob-output.yaml", "bob-output")),
+    path.join(".custom", "bob-output.yaml")
+  )
+  assert.equal(
+    path.relative(workspaceRoot, resolveWorkspacePathForKind(workspaceRoot, ".custom/human-triage", "human-triage-output")),
+    path.join(".custom", "human-triage")
+  )
+  assert.equal(
+    path.relative(workspaceRoot, resolveWorkspacePathForKind(workspaceRoot, ".custom/traceability-catalog.json", "traceability-catalog")),
+    path.join(".custom", "traceability-catalog.json")
+  )
+})
+
 test("kind-aware output resolver rejects symlink escapes", async (t) => {
   const workspaceRoot = await makeWorkspace()
   const outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-path-boundary-symlink-"))
@@ -130,6 +151,29 @@ test("kind-aware output resolver rejects symlink escapes", async (t) => {
   assert.throws(
     () => resolveWorkspacePathForKind(workspaceRoot, ".bob-review/review-package", "review-package-output"),
     /reviewPackagePath resolves outside workspace/
+  )
+})
+
+test("strict workspace resolver rejects symlink escapes for read paths", async (t) => {
+  const workspaceRoot = await makeWorkspace()
+  const outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), "bob-path-boundary-strict-symlink-"))
+  await fs.writeFile(path.join(outsideRoot, "ai-draft.json"), "{}\n", "utf8")
+  await fs.mkdir(path.join(workspaceRoot, ".bob-trace"), { recursive: true })
+  const linkPath = path.join(workspaceRoot, ".bob-trace", "ai-traceability-draft")
+
+  try {
+    await fs.symlink(outsideRoot, linkPath, "junction")
+  } catch (error) {
+    if (error && ["EPERM", "EACCES", "EINVAL"].includes(error.code)) {
+      t.skip(`symlink creation is unavailable: ${error.code}`)
+      return
+    }
+    throw error
+  }
+
+  assert.throws(
+    () => resolveWorkspacePathStrict(workspaceRoot, ".bob-trace/ai-traceability-draft/ai-draft.json", "traceabilityDraftJsonPath"),
+    /traceabilityDraftJsonPath resolves outside workspace/
   )
 })
 

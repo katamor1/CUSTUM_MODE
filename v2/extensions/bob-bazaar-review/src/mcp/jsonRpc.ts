@@ -2,9 +2,9 @@ export interface JsonRpcMessage {
   jsonrpc?: "2.0"
   id?: string | number | null
   method?: string
-  params?: any
-  result?: any
-  error?: any
+  params?: unknown
+  result?: unknown
+  error?: unknown
 }
 
 export function respond(id: JsonRpcMessage["id"], result: unknown): void {

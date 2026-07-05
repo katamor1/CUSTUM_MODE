@@ -240,11 +240,13 @@ commit, push, pull, update, revert, merge, resolve
 
 | ツール | 用途 |
 | --- | --- |
-| `project_rules_init` | 既定の `.bob/review` 規約ファイルを作成する。 |
+| `project_rules_init` | 既定の `.bob/review` 規約ファイルを作成する。既定では非公開の write tool。 |
 | `project_rules_get_checklist` | project checklist JSON を返す。 |
 | `project_rules_get_schema` | review-result JSON schema を返す。 |
 | `project_rules_validate_review_result` | 正規化 review-result JSON を検証する。 |
 | `project_rules_render_markdown` | 正規化 review-result JSON を Markdown checklist に変換する。 |
+
+`project_rules_init` は `BOB_BAZAAR_ENABLE_WRITE_TOOLS=1` を明示した MCP server でのみ `tools/list` に出ます。既定状態では直接 call しても `isError: true` になり、`.bob/review` へは書き込みません。Bazaar / result 取得 tools も `BOB_BAZAAR_ALLOWED_ROOTS` の内側だけを受け付け、手動起動で allowed roots を省略する場合は `BOB_BAZAAR_ALLOW_UNRESTRICTED_CWD=1` が必要です。
 
 ## プロジェクト規約ファイル
 
@@ -380,7 +382,7 @@ code --install-extension bob-bazaar-review-0.3.0.vsix
 
 ### VSIX サイズ
 
-`npm run package:policy` は VSIX サイズの上限を `350000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` は VSIX に同梱しません。
+`npm run package:policy` は VSIX サイズの上限を `350000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` と開発用の `docs/**` は VSIX に同梱しません。
 
 ### 暗黙依存
 
@@ -394,12 +396,14 @@ code --install-extension bob-bazaar-review-0.3.0.vsix
 npm ci
 npm run dependency:policy
 npm run architecture:policy
+npm run unused:policy
 npm run unused:report
 npm run artifact:policy
 npm run audit:prod
 npm test
 npm run package
 npm run package:policy
+npm run package:metrics
 ```
 
 ### Trusted Workspace
@@ -407,6 +411,8 @@ npm run package:policy
 `bobBazaar.bzrPath` の workspace override は Trusted Workspace のときだけ利用します。MCP tool は allowed root の内側だけを受け付け、`.bob/mcp.json` と `.bob/review` は選択された Bob workspace 配下へ書き込みます。
 
 ## 関連ドキュメント
+
+以下はソースリポジトリ上の関連ドキュメントです。VSIX には同梱しません。
 
 - `docs/README-ja.md`
 - `docs/workflow-authoring-guide-ja.md`

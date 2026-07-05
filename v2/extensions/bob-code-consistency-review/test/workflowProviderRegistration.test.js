@@ -65,7 +65,8 @@ test("traceability apply command can recover draft JSON from linked workflow out
   assert.match(source, /ai-draft\.json/)
   assert.match(source, /ai-draft-output\.json/)
   assert.match(source, /readTextFile/)
-  assert.match(source, /resolveWorkspaceContainedPath/)
+  assert.match(source, /resolveTraceabilityDraftPath/)
+  assert.match(source, /resolveWorkspacePathStrict/)
 })
 
 test("Bob workflow template uses command providers instead of manual CLI instructions", () => {

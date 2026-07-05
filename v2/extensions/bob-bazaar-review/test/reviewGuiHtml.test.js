@@ -15,3 +15,15 @@ const { createNonce, renderHtml } = require("../out/ui/reviewGuiHtml")
   assert.equal(cspNonce, scriptNonce)
   assert.equal(Buffer.from(cspNonce, "base64").length, 16)
 })
+
+test("review GUI omits range target revision outside revision range mode", () => {
+  const { renderReviewGuiScript } = require("../out/ui/reviewGuiHtmlAssets")
+
+  const script = renderReviewGuiScript("nonce", "{}")
+
+  assert.match(
+    script,
+    /mode === "revisionRange"[\s\S]*\? \{ targetRevision: \$\("targetRevision"\)\.value\.trim\(\) \}[\s\S]*: \{\}/
+  )
+  assert.doesNotMatch(script, /targetRevision: \$\("targetRevision"\)\.value\.trim\(\)\s*[\r\n]+\s*\}/)
+})

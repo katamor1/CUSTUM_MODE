@@ -11,6 +11,9 @@ export interface RenderTemplateCustomizationStudioHtmlOptions {
 }
 
 export function renderTemplateCustomizationStudioHtml(options: RenderTemplateCustomizationStudioHtmlOptions): string {
+  const selectedTemplate = options.templates.find((template) => template.templatePath === options.model.templatePath) ?? options.templates[0]
+  const supportedLanguages = selectedTemplate?.supportedLanguages?.length ? selectedTemplate.supportedLanguages : [options.model.targetLanguage]
+  const supportedVcs = selectedTemplate?.supportedVcs?.length ? selectedTemplate.supportedVcs : [options.model.vcsType]
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -64,13 +67,13 @@ ${renderTemplateCustomizationStudioStyles()}
       <div><label for="displayName">displayName</label><input id="displayName" value="${attribute(options.model.displayName)}"></div>
     </div>
     <div class="row">
-      <div><label for="targetLanguage">targetLanguage</label>${renderSelect("targetLanguage", ["c_cpp", "csharp", "java", "javascript_typescript", "python", "sql", "docs", "other"], options.model.targetLanguage)}</div>
-      <div><label for="vcsType">vcs.type</label>${renderSelect("vcsType", ["git", "bazaar", "bzr", "none"], options.model.vcsType)}</div>
+      <div><label for="targetLanguage">targetLanguage</label>${renderSelect("targetLanguage", supportedLanguages, options.model.targetLanguage)}</div>
+      <div><label for="vcsType">vcs.type</label>${renderSelect("vcsType", supportedVcs, options.model.vcsType)}</div>
     </div>
     <label for="vcsRoot">vcs.root</label><input id="vcsRoot" value="${attribute(options.model.vcsRoot)}">
     <div class="muted">Bazaar / bzr の profile は <code>vcs.noAliases: true</code> を保存し、操作は <code>bzr --no-aliases</code> を使います。</div>
     <label for="checklistPath">checklist path</label><input id="checklistPath" value="${attribute(options.model.checklistPath)}">
-    <label for="artifactOutputRoot">artifact output root</label><input id="artifactOutputRoot" value="${attribute(options.model.artifactOutputRoot)}">
+    <label for="artifactOutputRoot">phase artifact root</label><input id="artifactOutputRoot" value="${attribute(options.model.artifactOutputRoot)}">
     <label for="uatEvidencePath">UAT evidence path</label><input id="uatEvidencePath" value="${attribute(options.model.uatEvidencePath)}">
 
     <h2>Workflow Customization</h2>
@@ -118,8 +121,8 @@ ${renderTemplateCustomizationStudioStyles()}
 </section>
 </main>
 <script nonce="${options.nonce}">
-const initialTemplates = ${JSON.stringify(options.templates)};
-const initialModel = ${JSON.stringify(options.model)};
+const initialTemplates = ${jsonForScript(options.templates)};
+const initialModel = ${jsonForScript(options.model)};
 ${renderTemplateCustomizationStudioClientScript()}
 </script>
 </body>
@@ -141,9 +144,18 @@ function renderTemplateList(templates: TemplateLibraryEntry[], selectedPath: str
 function renderInputDefaults(inputDefaults: Record<string, string | number | boolean | null>): string {
   const entries = Object.entries(inputDefaults)
   if (entries.length === 0) return `<div class="muted">このテンプレートに既定値編集対象の input はありません。</div>`
-  return entries.map(([key, value]) =>
-    `<div><label for="input-default-${attribute(key)}">${escapeHtml(key)}</label><input id="input-default-${attribute(key)}" data-input-default="${attribute(key)}" value="${attribute(String(value ?? ""))}"></div>`
-  ).join("")
+  return entries.map(([key, value]) => renderInputDefault(key, value)).join("")
+}
+
+function renderInputDefault(key: string, value: string | number | boolean | null): string {
+  const valueType = value === null ? "null" : typeof value
+  const id = `input-default-${attribute(key)}`
+  const data = `data-input-default="${attribute(key)}" data-input-default-type="${attribute(valueType)}"`
+  if (typeof value === "boolean") {
+    return `<div><label for="${id}">${escapeHtml(key)}</label><select id="${id}" ${data}><option value="true"${value ? " selected" : ""}>true</option><option value="false"${value ? "" : " selected"}>false</option></select></div>`
+  }
+  const inputType = typeof value === "number" ? ` type="number"` : ""
+  return `<div><label for="${id}">${escapeHtml(key)}</label><input id="${id}"${inputType} ${data} value="${attribute(String(value ?? ""))}"></div>`
 }
 
 function renderSelect(id: string, values: string[], selected: string): string {
@@ -163,4 +175,13 @@ function escapeHtml(value: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
+}
+
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/&/g, "\\u0026")
+    .replace(/</g, "\\u003C")
+    .replace(/>/g, "\\u003E")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029")
 }

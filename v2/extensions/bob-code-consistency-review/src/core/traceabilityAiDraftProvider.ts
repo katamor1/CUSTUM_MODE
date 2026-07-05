@@ -80,6 +80,12 @@ type RawTraceabilityCatalog = {
   decisions: unknown[]
 }
 
+/**
+ * workspace 内の文書候補と差分から AI traceability draft 用 prompt を生成する。
+ *
+ * AI に渡すのは候補作成のための context までであり、catalog の承認状態や
+ * workspace 外 path の採用可否は後続の host 側検証に残す。
+ */
 export async function prepareAiTraceabilityDraftPrompt(input: PrepareAiTraceabilityDraftPromptInput): Promise<PrepareAiTraceabilityDraftPromptResult> {
   const warnings: string[] = []
   const outputDir = resolveWorkspacePathForKind(input.workspaceRoot, input.outputDir, "traceability-ai-draft-output")
@@ -112,6 +118,12 @@ export async function prepareAiTraceabilityDraftPrompt(input: PrepareAiTraceabil
   return { status: "ok", promptPath, prompt, warnings }
 }
 
+/**
+ * AI が返した traceability draft を host 側で検証し catalog へ取り込む。
+ *
+ * AI 出力は提案データとして扱い、承認済み状態や既存 catalog の人間判断を直接変更しない。
+ * catalog 書き込み時の backup と path 検証も Webview ではなく host が担う。
+ */
 export async function applyAiTraceabilityDraft(input: ApplyAiTraceabilityDraftInput): Promise<ApplyAiTraceabilityDraftResult> {
   const warnings: string[] = []
   let draft: TraceabilityCatalog
@@ -137,6 +149,12 @@ export async function applyAiTraceabilityDraft(input: ApplyAiTraceabilityDraftIn
   return okApplyResult(write, merged.catalog, [...warnings, ...merged.warnings])
 }
 
+/**
+ * AI draft JSON を catalog 候補へ正規化する境界。
+ *
+ * accepted / rejected / deprecated は人間の判断結果なので、AI がそれらの状態や
+ * 承認済み endpoint を作った場合は canonicalize せず error にする。
+ */
 export function parseAiTraceabilityDraft(text: string): TraceabilityCatalog {
   const parsed = JSON.parse(extractSingleJsonObjectText(text, { label: "AI traceability draft JSON text" })) as unknown
   if (!isRecord(parsed)) throw new Error("top-level value must be an object")
@@ -168,6 +186,12 @@ export function parseAiTraceabilityDraft(text: string): TraceabilityCatalog {
   }
 }
 
+/**
+ * AI draft を既存 catalog に統合する。
+ *
+ * 既存の accepted/rejected/deprecated は人間確認済みの責務境界なので、
+ * 同じ key の候補が AI draft に含まれても上書きしない。
+ */
 export function mergeAiTraceabilityDraft(existing: TraceabilityCatalog, draft: TraceabilityCatalog): MergeAiTraceabilityDraftResult {
   const warnings: string[] = []
   // 既存の accepted/rejected/deprecated は人間の判断結果なので、AI draft の同一 key では上書きしない。

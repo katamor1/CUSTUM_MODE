@@ -20,6 +20,9 @@ import {
   runPrepareAiTraceabilityDraft,
   runValidateTraceabilityCatalog
 } from "./traceabilityCommands"
+import { openConsistencyHumanTriageGui } from "./webview/consistencyHumanTriage"
+import { openConsistencyResultCaptureGui } from "./webview/consistencyResultCapture"
+import { openConsistencyReviewWizard } from "./webview/consistencyReviewWizard"
 import { registerWorkflowProviders } from "./workflowProviderRegistration"
 
 /**
@@ -32,6 +35,18 @@ import { registerWorkflowProviders } from "./workflowProviderRegistration"
  */
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "bobCodeConsistency.openReviewWizard",
+      () => openConsistencyReviewWizard(context)
+    ),
+    vscode.commands.registerCommand(
+      "bobCodeConsistency.openResultCaptureGui",
+      () => openConsistencyResultCaptureGui(context)
+    ),
+    vscode.commands.registerCommand(
+      "bobCodeConsistency.openHumanTriageGui",
+      () => openConsistencyHumanTriageGui(context)
+    ),
     vscode.commands.registerCommand(
       "bobCodeConsistency.initializeWorkspace",
       (options?: unknown) => runInitializeWorkspace(context, options)

@@ -19,6 +19,8 @@
   "activationEvents": [
     "onStartupFinished",
     "onView:workflowRegister.runs",
+    "onView:workflowRegister.operationHub",
+    "onCommand:workflowRegister.openOperationHub",
     "onCommand:workflowRegister.reload",
     "onCommand:workflowRegister.inspect",
     "onCommand:workflowRegister.completeCurrentStep",
@@ -69,6 +71,7 @@
   "main": "./out/extensionWithAuthoring.js",
   "contributes": {
     "commands": [
+      { "command": "workflowRegister.openOperationHub", "title": "Operation Hub を開く", "category": "Bob Workflow" },
       { "command": "workflowRegister.reload", "title": "ファイルを再読み込み", "category": "Bob Workflow" },
       { "command": "workflowRegister.inspect", "title": "登録状態を確認", "category": "Bob Workflow" },
       { "command": "workflowRegister.completeCurrentStep", "title": "現在のステップを完了", "category": "Bob Workflow" },
@@ -118,6 +121,10 @@
     ],
     "views": {
       "explorer": [
+        {
+          "id": "workflowRegister.operationHub",
+          "name": "Bob Operation Hub"
+        },
         {
           "id": "workflowRegister.runs",
           "name": "Bob Workflow Runs"
@@ -178,6 +185,7 @@
     },
     "menus": {
       "commandPalette": [
+        { "command": "workflowRegister.openOperationHub" },
         { "command": "workflowRegister.reload" },
         { "command": "workflowRegister.inspect" },
         { "command": "workflowRegister.completeCurrentStep" },
@@ -226,6 +234,11 @@
         { "command": "bobTemplate.openCustomizationStudio" }
       ],
       "view/title": [
+        {
+          "command": "workflowRegister.openOperationHub",
+          "when": "view == workflowRegister.operationHub",
+          "group": "navigation"
+        },
         {
           "command": "workflowRegister.refreshRunsView",
           "when": "view == workflowRegister.runs",

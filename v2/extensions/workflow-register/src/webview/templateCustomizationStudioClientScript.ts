@@ -1,6 +1,7 @@
 export function renderTemplateCustomizationStudioClientScript(): string {
   return String.raw`
 const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : { postMessage: function(message) { console.log(message); } };
+const BAZAAR_PROMPT_SUPPLEMENT = 'Bazaar 操作では bzr --no-aliases を使う。';
 let activeTab = 'library';
 let templates = Array.isArray(initialTemplates) ? initialTemplates.slice() : [];
 let selectedTemplatePath = initialModel && initialModel.templatePath ? initialModel.templatePath : '';
@@ -16,7 +17,7 @@ function post(type, extra) {
 function currentModel() {
   const defaults = {};
   document.querySelectorAll('[data-input-default]').forEach(function(input) {
-    defaults[input.getAttribute('data-input-default')] = input.value;
+    defaults[input.getAttribute('data-input-default')] = readInputDefaultValue(input);
   });
   return {
     templatePath: $('templatePath').value,
@@ -39,6 +40,17 @@ function currentModel() {
     requireHumanGate: true,
     stepReviewPauseAfter: $('stepReviewPauseAfter').value
   };
+}
+
+function readInputDefaultValue(input) {
+  const type = input.getAttribute('data-input-default-type') || 'string';
+  if (type === 'number') {
+    const value = Number(input.value);
+    return Number.isFinite(value) ? value : input.value;
+  }
+  if (type === 'boolean') return input.value === 'true';
+  if (type === 'null') return input.value === '' ? null : input.value;
+  return input.value;
 }
 
 function setTab(name) {
@@ -143,6 +155,16 @@ document.addEventListener('click', function(event) {
   if (action === 'check-readiness') post('checkReadiness', { model: currentModel() });
   if (action === 'open-readiness-report') post('openReadinessReport');
   if (action === 'show-workflow-diff') post('showWorkflowDiff', { model: currentModel() });
+});
+
+document.addEventListener('change', function(event) {
+  if (!event.target || event.target.id !== 'vcsType') return;
+  const prompt = $('promptSupplement');
+  if (!prompt) return;
+  const current = prompt.value.trim();
+  if (current && current !== BAZAAR_PROMPT_SUPPLEMENT) return;
+  const nextVcs = event.target.value;
+  prompt.value = (nextVcs === 'bazaar' || nextVcs === 'bzr') ? BAZAAR_PROMPT_SUPPLEMENT : '';
 });
 
 window.addEventListener('message', function(event) {

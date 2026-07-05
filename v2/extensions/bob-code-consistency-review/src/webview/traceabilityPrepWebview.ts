@@ -13,7 +13,8 @@ import {
 import type { TraceabilityCatalog } from "../core/traceabilityCatalog"
 import {
   renderTraceabilityPrepClientScript,
-  renderTraceabilityPrepStyles
+  renderTraceabilityPrepStyles,
+  serializeTraceabilityPrepInitialModel
 } from "./traceabilityPrepWebviewAssets"
 
 export interface OpenTraceabilityPrepWebviewOptions {
@@ -125,7 +126,7 @@ async function saveTraceabilityPrepCatalog(
 }
 
 function renderTraceabilityPrepHtml(cspSource: string, model: TraceabilityPrepModel, nonce: string): string {
-  const initialJson = JSON.stringify(model).replace(/</g, "\\u003c")
+  const initialJson = serializeTraceabilityPrepInitialModel(model)
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>

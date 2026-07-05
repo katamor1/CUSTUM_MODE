@@ -11,7 +11,7 @@
 | 実行コマンド | `npm run compile && node --test test/*.test.js` |
 | 対象成果物 | `out/` 配下へ compile された JavaScript |
 | テストランナー | Node.js built-in test runner |
-| 外部依存 | VS Code API、workflow-register、Git / Bazaar CLI は mock / stub 化する |
+| 外部依存 | VS Code API、workflow-register、Bazaar CLI は mock / stub 化する。Git collector は fixture / stub に加えて一時 Git repository で実コマンド経路も検証する。 |
 | ファイル I/O | `fs.mkdtemp()` で一時 workspace を作成し、`.bob-review` / `.bob-trace` / `.bob` を検証する |
 
 ## 3. 共通テストデータ
@@ -182,6 +182,16 @@
 - 入力: Webview save message。
 - 期待結果: `writeTraceabilityCatalog` と `validateAndWriteTraceabilityGateReport` が呼ばれ、saved message が post される。
 
+### CCR-UT-029A TraceabilityPrepWebviewAssets: CSP-safe な client script を生成する
+
+- 入力: traceability prep 初期 model。
+- 期待結果: inline event handler を使わず、`data-action` と `addEventListener` で操作を dispatch する。
+
+### CCR-UT-029B TraceabilityPrepWebviewAssets: 初期 JSON を script-safe に埋め込む
+
+- 入力: `</script>` を含む domain / item text。
+- 期待結果: 初期 JSON 内の `<` が `\u003c` に escape され、script tag を終端しない。
+
 ### CCR-UT-030 ReviewInputValidator: valid input を読み込む
 
 - 入力: artifact path が存在する valid YAML。
@@ -327,10 +337,23 @@
 - 入力: 同梱 `WORKFLOW.md`。
 - 期待結果: `schemaVersion`、`requires`、`guardrails.requireApproval`、`inputs`、`tools`、`artifacts`、`completion`、typed `steps` を含む。
 
+## 4.1 実テスト対応表
+
+| 観点 | 主な testcase ID | 実テスト file |
+| --- | --- | --- |
+| workflow provider 登録と option allowlist | CCR-UT-051、CCR-UT-052、CCR-UT-053 | `test/workflowProviderRegistration.test.js`, `test/workflowOptions.test.js`, `test/workflowUserOptions.test.js` |
+| Traceability Prep model / action | CCR-UT-028 | `test/traceabilityPrepController.test.js` |
+| Traceability Prep Webview shell | CCR-UT-029 | `test/traceabilityPrepWebview.test.js` |
+| Traceability Prep client script / escaping | CCR-UT-029A、CCR-UT-029B | `test/traceabilityPrepWebviewAssets.test.js` |
+| Git / Bazaar 差分 collector | CCR-UT-032、CCR-UT-033、CCR-UT-034、CCR-UT-034B | `test/vcsValidation.test.js`, `test/reviewPipeline.test.js` |
+| 文書抽出と xlsx dependency | CCR-UT-035、CCR-UT-036、CCR-UT-037 | `test/documentExtraction.test.js`, `test/dependencyPolicy.test.js`, `test/heavyDependencyLoading.test.js` |
+| processing limit / truncation | CCR-UT-042、CCR-UT-043 | `test/sizeLimits.test.js` |
+| workflow template contract | CCR-UT-054 | `test/architectureContracts.test.js`, `test/workflowProviderRegistration.test.js` |
+
 ## 5. 非機能観点
 
 - VS Code API は mock し、実 UI を開かない。
-- Git / Bazaar CLI は stub し、実 repository に依存しない。
+- Bazaar CLI は stub し、Git CLI は fixture / stub と一時 repository の両方で検証する。
 - docx / xlsx fixture は最小サイズにし、抽出ロジックの分岐を網羅する。
 - path の比較は Windows / POSIX 差異を吸収する。
 - 生成ファイルは UTF-8 として検証する。
@@ -342,4 +365,4 @@
 - `npm run compile` が成功する。
 - `node --test test/*.test.js` が成功する。
 - review-input 作成、traceability sidecar、preprocess、capture、validate、triage の主要経路が独立した単体テストで検証される。
-- Bob、VS Code UI、workflow-register、Git / Bazaar 実体が無くてもテストが完結する。
+- Bob、VS Code UI、workflow-register、Bazaar 実体が無くてもテストが完結する。Git 実体が無い環境では Git 実コマンド経路の testcase を実行対象から外し、fixture / stub testcase で parser と workflow 経路を確認する。

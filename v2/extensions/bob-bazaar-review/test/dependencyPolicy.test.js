@@ -12,10 +12,14 @@ test("bob-bazaar-review dependency policy requires a committed lockfile with pro
   assert.equal(packageJson.scripts["dependency:policy"], "node --test test/dependencyPolicy.test.js")
   assert.equal(packageJson.scripts["architecture:policy"], "node ../../scripts/check-import-cycles.js src")
   assert.equal(packageJson.scripts["source:policy"], "node ../../scripts/check-export-star-policy.js src")
+  assert.equal(packageJson.scripts["unused:policy"], "node ../../scripts/run-unused-policy.js")
   assert.equal(packageJson.scripts["unused:report"], "node ../../scripts/run-unused-checks.js")
   assert.equal(packageJson.scripts["artifact:policy"], "node ../../scripts/check-artifact-size-policy.js --max-bytes 12000 templates")
   assert.equal(packageJson.scripts["audit:prod"], "npm audit --omit=dev --audit-level=high")
+  assert.equal(packageJson.scripts.clean, "node ../../scripts/clean-extension-output.js out")
+  assert.equal(packageJson.scripts["vscode:prepublish"], "npm run clean && npm run compile")
   assert.equal(packageJson.scripts["package:policy"], "node ../../scripts/check-vsix-policy.js --max-bytes 350000")
+  assert.equal(packageJson.scripts["package:metrics"], "node ../../scripts/report-vsix-metrics.js .")
   assert.equal(packageJson.devDependencies.knip, "^5.0.0")
   assert.equal(packageJson.devDependencies.depcheck, "^1.4.7")
   assert.equal(packageJson.devDependencies["ts-prune"], "^0.10.3")
@@ -25,6 +29,7 @@ test("bob-bazaar-review dependency policy requires a committed lockfile with pro
 
   const vscodeignore = fs.readFileSync(path.join(extensionRoot, ".vscodeignore"), "utf8").split(/\r?\n/)
   assert.ok(vscodeignore.includes("out/**/*.map"), "compiled source maps must be excluded from the VSIX")
+  assert.ok(vscodeignore.includes("docs/**"), "development docs must be excluded from the VSIX")
 
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"))
   const rootPackage = lock.packages?.[""]
@@ -60,11 +65,13 @@ test("bob-bazaar-review CI uses npm ci, dependency policy, production audit, tes
   assert.match(job, /run: npm run architecture:policy/)
   assert.match(job, /run: npm run source:policy/)
   assert.match(job, /run: npm run unused:report/)
+  assert.match(job, /run: npm run unused:policy/)
   assert.match(job, /run: npm run artifact:policy/)
   assert.match(job, /run: npm run audit:prod/)
   assert.match(job, /run: npm test/)
   assert.match(job, /run: npm run package/)
   assert.match(job, /run: npm run package:policy/)
+  assert.match(job, /run: npm run package:metrics/)
   assert.doesNotMatch(job, /run: npm install/)
 })
 
@@ -89,10 +96,12 @@ test("bob-bazaar-review README documents generated artifacts, package budget, de
     "bzr --no-aliases",
     "npm run dependency:policy",
     "npm run architecture:policy",
+    "npm run unused:policy",
     "npm run unused:report",
     "npm run artifact:policy",
     "npm run audit:prod",
     "npm run package:policy",
+    "npm run package:metrics",
     "Trusted Workspace"
   ]) {
     assert.ok(readme.includes(phrase), `README must document: ${phrase}`)

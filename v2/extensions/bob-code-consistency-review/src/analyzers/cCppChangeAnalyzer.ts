@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { classifyLanguageFromPath, isCLikeLanguage } from "../core/languageClassifier"
-import { pathExists, readTextFile, resolveWorkspacePath, toPosixPath } from "../core/fileSystem"
+import { normalizeChangedFilePathStrict, pathExists, readTextFile, resolveWorkspacePathStrict, toPosixPath } from "../core/fileSystem"
 import type { CodeAnalysisResult } from "../core/analysisTypes"
 import type { DiffSummary } from "../core/diffTypes"
 import type { EvidenceRef } from "../core/documentTypes"
@@ -37,7 +37,7 @@ export async function analyzeCppChanges(
   const globals = new Set<string>()
   const diffLines = parseUnifiedDiff(diff)
   const changedTokens = changedIdentifierTokens(diffLines)
-  const sourceRoot = diff.vcsRoot ?? options.workspaceRoot
+  const sourceRoot = resolveSourceRoot(diff.vcsRoot, options.workspaceRoot, warnings)
   let functionIndex = 1
   let codeEvidenceIndex = 1
   let cLikeFileSeen = false
@@ -143,16 +143,32 @@ export async function analyzeCppChanges(
 }
 
 async function resolveSourceFile(workspaceRoot: string, filePath: string): Promise<SourceResolution> {
-  const direct = resolveWorkspacePath(workspaceRoot, filePath)
+  let normalizedPath: string
+  try {
+    normalizedPath = normalizeChangedFilePathStrict(filePath)
+  } catch (error) {
+    return { warning: error instanceof Error ? error.message : `changed file path escapes workspace: ${filePath}` }
+  }
+  const direct = resolveWorkspacePathStrict(workspaceRoot, normalizedPath, "changed file path")
   if (await pathExists(direct)) return { filePath: direct }
-  const basename = path.basename(filePath)
+  const basename = path.basename(normalizedPath)
   const candidates = await findFilesByBasename(workspaceRoot, basename, 2000)
   if (candidates.length === 1) return { filePath: candidates[0] }
   if (candidates.length > 1) {
     const candidateList = candidates.map((candidate) => toPosixPath(path.relative(workspaceRoot, candidate))).join(", ")
-    return { warning: `ambiguous basename fallback for ${toPosixPath(filePath)}: ${candidateList}` }
+    return { warning: `ambiguous basename fallback for ${toPosixPath(normalizedPath)}: ${candidateList}` }
   }
   return {}
+}
+
+function resolveSourceRoot(vcsRoot: string | undefined, workspaceRoot: string, warnings: string[]): string {
+  if (!vcsRoot) return workspaceRoot
+  try {
+    return resolveWorkspacePathStrict(workspaceRoot, vcsRoot, "vcsRoot")
+  } catch (error) {
+    warnings.push(error instanceof Error ? error.message : `vcsRoot escapes workspace: ${vcsRoot}`)
+    return workspaceRoot
+  }
 }
 
 async function findFilesByBasename(root: string, basename: string, limit: number): Promise<string[]> {

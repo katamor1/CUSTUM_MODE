@@ -4,22 +4,22 @@
 
 ## 現在の実装状態
 
-`bob-bazaar-review` は、Bazaar 差分レビュー、project rules、review-result 保存、MCP 連携を提供する実行可能な VS Code 拡張です。
+`bob-bazaar-review` は、Bazaar 差分レビュー、project rules、review-result 保存、MCP 連携、Phase 1 review record 管理を提供する実行可能な VS Code 拡張です。
 
-リファクタリング後は、`workflow-register` 連携の薄い bridge と workflow action input helper を `src/workflowRegisterBridge.ts` に分離しています。直接レビュー command は `src/bazaarReviewCommands.ts`、active editor の review-result JSON 検証は `src/reviewResultValidationCommand.ts`、Bob 拡張の有無判定は `src/bobCodeExtension.ts` が担当します。
+リファクタリング後は、`workflow-register` 連携を `src/workflow/`、直接レビュー command と Bazaar packet 生成を `src/bazaar/`、active editor の review-result JSON 検証を `src/projectRules/`、Bob 拡張連携を `src/bob/`、GUI を `src/ui/`、workspace 初期化と root 解決を `src/workspace/`、MCP server を `src/mcp/`、review record / triage / summary を `src/records/` に分離しています。
 
 ## 設計書
 
 - `basic-design-ja.md`  
-  拡張機能の目的、スコープ、全体構成、主要コンポーネント、workspace モデル、Bazaar 実行方針、GUI / 直接レビュー command、workflow-register 連携、MCP、review-result 保存、セキュリティ方針をまとめた基本設計書です。
+  拡張機能の目的、スコープ、全体構成、主要コンポーネント、workspace モデル、Bazaar 実行方針、GUI / 直接レビュー command、workflow-register 連携、MCP、review-result 保存、review record、セキュリティ方針をまとめた基本設計書です。
 
 - `detailed-design-ja.md`  
-  実装モジュール、VS Code command、workspace 解決、BazaarClient、GUI、直接レビュー command、MCP server、workflow-register bridge、project rules、review-result capture、multi-root 動作、テスト観点を整理した詳細設計書です。
+  実装モジュール、VS Code command、workspace 解決、BazaarClient、GUI、直接レビュー command、MCP server、workflow-register bridge、project rules、review-result capture、review record、multi-root 動作、テスト観点を整理した詳細設計書です。
 
 ## テスト仕様書
 
 - `unit-test-spec-ja.md`  
-  BazaarClient、文字コード、workspace resolver、review packet、直接レビュー command、workflow-register bridge、review-result capture、MCP server、workflow template の単体テスト仕様書です。
+  BazaarClient、文字コード、workspace resolver、review packet、直接レビュー command、workflow-register bridge、review-result capture、MCP server、review record、workflow template の単体テスト仕様書です。
 
 - `real-machine-test-spec-ja.md`  
   VS Code、IBM Bob、workflow-register、Bob Workflow UI、Bazaar Review GUI、Bazaar CLI、MCP server、multi-root workspace を含む実機テスト仕様書です。

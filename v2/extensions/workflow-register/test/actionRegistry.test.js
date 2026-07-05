@@ -31,6 +31,49 @@ test("default action registry rejects missing VS Code command ids", async () => 
   assert.match(result.error, /requires the command id/)
 })
 
+test("default action registry injects workflowRoot into Bob command inputs", async () => {
+  const calls = []
+  const registry = createDefaultActionRegistry({
+    executeCommand: (command, ...args) => {
+      calls.push({ command, args })
+      return "ok"
+    }
+  })
+
+  const result = await registry.execute("vscode.executeCommand", {
+    args: ["bobProcess.validateCatalog", { catalogPath: ".bob/process/process-catalog.yaml" }],
+    inputs: {},
+    workflowRoot: "C:\\repo\\workspace-b"
+  })
+
+  assert.equal(result.ok, true)
+  assert.deepEqual(calls, [{
+    command: "bobProcess.validateCatalog",
+    args: [{ catalogPath: ".bob/process/process-catalog.yaml", workspaceRoot: "C:\\repo\\workspace-b" }]
+  }])
+})
+
+test("default action registry keeps explicit Bob command workspaceRoot", async () => {
+  const calls = []
+  const registry = createDefaultActionRegistry({
+    executeCommand: (command, ...args) => {
+      calls.push({ command, args })
+      return "ok"
+    }
+  })
+
+  await registry.execute("vscode.executeCommand", {
+    args: ["bobTemplate.validateLibrary", { workspaceRoot: "C:\\repo\\workspace-a" }],
+    inputs: {},
+    workflowRoot: "C:\\repo\\workspace-b"
+  })
+
+  assert.deepEqual(calls, [{
+    command: "bobTemplate.validateLibrary",
+    args: [{ workspaceRoot: "C:\\repo\\workspace-a" }]
+  }])
+})
+
 test("default action registry blocks VS Code commands in untrusted workspaces", async () => {
   let called = false
   const registry = createDefaultActionRegistry({

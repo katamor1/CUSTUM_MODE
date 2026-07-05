@@ -22,6 +22,9 @@
   ],
   "activationEvents": [
     "onStartupFinished",
+    "onCommand:bobCodeConsistency.openReviewWizard",
+    "onCommand:bobCodeConsistency.openResultCaptureGui",
+    "onCommand:bobCodeConsistency.openHumanTriageGui",
     "onCommand:bobCodeConsistency.initializeWorkspace",
     "onCommand:bobCodeConsistency.createReviewInput",
     "onCommand:bobCodeConsistency.prepareAiReviewInputDraft",
@@ -41,6 +44,21 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "bobCodeConsistency.openReviewWizard",
+        "title": "Review Wizard を開く",
+        "category": "Bob Code Consistency Review"
+      },
+      {
+        "command": "bobCodeConsistency.openResultCaptureGui",
+        "title": "Result Capture GUI を開く",
+        "category": "Bob Code Consistency Review"
+      },
+      {
+        "command": "bobCodeConsistency.openHumanTriageGui",
+        "title": "Human Triage GUI を開く",
+        "category": "Bob Code Consistency Review"
+      },
       {
         "command": "bobCodeConsistency.initializeWorkspace",
         "title": ".bob ワークフロー定義と review-input 雛形を初期化",
@@ -195,6 +213,9 @@
     },
     "menus": {
       "commandPalette": [
+        { "command": "bobCodeConsistency.openReviewWizard" },
+        { "command": "bobCodeConsistency.openResultCaptureGui" },
+        { "command": "bobCodeConsistency.openHumanTriageGui" },
         { "command": "bobCodeConsistency.initializeWorkspace" },
         { "command": "bobCodeConsistency.createReviewInput" },
         { "command": "bobCodeConsistency.prepareAiReviewInputDraft" },

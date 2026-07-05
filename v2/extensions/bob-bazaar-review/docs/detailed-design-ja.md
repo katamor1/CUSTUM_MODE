@@ -11,24 +11,20 @@ extensions/bob-bazaar-review/
   package.json
   src/
     extension.ts
-    bazaar.ts
-    bazaarReviewCommands.ts
-    bobCodeExtension.ts
-    bobContext.ts
-    bobWorkspaceInit.ts
-    mcpConfig.ts
-    reviewGui.ts
-    reviewGuiTypes.ts
-    reviewPacket.ts
-    reviewResultValidationCommand.ts
-    revisionInfo.ts
-    textEncoding.ts
-    workflowBridge.ts
-    workflowRegisterBridge.ts
-    workflowStepCompletion.ts
-    workspaceResolver.ts
-    workspaceRoots.ts
+    bazaar/
+      bazaar.ts
+      bazaarReviewCommands.ts
+      reviewPacket.ts
+      reviewTarget.ts
+      revisionInfo.ts
+      textEncoding.ts
+    bob/
+      bobCodeExtension.ts
+      bobContext.ts
     mcp/
+      bazaarTools.ts
+      mcpConfig.ts
+      projectRulesTools.ts
       server.ts
     projectRules/
       defaults.ts
@@ -37,10 +33,31 @@ extensions/bob-bazaar-review/
       packet.ts
       resultCapture.ts
       resultCaptureCore.ts
+      reviewResultValidationCommand.ts
       reviewResultsStore.ts
-      schema.ts
+      schemaValidator.ts
       types.ts
       validator.ts
+    records/
+      reviewRecordCommands.ts
+      reviewRecordStore.ts
+      reviewTriage.ts
+    shared/
+      extensionMetadata.ts
+    ui/
+      reviewGui.ts
+      reviewGuiHtml.ts
+      reviewGuiTypes.ts
+    workflow/
+      workflowBridge.ts
+      workflowProviders.ts
+      workflowRegisterBridge.ts
+      workflowStepCompletion.ts
+    workspace/
+      bobWorkspaceInit.ts
+      templateRefresh.ts
+      workspaceResolver.ts
+      workspaceRoots.ts
   templates/
     .bob/
       custom_modes.yaml
@@ -52,7 +69,7 @@ extensions/bob-bazaar-review/
     *.test.js
 ```
 
-`extension.ts` は command 登録と workflow provider mapping に集中し、workflow action input 解釈は `workflowRegisterBridge.ts`、直接レビュー command は `bazaarReviewCommands.ts`、review-result active editor 検証は `reviewResultValidationCommand.ts` に分離している。
+`extension.ts` は command 登録と workflow provider mapping に集中し、workflow action input 解釈は `src/workflow/workflowRegisterBridge.ts`、直接レビュー command は `src/bazaar/bazaarReviewCommands.ts`、review-result active editor 検証は `src/projectRules/reviewResultValidationCommand.ts`、review record command は `src/records/reviewRecordCommands.ts` に分離している。
 
 ## 3. 起動設計
 
@@ -82,6 +99,12 @@ extensions/bob-bazaar-review/
 | `bobBazaar.reviewRevisionWithProjectRules` | `reviewRevision(true)` | 単一 revision packet に規約 section を追加する。 |
 | `bobBazaar.reviewRangeWithProjectRules` | `reviewRange(true)` | range packet に規約 section を追加する。 |
 | `bobBazaar.validateReviewResultJson` | `validateActiveReviewResultJson` | active editor の JSON を検証し、必要に応じて Markdown summary を表示する。 |
+| `bobBazaar.records.initCampaign` | `initializeReviewCampaign` | `.bob-review-records` campaign 雛形を作成する。 |
+| `bobBazaar.records.createRecord` | `createReviewRecord` | review packet と review-result を `record.yaml` に紐付ける。 |
+| `bobBazaar.records.validateRecord` | `validateReviewRecordCommand` | record の参照 artifact と quality gate を検証する。 |
+| `bobBazaar.records.createTriage` | `createReviewTriage` | `triage.yaml` 雛形を生成する。 |
+| `bobBazaar.records.validateTriage` | `validateReviewTriage` | triage decision、finding_id、summary を検証する。 |
+| `bobBazaar.records.generateSummary` | `generateReviewCampaignSummary` | campaign summary を生成する。 |
 
 ## 5. Workspace 解決詳細
 
@@ -92,7 +115,7 @@ resolveBazaarWorkspaceFolder(options): Promise<vscode.WorkspaceFolder | undefine
 resolveBobWorkspaceFolder(options): Promise<vscode.WorkspaceFolder | undefined>
 ```
 
-解決順序は、explicit root、workflow root、marker root candidates、active editor 所属 candidate、single candidate、QuickPick、single workspace fallback の順である。
+解決順序は、explicit root、workflow root、marker root candidates、active editor 所属 candidate、single candidate、QuickPick、single workspace fallback の順である。explicit root も対象 marker が必要であり、`.bzr` / `.bob` marker 不在の root は採用しない。
 
 GUI controller は Bazaar workspace と Bob workspace を別々に保持する。workflow action 実行時は `workflowRoot` を Bob workspace root として優先する。
 
@@ -206,7 +229,7 @@ review packet はレビュー対象、Bazaar log、diff、追加ファイル本�
 
 | Tool | 処理 |
 | --- | --- |
-| `project_rules_init` | default rules / schema を作成する。 |
+| `project_rules_init` | default rules / schema を作成する。`BOB_BAZAAR_ENABLE_WRITE_TOOLS=1` のときだけ `tools/list` に出る。 |
 | `project_rules_get_checklist` | checklist JSON を返す。 |
 | `project_rules_get_schema` | schema JSON を返す。 |
 | `project_rules_validate_review_result` | review-result JSON を検証する。 |
@@ -214,7 +237,7 @@ review packet はレビュー対象、Bazaar log、diff、追加ファイル本�
 | `project_rules_get_latest_review_result` | 最新保存済み review-result を返す。 |
 | `project_rules_get_review_result` | 指定 review id の保存済み result を返す。 |
 
-例外は MCP response として `isError: true` の text content に変換する。
+例外は MCP response として `isError: true` の text content に変換する。MCP server は `BOB_BAZAAR_ALLOWED_ROOTS` が空の場合は cwd を既定拒否し、明示的に `BOB_BAZAAR_ALLOW_UNRESTRICTED_CWD=1` が設定された場合だけ無制限 cwd を許す。
 
 ## 14. workflow-register 連携詳細
 
@@ -265,6 +288,8 @@ templates/.bob/workflows/bazaar-project-rule-review/WORKFLOW.md
 
 `resultCaptureCore.ts` は raw JSON object、fenced code block、text 中の balanced JSON object を抽出候補とする。`validateReviewResultJson` は schema validation と project rules 由来の条件を検証する。
 
+`schemaValidator.ts` は project default schema に必要な JSON Schema subset を検証する軽量 validator である。対応 keyword は local `$ref`、`enum`、`type`、`minLength`、`minimum`、`properties`、`required`、`additionalProperties`、`items` を中心とする。draft 2020-12 の全 keyword 互換ではないため、project-specific schema を拡張する場合は未対応 keyword を追加実装または別 validator 採用で扱う。
+
 保存先:
 
 ```text
@@ -274,9 +299,23 @@ templates/.bob/workflows/bazaar-project-rule-review/WORKFLOW.md
 
 file basename は `review_id` を sanitize して作る。`review_id` が無い場合は revision 情報から fallback ID を作る。
 
-`reviewResultValidationCommand.ts` は active editor の selection または full text を検証し、error の場合は Markdown report、有効な場合は任意で Markdown summary を表示する。
+`src/projectRules/reviewResultValidationCommand.ts` は active editor の selection または full text を検証し、error の場合は Markdown report、有効な場合は任意で Markdown summary を表示する。
 
-## 17. 状態と保存先
+## 17. Review Records 詳細
+
+`src/records/*` は Phase 1 の review evidence を `.bob-review-records` に保存する。既存の `.bob/review/results/*.json|md|artifact-metadata.json` は source artifact として参照し、record 側では packet、triage、metrics、quality gate、workflow run metadata を管理する。
+
+| Module | 処理 |
+| --- | --- |
+| `reviewRecordCommands.ts` | VS Code command entry と template copy orchestration。 |
+| `reviewRecordCommandCore.ts` | review-result から quality gate を計算する pure helper。 |
+| `reviewRecordStore.ts` | record / triage / summary の読み書き、artifact backup、campaign summary。 |
+| `reviewRecordPaths.ts` | campaignId / reviewId / artifact path の workspace-safe validation。 |
+| `reviewTriage.ts` | triage draft 生成と decision / summary validation。 |
+
+`campaign_id` と `review_id` は path segment として使うため、slash、Windows 予約文字、reserved device name、末尾 dot / space を拒否する。
+
+## 18. 状態と保存先
 
 | 種類 | 保存先 / 保持場所 |
 | --- | --- |
@@ -286,11 +325,12 @@ file basename は `review_id` を sanitize して作る。`review_id` が無い�
 | schema | `<Bob workspace>/.bob/review/review-result.schema.json` |
 | workflow template | `<Bob workspace>/.bob/workflows/bazaar-project-rule-review/WORKFLOW.md` |
 | review results | `<Bob workspace>/.bob/review/results` |
+| review records | `<Bob workspace>/.bob-review-records/campaigns/<campaign_id>` |
 | review packet | temporary Markdown document / clipboard fallback / explicit save file |
 | GUI state | Webview controller memory |
 | Bazaar output | memory only |
 
-## 18. Error Handling
+## 19. Error Handling
 
 | 発生箇所 | 処理 |
 | --- | --- |
@@ -302,7 +342,7 @@ file basename は `review_id` を sanitize して作る。`review_id` が無い�
 | workflow step completion failure | warning に留める。 |
 | `IBM.bob-code` 不在 | Markdown document 作成で停止する。 |
 
-## 19. セキュリティ詳細
+## 20. セキュリティ詳細
 
 - Bazaar command set は読み取り系に限定する。
 - `--no-aliases` を必ず挿入する。
@@ -310,10 +350,12 @@ file basename は `review_id` を sanitize して作る。`review_id` が無い�
 - file path は repository relative のみ扱う。
 - project rules path は workspace root 外を拒否する。
 - review result file name は sanitize する。
+- review record path segment は Windows 予約文字、device name、末尾 dot / space を拒否する。
 - diff は `maxDiffBytes`、added file content は `maxAddedFileContentBytes` で制限する。
 - MCP tools は破壊的 Bazaar 操作を公開しない。
+- MCP write tools は既定無効にし、allowed roots 未設定 cwd は既定拒否する。
 
-## 20. Multi-root 動作詳細
+## 21. Multi-root 動作詳細
 
 期待構成:
 
@@ -334,30 +376,32 @@ file basename は `review_id` を sanitize して作る。`review_id` が無い�
 4. diff / log は `bazaar_test/branch2/.bzr` 側で取得する。
 5. review-result は `workspace/.bob/review/results` に保存する。
 
-## 21. テスト設計
+## 22. テスト設計
 
 | 対象 | 観点 |
 | --- | --- |
-| `bazaar.ts` | `--no-aliases` 強制、revision/path validation、allowed exit code。 |
-| `textEncoding.ts` | UTF-8 / Shift-JIS / auto decode。 |
-| `workspaceResolver.ts` | `.bob` / `.bzr` の分離、single candidate 自動選択。 |
-| `bazaarReviewCommands.ts` | direct review command、Bob context 分岐、clipboard / save fallback。 |
-| `workflowRegisterBridge.ts` | input / args / state / root の解釈、capture options。 |
-| `reviewPacket.ts` | diff truncation、metadata、extra sections。 |
-| `revisionInfo.ts` | log parse、changed file parse、added file content section。 |
+| `src/bazaar/bazaar.ts` | `--no-aliases` 強制、revision/path validation、allowed exit code。 |
+| `src/bazaar/textEncoding.ts` | UTF-8 / Shift-JIS / auto decode。 |
+| `src/workspace/workspaceResolver.ts` | `.bob` / `.bzr` の分離、single candidate 自動選択、explicit root marker validation。 |
+| `src/bazaar/bazaarReviewCommands.ts` | direct review command、Bob context 分岐、clipboard / save fallback。 |
+| `src/workflow/workflowRegisterBridge.ts` | input / args / state / root の解釈、capture options。 |
+| `src/bazaar/reviewPacket.ts` | diff truncation、metadata、extra sections。 |
+| `src/bazaar/revisionInfo.ts` | log parse、changed file parse、added file content section。 |
 | `projectRules/io.ts` | required file error、workspace escape rejection。 |
-| `validator.ts` | schema validation、evidence / finding 条件。 |
-| `resultCaptureCore.ts` | fenced JSON extraction、normalization、save artifacts。 |
-| `reviewResultValidationCommand.ts` | active editor selection / full text、report、summary。 |
-| `reviewResultsStore.ts` | latest / id 指定の保存済み result 取得。 |
-| `workflowBridge.ts` | packet から workflow context 生成。 |
-| `workflowStepCompletion.ts` | workflow-register step completion 呼び出しの疎結合。 |
+| `projectRules/schemaValidator.ts` | supported JSON Schema subset。 |
+| `projectRules/validator.ts` | schema validation、evidence / finding 条件。 |
+| `projectRules/resultCaptureCore.ts` | fenced JSON extraction、normalization、save artifacts。 |
+| `projectRules/reviewResultValidationCommand.ts` | active editor selection / full text、report、summary。 |
+| `projectRules/reviewResultsStore.ts` | latest / id 指定の保存済み result 取得。 |
+| `records/*` | record path safety、quality gate、triage、campaign summary。 |
+| `workflow/workflowBridge.ts` | packet から workflow context 生成。 |
+| `workflow/workflowStepCompletion.ts` | workflow-register step completion 呼び出しの疎結合。 |
 | `mcp/server.ts` | tool list、readonly tool definitions、argument validation、result tools。 |
 | 実機 | VS Code / IBM Bob / workflow-register / Bazaar CLI / Webview / MCP の結合動作。 |
 
 詳細な単体テスト仕様は `unit-test-spec-ja.md`、実機テスト仕様は `real-machine-test-spec-ja.md` に定義する。
 
-## 25. 変更時の注意点
+## 23. 変更時の注意点
 
 - Bazaar command を追加する場合は、読み取り専用かを確認し、`--no-aliases` 強制経路を通す。
 - MCP tool を追加する場合は、input schema と README / 設計書 / tests を更新する。
@@ -365,3 +409,4 @@ file basename は `review_id` を sanitize して作る。`review_id` が無い�
 - review-result schema を変更する場合は validator、example、prompt、workflow output contract を同期する。
 - workspace resolver を変更する場合は multi-root の `.bob` / `.bzr` 分離動作を確認する。
 - result capture を変更する場合は workflow-register result handoff 互換、`args[0]` 入力、`workflowRoot` 保存先を確認する。
+- dependency を追加・削除する場合は `unused:policy` と `package:metrics` の結果を確認し、VSIX size 差分を release / PR summary に残す。

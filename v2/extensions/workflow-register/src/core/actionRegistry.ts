@@ -49,6 +49,7 @@ export function createDefaultActionRegistry(options?: DefaultActionRegistryOptio
         if (typeof command !== "string" || !command.trim()) {
           throw new Error("vscode.executeCommand requires the command id as the first argument.")
         }
+        injectWorkflowRoot(command, args, input.workflowRoot)
         return options.executeCommand(command, ...args)
       }
     })
@@ -59,4 +60,24 @@ export function createDefaultActionRegistry(options?: DefaultActionRegistryOptio
 function argumentList(value: unknown): unknown[] {
   if (value === undefined) return []
   return Array.isArray(value) ? [...value] : [value]
+}
+
+function injectWorkflowRoot(command: string, args: unknown[], workflowRoot: string | undefined): void {
+  if (!workflowRoot || !requiresWorkspaceRoot(command)) return
+  const first = args[0]
+  if (isRecord(first)) {
+    if (typeof first.workspaceRoot !== "string" || !first.workspaceRoot.trim()) {
+      args[0] = { ...first, workspaceRoot: workflowRoot }
+    }
+  } else if (first === undefined) {
+    args[0] = { workspaceRoot: workflowRoot }
+  }
+}
+
+function requiresWorkspaceRoot(command: string): boolean {
+  return command.startsWith("bobProcess.") || command.startsWith("bobTemplate.")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

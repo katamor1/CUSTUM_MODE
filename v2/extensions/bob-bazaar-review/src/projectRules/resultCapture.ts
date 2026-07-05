@@ -1,8 +1,6 @@
 import * as vscode from "vscode"
-import {
-  captureReviewResultFromCandidates,
-  extractJsonFromText
-} from "./resultCaptureCore"
+import { captureReviewResultFromCandidates } from "./resultCaptureCore"
+import { extractJsonFromText } from "./resultCaptureJson"
 import type { CandidateText, CaptureReviewResultOptions, CaptureReviewResultResult } from "./resultCaptureTypes"
 import { resolveBobWorkspaceFolder } from "../workspace/workspaceResolver"
 

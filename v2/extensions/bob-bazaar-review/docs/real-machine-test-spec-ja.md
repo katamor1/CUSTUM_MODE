@@ -321,9 +321,17 @@ bazaar_test/branch2/
 
 | 項目 | 内容 |
 | --- | --- |
-| 目的 | project rules tools が `.bob/review` を読み書きできることを確認する。 |
-| 手順 | 1. `project_rules_init`、`project_rules_get_checklist`、`project_rules_get_schema` を呼ぶ。 |
-| 期待結果 | default rules / schema が作成または取得される。 |
+| 目的 | project rules tools の読み取りと write tool の既定無効を確認する。 |
+| 手順 | 1. env 未指定で `tools/list` を呼ぶ。<br>2. `project_rules_init` を直接 call する。<br>3. `project_rules_get_checklist`、`project_rules_get_schema` を呼ぶ。<br>4. 必要な場合だけ `BOB_BAZAAR_ENABLE_WRITE_TOOLS=1` と `BOB_BAZAAR_ALLOWED_ROOTS` を指定して `project_rules_init` を呼ぶ。 |
+| 期待結果 | env 未指定では `project_rules_init` は `tools/list` に出ず、直接 call は `isError: true` になる。読み取り tools は allowed root 内で結果を返す。write tools 有効化時だけ default rules / schema が作成される。 |
+
+### BZR-RT-027A MCP allowed roots
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | MCP server が allowed roots 未設定 cwd と allowed root 外 cwd を拒否することを確認する。 |
+| 手順 | 1. `BOB_BAZAAR_ALLOWED_ROOTS` 未設定で Bazaar tool を call する。<br>2. allowed root 外の `cwd` を指定する。<br>3. allowed root 内の `cwd` を指定する。 |
+| 期待結果 | 未設定または root 外は `isError: true` になり、allowed root 内だけ処理される。手動検証で無制限 cwd を使う場合は `BOB_BAZAAR_ALLOW_UNRESTRICTED_CWD=1` を明示する。 |
 
 ### BZR-RT-028 MCP review result tools
 

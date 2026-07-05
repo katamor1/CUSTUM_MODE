@@ -19,6 +19,8 @@
   "activationEvents": [
     "onStartupFinished",
     "onCommand:bobBazaar.openReviewGui",
+    "onCommand:bobBazaar.openResultCaptureGui",
+    "onCommand:bobBazaar.openHumanTriageGui",
     "onCommand:bobBazaar.collectReviewContext",
     "onCommand:bobBazaar.loadReviewRules",
     "onCommand:bobBazaar.captureReviewResult",
@@ -43,6 +45,16 @@
       {
         "command": "bobBazaar.openReviewGui",
         "title": "GUI を開く",
+        "category": "Bob Bazaar Review"
+      },
+      {
+        "command": "bobBazaar.openResultCaptureGui",
+        "title": "Result Capture GUI を開く",
+        "category": "Bob Bazaar Review"
+      },
+      {
+        "command": "bobBazaar.openHumanTriageGui",
+        "title": "Human Triage GUI を開く",
         "category": "Bob Bazaar Review"
       },
       {
@@ -188,6 +200,12 @@
           "command": "bobBazaar.openReviewGui"
         },
         {
+          "command": "bobBazaar.openResultCaptureGui"
+        },
+        {
+          "command": "bobBazaar.openHumanTriageGui"
+        },
+        {
           "command": "bobBazaar.collectReviewContext"
         },
         {
@@ -250,16 +268,19 @@
   "scripts": {
     "architecture:policy": "node ../../scripts/check-import-cycles.js src",
     "source:policy": "node ../../scripts/check-export-star-policy.js src",
+    "unused:policy": "node ../../scripts/run-unused-policy.js",
     "unused:report": "node ../../scripts/run-unused-checks.js",
     "artifact:policy": "node ../../scripts/check-artifact-size-policy.js --max-bytes 12000 templates",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "clean": "node ../../scripts/clean-extension-output.js out",
     "compile": "tsc -p ./",
     "dependency:policy": "node --test test/dependencyPolicy.test.js",
     "test": "npm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run clean && npm run compile",
     "package": "vsce package",
-    "package:policy": "node ../../scripts/check-vsix-policy.js --max-bytes 350000"
+    "package:policy": "node ../../scripts/check-vsix-policy.js --max-bytes 350000",
+    "package:metrics": "node ../../scripts/report-vsix-metrics.js ."
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

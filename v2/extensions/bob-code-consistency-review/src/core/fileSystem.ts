@@ -20,34 +20,41 @@ type WorkspacePathPolicy = {
 const WORKSPACE_PATH_POLICIES: Record<WorkspacePathKind, WorkspacePathPolicy> = {
   "review-package-output": {
     label: "reviewPackagePath",
-    description: ".bob-review/<review-package-directory>",
-    allow: (segments) => segmentEquals(segments[0], ".bob-review") &&
+    description: ".bob-review/<review-package-directory> or .custom/<path>",
+    allow: (segments) => (
+      segmentEquals(segments[0], ".bob-review") &&
       segments.length >= 2 &&
       !["bob-output", "human-triage"].some((reserved) => segmentEquals(segments[1], reserved))
+    ) || customPath(segments)
   },
   "bob-output": {
     label: "bobOutputPath",
-    description: ".bob-review/bob-output/*.yaml",
-    allow: (segments) => startsWithSegments(segments, [".bob-review", "bob-output"]) && segments.length >= 3 && /\.ya?ml$/i.test(segments[segments.length - 1])
+    description: ".bob-review/bob-output/*.yaml or .custom/*.yaml",
+    allow: (segments) => (
+      startsWithSegments(segments, [".bob-review", "bob-output"]) && segments.length >= 3 ||
+      customPath(segments)
+    ) && /\.ya?ml$/i.test(segments[segments.length - 1])
   },
   "human-triage-output": {
     label: "triagePath",
-    description: ".bob-review/human-triage/",
-    allow: (segments) => startsWithSegments(segments, [".bob-review", "human-triage"])
+    description: ".bob-review/human-triage/ or .custom/<path>",
+    allow: (segments) => startsWithSegments(segments, [".bob-review", "human-triage"]) || customPath(segments)
   },
   "traceability-catalog": {
     label: "traceabilityCatalogPath",
-    description: ".bob-trace/*.json outside ai-traceability-draft",
+    description: ".bob-trace/*.json outside ai-traceability-draft or .custom/*.json",
     allow: (segments) => segmentEquals(segments[0], ".bob-trace") &&
       !segmentEquals(segments[1], "ai-traceability-draft") &&
-      /\.json$/i.test(segments[segments.length - 1])
+      /\.json$/i.test(segments[segments.length - 1]) ||
+      customPath(segments) && /\.json$/i.test(segments[segments.length - 1])
   },
   "traceability-gate-report": {
     label: "traceabilityGateReportPath",
-    description: ".bob-trace/*.md outside ai-traceability-draft",
+    description: ".bob-trace/*.md outside ai-traceability-draft or .custom/*.md",
     allow: (segments) => segmentEquals(segments[0], ".bob-trace") &&
       !segmentEquals(segments[1], "ai-traceability-draft") &&
-      /\.md$/i.test(segments[segments.length - 1])
+      /\.md$/i.test(segments[segments.length - 1]) ||
+      customPath(segments) && /\.md$/i.test(segments[segments.length - 1])
   },
   "traceability-ai-draft-output": {
     label: "aiTraceabilityDraftPromptPath",
@@ -87,7 +94,33 @@ export function resolveWorkspacePathStrict(workspaceRoot: string, value: string,
   const resolved = path.resolve(path.isAbsolute(value) ? value : path.join(root, value))
   // 絶対パスも入力として許すが、最終的な解決先は workspaceRoot 配下に限定する。
   if (!isInsidePath(root, resolved)) throw new Error(`${label} escapes workspace: ${value}`)
+  assertRealPathInsideWorkspace(root, resolved, label, value)
   return resolved
+}
+
+export function normalizeChangedFilePathStrict(value: string, label = "changed file path"): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is empty`)
+  if (/[\0-\x1F\x7F]/u.test(value)) throw new Error(`${label} contains control characters: ${value}`)
+  const normalizedSlashes = value.trim().replace(/\\/g, "/")
+  if (
+    normalizedSlashes.startsWith("/") ||
+    normalizedSlashes.startsWith("//") ||
+    /^[A-Za-z]:/.test(value) ||
+    path.win32.isAbsolute(value) ||
+    path.posix.isAbsolute(normalizedSlashes)
+  ) {
+    throw new Error(`${label} must be workspace-relative: ${value}`)
+  }
+  const segments = normalizedSlashes.split("/")
+  if (segments.some((segment) => segment === "..")) throw new Error(`${label} escapes workspace: ${value}`)
+  if (segments.some((segment) => segment.trim().length === 0 || segment === ".")) {
+    throw new Error(`${label} contains empty or . segments: ${value}`)
+  }
+  const normalized = path.posix.normalize(normalizedSlashes)
+  if (normalized === "." || normalized.startsWith("../") || normalized === "..") {
+    throw new Error(`${label} escapes workspace: ${value}`)
+  }
+  return normalized
 }
 
 export function resolveWorkspacePathForKind(workspaceRoot: string, value: string, kind: WorkspacePathKind): string {
@@ -130,6 +163,10 @@ function startsWithSegments(segments: string[], prefix: string[]): boolean {
 
 function segmentEquals(left: string | undefined, right: string): boolean {
   return typeof left === "string" && left.toLowerCase() === right.toLowerCase()
+}
+
+function customPath(segments: string[]): boolean {
+  return segmentEquals(segments[0], ".custom") && segments.length >= 2
 }
 
 function assertRealPathInsideWorkspace(root: string, target: string, label: string, originalValue: string): void {

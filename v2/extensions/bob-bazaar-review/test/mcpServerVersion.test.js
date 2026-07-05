@@ -8,7 +8,10 @@ const extensionRoot = path.resolve(__dirname, "..")
 test("Bazaar MCP server reports the extension package version", () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(extensionRoot, "package.json"), "utf8"))
   const source = fs.readFileSync(path.join(extensionRoot, "src", "mcp", "server.ts"), "utf8")
+  const { EXTENSION_NAME, EXTENSION_VERSION } = require("../out/shared/extensionMetadata")
 
-  assert.match(source, new RegExp(`const SERVER_VERSION = "${packageJson.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`))
-  assert.match(source, /serverInfo: \{ name: "bob-bazaar-review", version: SERVER_VERSION \}/)
+  assert.equal(EXTENSION_NAME, packageJson.name)
+  assert.equal(EXTENSION_VERSION, packageJson.version)
+  assert.match(source, /import \{ EXTENSION_NAME, EXTENSION_VERSION \} from "\.\.\/shared\/extensionMetadata"/)
+  assert.match(source, /serverInfo: \{ name: EXTENSION_NAME, version: EXTENSION_VERSION \}/)
 })

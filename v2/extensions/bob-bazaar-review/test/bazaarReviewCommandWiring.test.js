@@ -21,3 +21,13 @@ test("Bazaar review commands auto-add the generated packet to Bob when workflow-
   ].join("[\\s\\S]*")))
   assert.match(source, /Bob チャットへ挿入しました/)
 })
+
+test("Bazaar direct review commands include the same target context as the GUI packet path", () => {
+  const source = readSrc("bazaar", "bazaarReviewCommands.ts")
+
+  assert.match(source, /prepareTarget\(client,\s*bazaarFolder\.uri\.fsPath,\s*\{\s*mode:\s*"singleRevision"/s)
+  assert.match(source, /prepareTarget\(client,\s*bazaarFolder\.uri\.fsPath,\s*\{\s*mode:\s*"revisionRange"/s)
+  assert.match(source, /buildTargetMetadataSection\(prepared\.info\)/)
+  assert.match(source, /prepared\.addedFilesSection/)
+  assert.match(source, /log:\s*prepared\.log/)
+})

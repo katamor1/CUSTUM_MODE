@@ -80,6 +80,9 @@ export function validateTriage(triage: any, reviewResult?: any): string[] {
     } else if (knownFindingIds && !knownFindingIds.has(item.finding_id)) {
       issues.push(`items[${index}].finding_id is not present in review-result: ${item.finding_id}`)
     } else if (typeof item?.finding_id === "string" && item.finding_id.trim()) {
+      if (triagedFindingIds.has(item.finding_id)) {
+        issues.push(`duplicate finding_id in triage items: ${item.finding_id}`)
+      }
       triagedFindingIds.add(item.finding_id)
     }
     if (!TRIAGE_DECISIONS.includes(item?.decision)) {

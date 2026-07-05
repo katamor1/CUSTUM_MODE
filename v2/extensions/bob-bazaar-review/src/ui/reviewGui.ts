@@ -53,6 +53,8 @@ class BazaarReviewGuiController {
       else if (message?.type === "initializeBobWorkspace") await this.initializeBobWorkspace()
       else if (message?.type === "loadTarget") await this.loadTarget(parseTargetRequest(message))
       else if (message?.type === "reviewTarget") await this.reviewTarget(parseTargetRequest(message))
+      else if (message?.type === "openResultCapture") await vscode.commands.executeCommand("bobBazaar.openResultCaptureGui")
+      else if (message?.type === "openHumanTriage") await vscode.commands.executeCommand("bobBazaar.openHumanTriageGui")
     } catch (error: any) {
       this.post({ type: "error", message: error?.message ?? String(error) })
     }

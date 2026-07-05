@@ -90,6 +90,16 @@ test("standard process-code-precheck template library is tracked and parses clea
   assert.ok(parsed.workflow.guardrails.allowedCommands.includes("vscode.executeCommand"))
   assert.ok(parsed.workflow.guardrails.allowedCommands.includes("bobCodeConsistency.preprocess"))
   assert.equal(parsed.workflow.stepReview.enabled, true)
+  const preprocessStep = parsed.workflow.engineSteps.find((step) => step.id === "phase2-preprocess")
+  assert.equal(preprocessStep?.action?.args?.reviewInputPath, "{{inputs.phase2ReviewInputPath}}")
+  assert.equal(Object.prototype.hasOwnProperty.call(preprocessStep?.action?.args ?? {}, "inputPath"), false)
+  const humanGateStep = parsed.workflow.engineSteps.find((step) => step.id === "human-gate")
+  assert.equal(humanGateStep?.transition?.default, "fail")
+  const approvedDecision = humanGateStep?.transition?.decisions?.[0]
+  assert.equal(approvedDecision?.id, "approved")
+  assert.equal(approvedDecision?.when?.stateKey, "humanGate.decision")
+  assert.equal(approvedDecision?.when?.equals, "approved")
+  assert.equal(approvedDecision?.goto, "write-process-record")
 })
 
 test("generator applies allowed customization and preserves locked command and sink surfaces", () => {

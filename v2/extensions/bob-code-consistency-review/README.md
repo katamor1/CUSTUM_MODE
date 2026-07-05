@@ -389,7 +389,7 @@ npm run package
 
 ### VSIX サイズ
 
-`npm run package:policy` は VSIX サイズの上限を `11000000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` は VSIX に同梱しません。
+`npm run package:policy` は VSIX サイズの上限を `11000000` bytes として確認します。配布前は `npm run package` と `npm run package:policy` を続けて実行してください。`out/**/*.map` と開発用の `docs/**` は VSIX に同梱しません。
 
 ### 暗黙依存
 
@@ -415,6 +415,8 @@ npm run package:policy
 `review-input.yaml`、文書 path、review-package path、Bob output path、triage path、traceability catalog path は workspace 内を基準に検証します。Trusted Workspace でない環境では、外部 path opt-in や VCS command 実行の設定を確認してから前処理を実行してください。
 
 ## 関連ドキュメント
+
+以下はソースリポジトリ上の関連ドキュメントです。VSIX には同梱しません。
 
 - `docs/README-ja.md`
 - `docs/vcs-bazaar-ja.md`

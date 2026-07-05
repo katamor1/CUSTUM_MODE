@@ -82,6 +82,44 @@ test("analyzeCppChanges skips ambiguous basename fallback candidates", async () 
   assert.ok(result.warnings.some((warning) => warning.includes("ambiguous basename")))
 })
 
+test("analyzeCppChanges rejects changed file paths that escape the workspace", async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "bob-ccpp-escape-workspace-"))
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "bob-ccpp-escape-outside-"))
+  const outsideSource = [
+    "int EscapedFunction(void)",
+    "{",
+    "    return 7;",
+    "}",
+    ""
+  ].join("\n")
+  fs.writeFileSync(path.join(outside, "escape.c"), outsideSource, "utf8")
+  const escapedPath = path.relative(workspace, path.join(outside, "escape.c")).replace(/\\/g, "/")
+
+  const result = await analyzeCppChanges({
+    vcs: "git",
+    vcsRoot: workspace,
+    base: "main",
+    head: "feature/escape",
+    files: [{ path: escapedPath, status: "modified", additions: 1, deletions: 0, language: "c" }],
+    unifiedDiff: [
+      `diff --git a/${escapedPath} b/${escapedPath}`,
+      `--- a/${escapedPath}`,
+      `+++ b/${escapedPath}`,
+      "@@ -1,4 +1,4 @@",
+      " int EscapedFunction(void)",
+      " {",
+      "+    return 7;",
+      " }",
+      ""
+    ].join("\n"),
+    warnings: []
+  }, reviewInput(), { workspaceRoot: workspace, textEncoding: "utf8" })
+
+  assert.equal(result.codeSlices.length, 0)
+  assert.equal(result.evidence.length, 0)
+  assert.ok(result.warnings.some((warning) => /changed file path.*escapes workspace/i.test(warning)))
+})
+
 function reviewInput() {
   return {
     schema_version: 1,

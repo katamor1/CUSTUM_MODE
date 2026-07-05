@@ -7,7 +7,7 @@ import { loadProjectChecklistRequired, loadReviewResultSchemaRequired } from "..
 import { buildProjectRulesSection } from "../projectRules/packet"
 import { buildReviewPacket } from "./reviewPacket"
 import { clampMaxAddedFileContentBytes, clampMaxDiffBytes, maxBufferForDiffBytes } from "./reviewLimits"
-import { buildAddedFilesContentSection, loadBazaarRevisionPacketInput } from "./revisionInfo"
+import { buildTargetMetadataSection, prepareTarget } from "./reviewTarget"
 import { isWorkflowRegisterExtensionAvailable } from "../workflow/workflowRegisterBridge"
 import { resolveBazaarWorkspaceFolder, resolveBobWorkspaceFolder } from "../workspace/workspaceResolver"
 
@@ -26,19 +26,25 @@ export async function reviewRevision(context: vscode.ExtensionContext, withProje
 
   await withProgress("Bazaar 1リビジョンレビュー packet を作成しています", async () => {
     const client = makeBazaarClient()
-    const input = await loadBazaarRevisionPacketInput(client, bazaarFolder.uri.fsPath, revision)
-    const [addedFilesSection, projectRulesSection] = await Promise.all([
-      buildAddedFilesContentSection(client, input.root, revision, input.info, getMaxAddedFileContentBytes()),
+    const [prepared, projectRulesSection] = await Promise.all([
+      prepareTarget(client, bazaarFolder.uri.fsPath, { mode: "singleRevision", revision }, {
+        includeAddedFiles: true,
+        maxAddedFileContentBytes: getMaxAddedFileContentBytes()
+      }),
       withProjectRules && bobFolder ? buildProjectRulesSectionForWorkspace(bobFolder.uri.fsPath) : Promise.resolve(undefined)
     ])
 
-    const extraSections = [addedFilesSection, projectRulesSection].filter((section): section is string => Boolean(section))
+    const extraSections = [
+      buildTargetMetadataSection(prepared.info),
+      prepared.addedFilesSection,
+      projectRulesSection
+    ].filter((section): section is string => Boolean(section))
     const packet = buildReviewPacket({
-      repositoryRoot: input.root,
+      repositoryRoot: prepared.root,
       mode: "singleRevision",
       revision,
-      log: input.log,
-      diff: input.diff,
+      log: prepared.log,
+      diff: prepared.diff,
       maxDiffBytes: getMaxDiffBytes(),
       extraSections: extraSections.length > 0 ? extraSections : undefined
     })
@@ -69,20 +75,28 @@ export async function reviewRange(context: vscode.ExtensionContext, withProjectR
 
   await withProgress("Bazaar リビジョン範囲レビュー packet を作成しています", async () => {
     const client = makeBazaarClient()
-    const root = await client.root(bazaarFolder.uri.fsPath)
-    const [diff, projectRulesSection] = await Promise.all([
-      client.diffRange(root, baseRevision, targetRevision),
+    const [prepared, projectRulesSection] = await Promise.all([
+      prepareTarget(client, bazaarFolder.uri.fsPath, { mode: "revisionRange", baseRevision, targetRevision }, {
+        includeAddedFiles: true,
+        maxAddedFileContentBytes: getMaxAddedFileContentBytes()
+      }),
       withProjectRules && bobFolder ? buildProjectRulesSectionForWorkspace(bobFolder.uri.fsPath) : Promise.resolve(undefined)
     ])
+    const extraSections = [
+      buildTargetMetadataSection(prepared.info),
+      prepared.addedFilesSection,
+      projectRulesSection
+    ].filter((section): section is string => Boolean(section))
 
     const packet = buildReviewPacket({
-      repositoryRoot: root,
+      repositoryRoot: prepared.root,
       mode: "revisionRange",
       baseRevision,
-      targetRevision,
-      diff,
+      targetRevision: prepared.info.targetRevision,
+      log: prepared.log,
+      diff: prepared.diff,
       maxDiffBytes: getMaxDiffBytes(),
-      extraSections: projectRulesSection ? [projectRulesSection] : undefined
+      extraSections: extraSections.length > 0 ? extraSections : undefined
     })
 
     const outputFileName = withProjectRules

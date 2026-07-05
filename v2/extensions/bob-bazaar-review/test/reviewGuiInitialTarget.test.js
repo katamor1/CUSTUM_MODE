@@ -21,7 +21,7 @@ test("Bazaar workflow provider resolves repository root independently from workf
 
 test("Bazaar review GUI accepts workflow inputs as initial target values", () => {
   const bridgeSource = readSourceSet(["workflow/workflowRegisterBridge.ts"])
-  const guiSource = readSourceSet(["ui/reviewGui.ts", "ui/reviewGuiHtml.ts", "ui/reviewGuiTypes.ts"])
+  const guiSource = readSourceSet(["ui/reviewGui.ts", "ui/reviewGuiHtml.ts", "ui/reviewGuiHtmlAssets.ts", "ui/reviewGuiTypes.ts"])
 
   assert.match(bridgeSource, /function initialTargetFromWorkflowInputs\(inputs: Record<string, unknown>, input\?: WorkflowActionExecutionInput\)/)
   assert.match(bridgeSource, /revisionMode: targetMode\(inputs\.revisionMode\)/)

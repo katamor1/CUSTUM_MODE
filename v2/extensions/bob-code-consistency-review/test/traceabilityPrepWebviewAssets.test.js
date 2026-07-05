@@ -1,7 +1,10 @@
 const test = require("node:test")
 const assert = require("node:assert/strict")
 
-const { renderTraceabilityPrepClientScript } = require("../out/webview/traceabilityPrepWebviewAssets")
+const {
+  renderTraceabilityPrepClientScript,
+  serializeTraceabilityPrepInitialModel
+} = require("../out/webview/traceabilityPrepWebviewAssets")
 
 test("traceability prep client script avoids CSP-blocked inline handlers", () => {
   const script = renderTraceabilityPrepClientScript(JSON.stringify({
@@ -16,4 +19,20 @@ test("traceability prep client script avoids CSP-blocked inline handlers", () =>
   assert.match(script, /addEventListener\('change'/)
   assert.match(script, /data-action=/)
   assert.match(script, /data-args=/)
+})
+
+test("traceability prep initial model cannot terminate the script tag", () => {
+  const initialJson = serializeTraceabilityPrepInitialModel({
+    catalog: {
+      domains: [{ code: "PAY</script><script>alert(1)</script>", status: "proposed" }],
+      items: [],
+      links: [],
+      decisions: []
+    },
+    report: { status: "ok", errors: [], warnings: [] },
+    counts: { proposedItems: 0 }
+  })
+
+  assert.doesNotMatch(initialJson, /<\/script>/i)
+  assert.match(initialJson, /\\u003c\/script>/i)
 })

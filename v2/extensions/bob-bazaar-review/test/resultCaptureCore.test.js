@@ -68,9 +68,10 @@ test("explicit review-result text is validated and saved as JSON and Markdown", 
   assert.deepEqual(JSON.parse(await fs.readFile(result.jsonPath, "utf8")).review_id, "BRR-EXPLICIT-001")
   assert.match(await fs.readFile(result.markdownPath, "utf8"), /BRR-EXPLICIT-001/)
   const metadata = JSON.parse(await fs.readFile(result.metadataPath, "utf8"))
+  const packageJson = JSON.parse(fsSync.readFileSync(path.join(extensionRoot, "package.json"), "utf8"))
   assert.deepEqual(metadata, {
-    producer_extension: "bob-bazaar-review",
-    producer_version: "0.3.0",
+    producer_extension: packageJson.name,
+    producer_version: packageJson.version,
     workflow_run_id: "run-bazaar-001",
     source_vcs: "bazaar",
     source_revision: "2",

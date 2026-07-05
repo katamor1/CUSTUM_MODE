@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本書は `extensions/workflow-register` の単体テスト仕様を定義する。対象は現行 TypeScript 実装の parser、validator、engine、run state、run control、task snapshot、result handoff、Bob adapter helper、authoring helper である。
+本書は `extensions/workflow-register` の単体テスト仕様を定義する。対象は現行 TypeScript 実装の parser、validator、engine、run state、run control、task snapshot、result handoff、Bob adapter helper、authoring helper、Template Customization Studio helper である。
 
 ## 2. テスト実行方式
 
@@ -26,6 +26,7 @@
 | `mockActionRegistry` | action ID ごとに success / error / structured error を返す。 |
 | `mockAgentProvider` | fixed text、error、empty result を返す。 |
 | `mockResultSinkRegistry` | file / command sink 呼び出しを記録する。 |
+| `templateStudioModel` | 標準テンプレート、project profile、customization、UAT evidence path を持つ Studio model。 |
 
 ## 4. テスト項目
 
@@ -204,6 +205,26 @@
 - 入力: `includeState`、`producedBy`、`requiredWhen` を持つ model。
 - 期待結果: 参照切れ候補が warning として返る。
 
+### WR-UT-036 Template Studio: metadata から候補と既定値を作る
+
+- 入力: 標準テンプレート metadata。
+- 期待結果: `targetLanguage` / `vcs.type` の選択肢が metadata と一致し、Git profile には Bazaar prompt supplement が入らない。
+
+### WR-UT-037 Template Studio: input default の型を保持する
+
+- 入力: `string` / `number` / `boolean` / `null` を含む workflow input defaults。
+- 期待結果: Studio HTML と client parser が型を保持し、生成される profile / customization で文字列化されない。
+
+### WR-UT-038 Template Studio: unsafe output path と symlink escape を拒否する
+
+- 入力: `../outside`、workspace 外へ向く symlink 配下の生成先。
+- 期待結果: workflow / profile / customization は書き込まれず、readiness または generate result に error が含まれる。
+
+### WR-UT-039 Template Studio: 既存生成物を backup してから上書きする
+
+- 入力: 既存の profile、customization、`WORKFLOW.md` を持つ workspace。
+- 期待結果: `.bak` 系の backup が作成され、生成結果と backup path が report に含まれる。
+
 ## 5. 非機能観点
 
 - 一時ファイルと workspace root はテストごとに分離する。
@@ -212,6 +233,7 @@
 - ファイル保存系テストは Windows / POSIX path 差異を考慮する。
 - snapshot のサイズ制限、truncation、messages 省略は境界値を含める。
 - Webview / Status Bar / TreeDataProvider は VS Code API mock で表示値と command 登録を検証する。
+- Template Customization Studio は source regex だけでなく、model helper と生成結果の実ファイル I/O を検証する。
 
 ## 6. 完了条件
 

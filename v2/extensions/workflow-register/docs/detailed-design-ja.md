@@ -2,7 +2,7 @@
 
 ## 1. 文書の位置づけ
 
-本書は `extensions/workflow-register` 拡張機能の詳細設計を定義する。現在の実装に合わせ、Bob UI 実行、standalone 実行、中断・再開、step review、task snapshot、Run Control View、GUI Builder、AI 補助、Help / docs 統合の責務を整理する。
+本書は `extensions/workflow-register` 拡張機能の詳細設計を定義する。現在の実装に合わせ、Bob UI 実行、standalone 実行、中断・再開、step review、task snapshot、Run Control View、GUI Builder、Template Customization Studio、AI 補助、Help / docs 統合の責務を整理する。
 
 ## 2. 実装構成
 
@@ -15,7 +15,7 @@ extensions/workflow-register/
     detailed-design-ja.md
     unit-test-spec-ja.md
     real-machine-test-spec-ja.md
-    workflow-authoring-guide-ja.md
+    workflow-authoring-guide.md
     bob-task-export-recovery-plan-ja.md
     workflow-pause-resume-plan-ja.md
     workflow-pause-resume-phase0-decision-ja.md
@@ -79,7 +79,16 @@ extensions/workflow-register/
         templateRenderer.ts
       parser/
         ...
+    template/
+      templateGenerator.ts
+      templateReadiness.ts
+      templateStudioModel.ts
+      templateValidation.ts
     webview/
+      templateCustomizationStudioClientScript.ts
+      templateCustomizationStudioHtml.ts
+      templateCustomizationStudioPanel.ts
+      templateCustomizationStudioStyles.ts
       workflowBuilderBodyScript.ts
       workflowBuilderClientScript.ts
       workflowBuilderHtml.ts
@@ -138,6 +147,12 @@ extensions/workflow-register/
 | `workflowRegister.createWorkflowFromTemplate` | template から `WORKFLOW.md` を作成する。 |
 | `workflowRegister.openWorkflowBuilder` | Webview GUI で新規 workflow を作成する。 |
 | `workflowRegister.editWorkflowInBuilder` | 既存 `workflow-register/v1` workflow を Webview GUI で編集する。 |
+| `bobTemplate.validateLibrary` | 標準テンプレートライブラリを検証する。 |
+| `bobTemplate.validateProjectProfile` | project profile YAML を検証する。 |
+| `bobTemplate.validateCustomization` | customization YAML を検証する。 |
+| `bobTemplate.generateWorkflow` | template / profile / customization から workflow を生成し、既存ファイルを backup する。 |
+| `bobTemplate.checkReadiness` | checklist、UAT evidence、出力先などの readiness を検査する。 |
+| `bobTemplate.openCustomizationStudio` | Template Customization Studio Webview を開く。 |
 | `workflowRegister.designWorkflowWithAi` | AI provider で新規 workflow draft を作る。 |
 | `workflowRegister.improveWorkflowWithAi` | AI provider で改善案を作り、preview / diff / backup 後に適用する。 |
 | `workflowRegister.explainWorkflowDiagnostics` | diagnostics を自然言語で説明する。 |
@@ -153,7 +168,7 @@ extensions/workflow-register/
 | `workflowRegister.taskSnapshots.enabled` | `true` | Bob UI 実行時に task snapshot を保存する。 |
 | `workflowRegister.taskSnapshots.maxBytes` | `262144` | 1 snapshot JSON の最大サイズ。 |
 | `workflowRegister.taskSnapshots.maxPerRun` | `50` | 1 run に保持する snapshot 数。 |
-| `workflowRegister.taskSnapshots.includeMessages` | `true` | snapshot に Bob chat messages を含める。 |
+| `workflowRegister.taskSnapshots.includeMessages` | `false` | 既定では Bob chat messages を含めない。診断目的で必要な場合だけ明示的に有効化する。 |
 | `workflowRegister.taskSnapshots.pruneOnSave` | `true` | 保存時に古い snapshot を削除する。 |
 
 ## 6. 公開 API
@@ -353,6 +368,7 @@ AI provider は `workflowRegister.aiProviderCommand` で指定する。未設定
 | BobTaskInputs | metadata / message からの input 抽出。 |
 | BobWorkflowEngineRunner | full / singleStep、task input 抽出、hooks、manual completion。 |
 | authoring | serializer、loader、reference analysis、Webview module。 |
+| Template Customization Studio | template metadata からの候補生成、typed input defaults、VCS別 prompt supplement、readiness、backup、workspace/symlink escape 拒否。 |
 | 実機 | VS Code / IBM Bob / workspace / Webview / Explorer view / Status Bar を含む結合動作。 |
 
 詳細な単体テスト仕様は `unit-test-spec-ja.md`、実機テスト仕様は `real-machine-test-spec-ja.md` に定義する。
@@ -360,6 +376,7 @@ AI provider は `workflowRegister.aiProviderCommand` で指定する。未設定
 ## 22. 変更時の注意点
 
 - `workflowV1Schema` を変更した場合は parser、validator、README、テンプレート、GUI Builder、テストを同期する。
+- Template Customization Studio の template metadata、project profile、customization schema を変更した場合は README、基本設計、詳細設計、単体テスト仕様、実機テスト仕様を同期する。
 - `WorkflowEngineOptions` または `WorkflowExecutionHooks` を変更した場合は Bob UI 実行系と standalone 実行系を確認する。
 - `RunStateStore` の recoverable 判定を変更した場合は singleStep 継続と resume / retry を確認する。
 - `RunControlState` を変更した場合は `runControl.ts`、`runPause.ts`、Run Control View、単体テスト、実機テストを更新する。

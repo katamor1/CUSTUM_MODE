@@ -55,6 +55,12 @@ test("Phase 3 process workflow templates parse cleanly and enforce command guard
     }
     assert.equal(parsed.workflow.engineSteps.some((step) => step.type === "manual" && step.approval), true, `${workflowName} has human gate`)
     assert.equal(parsed.workflow.engineSteps.some((step) => step.type === "agent"), true, `${workflowName} has agent work`)
+    const recordStep = parsed.workflow.engineSteps.find((step) => step.type === "command" && step.action.args[0] === "bobProcess.writeProcessRecord")
+    assert.equal(
+      recordStep?.action?.args?.[1]?.record?.humanGate?.status,
+      "{{json state.humanGate.decision}}",
+      `${workflowName} records the manual gate decision from state`
+    )
     for (const artifact of parsed.workflow.artifacts) {
       assert.match(artifact.path, /^\.bob-process-(runs|records)\//, `${workflowName} artifact ${artifact.id} stays in process roots`)
     }
@@ -71,7 +77,24 @@ test("Phase 3 process workflow templates parse cleanly and enforce command guard
       assert.ok(providers.includes("bobCodeConsistency.preprocess"), "code precheck runs Phase 2 preprocess")
       assert.ok(providers.includes("bobCodeConsistency.validateOutput"), "code precheck validates Phase 2 output")
       assert.ok(providers.includes("bobCodeConsistency.triage"), "code precheck prepares human triage")
-      const recordStep = parsed.workflow.engineSteps.find((step) => step.id === "write-process-record")
+      const preprocessStep = parsed.workflow.engineSteps.find((step) => step.id === "phase2-preprocess")
+      assert.equal(
+        preprocessStep?.action?.args?.reviewInputPath,
+        "{{inputs.phase2ReviewInputPath}}",
+        "code precheck passes the selected Phase 2 review input path to preprocess"
+      )
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(preprocessStep?.action?.args ?? {}, "inputPath"),
+        false,
+        "code precheck must not use the ignored preprocess inputPath option"
+      )
+      const humanGateStep = parsed.workflow.engineSteps.find((step) => step.id === "human-gate")
+      assert.equal(humanGateStep?.transition?.default, "fail", "code precheck rejects must stop before record writing")
+      const approvedDecision = humanGateStep?.transition?.decisions?.[0]
+      assert.equal(approvedDecision?.id, "approved", "code precheck approval transition is explicit")
+      assert.equal(approvedDecision?.when?.stateKey, "humanGate.decision", "code precheck branches on manual gate decision")
+      assert.equal(approvedDecision?.when?.equals, "approved", "code precheck only records after explicit human approval")
+      assert.equal(approvedDecision?.goto, "write-process-record", "code precheck approval proceeds to record writing")
       assert.ok(recordStep.action.args[1].record.phase2Handoff, "code precheck writes Phase 2 handoff into process record")
     }
     assert.equal(parsed.diagnostics.some((line) => line.includes("- warn:")), false, `${workflowName}\n${parsed.diagnostics.join("\n")}`)

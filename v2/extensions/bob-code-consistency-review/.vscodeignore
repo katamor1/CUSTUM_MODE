@@ -1,5 +1,6 @@
 # Development sources; runtime uses compiled JavaScript under out/.
 src/**
+docs/**
 test/**
 tests/**
 *.ts

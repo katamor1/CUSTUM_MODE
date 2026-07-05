@@ -52,8 +52,20 @@ function parsePacketMetadata(packet: string): Record<string, string> {
 }
 
 function parsePacketMessage(packet: string): string | undefined {
-  const match = packet.match(/^###\s+Message \/ status\s*$(?:\r?\n)+```text\r?\n([\s\S]*?)\r?\n```/im)
-  return match?.[1]?.trim() || undefined
+  const lines = packet.split(/\r?\n/)
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!isMessageHeading(lines[index])) continue
+    let cursor = index + 1
+    while (cursor < lines.length && !lines[cursor].trim()) cursor += 1
+    if (!/^```text\s*$/i.test(lines[cursor] ?? "")) return undefined
+    const messageLines: string[] = []
+    for (cursor += 1; cursor < lines.length; cursor += 1) {
+      if (/^```\s*$/.test(lines[cursor])) break
+      messageLines.push(lines[cursor])
+    }
+    return messageLines.join("\n").trim() || undefined
+  }
+  return undefined
 }
 
 function parsePacketChangedFiles(packet: string): Array<{ path: string; status: string }> {
@@ -61,7 +73,7 @@ function parsePacketChangedFiles(packet: string): Array<{ path: string; status: 
   const result: Array<{ path: string; status: string }> = []
   let inChangedFiles = false
   for (const line of lines) {
-    if (/^###\s+Changed files\s*$/i.test(line)) {
+    if (isChangedFilesHeading(line)) {
       inChangedFiles = true
       continue
     }
@@ -70,4 +82,12 @@ function parsePacketChangedFiles(packet: string): Array<{ path: string; status: 
     if (match) result.push({ status: match[1].trim(), path: match[2].trim() })
   }
   return result
+}
+
+function isMessageHeading(line: string): boolean {
+  return /^###\s+(?:Message|メッセージ)\s*\/\s*status\s*$/i.test(line)
+}
+
+function isChangedFilesHeading(line: string): boolean {
+  return /^###\s+(?:Changed files|変更ファイル)\s*$/i.test(line)
 }

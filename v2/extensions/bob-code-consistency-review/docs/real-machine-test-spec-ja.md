@@ -217,6 +217,14 @@ powershell -File docs\workflows\code-consistency-review\integration\launch-bob-c
 | 手順 | 1. Webview で domain、document、item、link、decision を追加する。<br>2. Save を押す。<br>3. `.bob-trace` 配下を確認する。 |
 | 期待結果 | `traceability-catalog.json` と `gate-report.md` が作成・更新される。既存 catalog は backup される。 |
 
+### CCR-RT-011A traceability prep Webview 承認 UI と escaping
+
+| 項目 | 内容 |
+| --- | --- |
+| 目的 | Webview が proposed item / link / decision を人間承認用に表示し、HTML / script 風の文字列を UI text として扱うことを確認する。 |
+| 手順 | 1. `proposed` item、link、decision と、`</script><script>alert(1)</script>` を含む label / reason を catalog に入れる。<br>2. Webview を開き、accepted / rejected / deprecated へ分類する。<br>3. Gate Report と Review Input Preview を確認して Save する。 |
+| 期待結果 | 文字列は実行されず表示 text として escape される。分類結果、gate report、preview が更新され、catalog 保存後も status と reason が保持される。 |
+
 ### CCR-RT-012 traceability catalog 検証
 
 | 項目 | 内容 |

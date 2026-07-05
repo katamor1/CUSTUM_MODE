@@ -41,7 +41,7 @@ test("Phase 1 review record commands are registered from the extension compositi
   }
   assert.match(commandSource, /context\.asAbsolutePath\(path\.join\("templates", "\.bob-review-records"\)\)/)
   assert.match(commandSource, /writeReviewRecord\(/)
-  assert.match(commandSource, /writeReviewPacketArtifact\(/)
+  assert.match(commandSource, /writeReviewPacketArtifactAtPath\(/)
   assert.match(commandSource, /createTriageDraft\(/)
   assert.match(commandSource, /generateCampaignSummary\(/)
 })

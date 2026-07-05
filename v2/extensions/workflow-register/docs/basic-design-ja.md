@@ -17,7 +17,7 @@ Bob 上でレビューや設計作業を定型化する場合、次の課題が�
 - AI 出力後に保存や検証だけ失敗した場合、Bob chat 側の出力を救済したい。
 - 長い workflow を checkpoint で中断し、後で再開したい。
 - Explorer view / Status Bar で run 状態を確認したい。
-- GUI Builder、AI 補助、Diagnostics、Help を標準機能として運用したい。
+- GUI Builder、Template Customization Studio、AI 補助、Diagnostics、Help を標準機能として運用したい。
 - 他拡張が action provider / agent provider / result sink を後付けできるようにしたい。
 
 ## 3. スコープ
@@ -38,7 +38,7 @@ Bob 上でレビューや設計作業を定型化する場合、次の課題が�
 - result handoff、file / command result sink、artifact 出力。
 - Workflow Diagnostics、Run Diagnostics、Active Step 表示、Run Control 表示。
 - Explorer view `workflowRegister.runs` と Status Bar による run 監視。
-- テンプレート作成、AI 設計、AI 改善、診断説明。
+- テンプレート作成、Template Customization Studio、AI 設計、AI 改善、診断説明。
 - Webview GUI Builder による新規作成と既存 v1 workflow 編集。
 
 ### 3.2 対象外
@@ -58,7 +58,7 @@ Bob 上でレビューや設計作業を定型化する場合、次の課題が�
 | 開発者 | `.bob/workflows` に workflow を定義し、Bob UI または Command Palette から実行する。 |
 | レビュー担当者 | Bob Workflow UI の Todo / Step を進め、step review で結果を承認・再試行する。 |
 | 拡張機能開発者 | action provider、agent provider、result sink を登録する。 |
-| ワークフロー設計者 | テンプレート、GUI Builder、AI 補助を使って `WORKFLOW.md` を作成・改善する。 |
+| ワークフロー設計者 | テンプレート、Template Customization Studio、GUI Builder、AI 補助を使って `WORKFLOW.md` を作成・改善する。 |
 | 保守担当者 | run state、run control、task snapshot、diagnostics、Explorer view を確認する。 |
 
 ## 5. 全体構成
@@ -108,6 +108,7 @@ VS Code Extension Host
 | Result Handoff | Bob assistant 出力を command sink へ渡す | `src/resultHandoff.ts` |
 | Workspace Roots | `.bob` root と workspace root の解決 | `src/core/workspaceRoots.ts` |
 | GUI Builder | Webview 作成、preview、diff、backup、save | `src/webview/*`, `src/core/workflowAuthoring*.ts` |
+| Template Customization Studio | 標準テンプレート選択、project profile / customization 編集、readiness 検査、backup 付き workflow 生成 | `src/template/*`, `src/webview/templateCustomizationStudio*.ts` |
 | AI Authoring | workflow 設計、改善、diagnostics 説明 | `src/commands/*Ai.ts`, `src/core/workflowAiProviderFactory.ts` |
 | Diagnostics | workflow / run diagnostics の Markdown 表示と VS Code Diagnostics | `src/commands/*Diagnostics.ts`, `src/commands/validateWorkflow.ts` |
 
@@ -237,6 +238,12 @@ activation return value として次の API を公開する。
 - `workflowRegister.createWorkflowFromTemplate`
 - `workflowRegister.openWorkflowBuilder`
 - `workflowRegister.editWorkflowInBuilder`
+- `bobTemplate.validateLibrary`
+- `bobTemplate.validateProjectProfile`
+- `bobTemplate.validateCustomization`
+- `bobTemplate.generateWorkflow`
+- `bobTemplate.checkReadiness`
+- `bobTemplate.openCustomizationStudio`
 - `workflowRegister.designWorkflowWithAi`
 - `workflowRegister.improveWorkflowWithAi`
 - `workflowRegister.explainWorkflowDiagnostics`
@@ -265,6 +272,7 @@ activation return value として次の API を公開する。
 - result handoff の assistant 成果物渡しを検証する。
 - Bob workflow factory / messages / task input helper を検証する。
 - GUI authoring serializer / loader / reference analysis を検証する。
+- Template Customization Studio の template metadata 連動候補、typed defaults、prompt supplement、backup、workspace/symlink 境界を検証する。
 - Run Control View の item 表示、context value、Status Bar 集計を検証する。
 - 実機では VS Code / IBM Bob / multi-root workspace / Bob UI step 実行 / Webview / Status Bar の結合動作を確認する。
 
