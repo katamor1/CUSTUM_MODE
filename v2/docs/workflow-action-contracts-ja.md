@@ -71,6 +71,7 @@ interface AgentExecutionInput {
 | Provider ID | Contract |
 | --- | --- |
 | `bobCodeConsistency.prepareAiTraceabilityDraft` | traceability AI draft 用 prompt を作成する。 |
+| `bobCodeConsistency.captureAiTraceabilityDraft` | AI draft JSON を取り込み、workflow state に渡す。 |
 | `bobCodeConsistency.applyAiTraceabilityDraft` | AI draft JSON を `.bob-trace/traceability-catalog.json` に反映する。 |
 | `bobCodeConsistency.openTraceabilityPrep` | Traceability Prep Webview を開く。 |
 | `bobCodeConsistency.validateTraceabilityCatalog` | traceability catalog gate を検証する。 |

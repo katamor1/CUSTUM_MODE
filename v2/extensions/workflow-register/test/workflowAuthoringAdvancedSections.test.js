@@ -24,6 +24,8 @@ test("serializes requires, preflight, completion, approval guardrails, and markd
   model.guardrails = {
     allowedCommands: ["workflow.safeCommand"],
     deniedCommands: ["workflow.dangerousCommand"],
+    allowedCommandIds: ["example.safeCommand"],
+    deniedCommandIds: ["example.dangerousCommand"],
     requireApproval: [{ id: "approve-dangerous-change", when: "command.requiresApproval", message: "人間の承認が必要です。" }]
   }
   model.completion = { summary: "Advanced workflow completed.", includeArtifacts: true, validateResult: true, visualization: { type: "markdown", enabled: true } }
@@ -36,6 +38,9 @@ test("serializes requires, preflight, completion, approval guardrails, and markd
   assert.match(rendered.markdown, /preflight:/)
   assert.match(rendered.markdown, /failurePolicy: stop/)
   assert.match(rendered.markdown, /guardrails:/)
+  assert.match(rendered.markdown, /allowedCommandIds:/)
+  assert.match(rendered.markdown, /example\.safeCommand/)
+  assert.match(rendered.markdown, /deniedCommandIds:/)
   assert.match(rendered.markdown, /requireApproval:/)
   assert.match(rendered.markdown, /approve-dangerous-change/)
   assert.match(rendered.markdown, /when: "command\.requiresApproval"/)
@@ -100,6 +105,8 @@ test("loads advanced sections, approval guardrails, and markdown body back into 
   model.requires = { workspace: false, bob: { minVersion: "2.1.0" }, files: ["README.md"] }
   model.preflight = [{ id: "check-readme", title: "Check README", required: false, checks: ["workflow.filesExist"], files: ["README.md"], failurePolicy: "warn" }]
   model.guardrails = { requireApproval: [{ id: "approve-report", when: "artifact.externalOutput", message: "外部出力前に承認してください。" }] }
+  model.guardrails.allowedCommandIds = ["example.collect"]
+  model.guardrails.deniedCommandIds = ["example.delete"]
   model.completion = { summary: "Done.", includeArtifacts: false, validateResult: true, visualization: { type: "table", enabled: false } }
   model.body = "# Existing Body\n\n## Manual Notes\n\nKeep this section editable outside YAML."
 
@@ -112,6 +119,8 @@ test("loads advanced sections, approval guardrails, and markdown body back into 
   assert.equal(loaded.model.preflight[0].failurePolicy, "warn")
   assert.equal(loaded.model.guardrails.requireApproval[0].id, "approve-report")
   assert.equal(loaded.model.guardrails.requireApproval[0].when, "artifact.externalOutput")
+  assert.deepEqual(loaded.model.guardrails.allowedCommandIds, ["example.collect"])
+  assert.deepEqual(loaded.model.guardrails.deniedCommandIds, ["example.delete"])
   assert.equal(loaded.model.completion.summary, "Done.")
   assert.equal(loaded.model.completion.visualization.type, "table")
   assert.match(loaded.model.body, /## Manual Notes/)

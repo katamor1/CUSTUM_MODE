@@ -85,6 +85,7 @@ extensions/bob-code-consistency-review/
 | `bobCodeConsistency.prepareAiReviewInputDraft` | `runPrepareAiReviewInputDraft` | AI draft 用 prompt を作成する。 |
 | `bobCodeConsistency.applyAiReviewInputDraft` | `runApplyAiReviewInputDraft` | AI draft JSON から `review-input.yaml` を生成する。 |
 | `bobCodeConsistency.prepareAiTraceabilityDraft` | `runPrepareAiTraceabilityDraft` | traceability AI draft 用 prompt を作成する。 |
+| `bobCodeConsistency.captureAiTraceabilityDraft` | `runCaptureAiTraceabilityDraft` | traceability AI draft JSON を workflow state に取り込む。 |
 | `bobCodeConsistency.applyAiTraceabilityDraft` | `runApplyAiTraceabilityDraft` | traceability AI draft JSON を catalog に反映する。 |
 | `bobCodeConsistency.openTraceabilityPrep` | `runOpenTraceabilityPrep` | traceability prep Webview を開く。 |
 | `bobCodeConsistency.validateTraceabilityCatalog` | `runValidateTraceabilityCatalog` | catalog を検証し gate report を生成する。 |
@@ -173,6 +174,7 @@ workflow template が既存 file と異なる場合は `.bak-<timestamp>` を作
 | `bobCodeConsistency.prepareAiReviewInputDraft` | `prepareAiReviewInputDraft(mergeWorkflowOptions(input))` |
 | `bobCodeConsistency.applyAiReviewInputDraft` | `applyAiReviewInputDraft(mergeWorkflowOptions(input))` |
 | `bobCodeConsistency.prepareAiTraceabilityDraft` | `prepareAiTraceabilityDraft(mergeWorkflowOptions(input))` |
+| `bobCodeConsistency.captureAiTraceabilityDraft` | `captureAiTraceabilityDraft(buildCaptureTraceabilityDraftOptions(input))` |
 | `bobCodeConsistency.applyAiTraceabilityDraft` | `applyAiTraceabilityDraft(buildApplyTraceabilityDraftOptions(input))` |
 | `bobCodeConsistency.openTraceabilityPrep` | `openTraceabilityPrep(mergeWorkflowOptions(input))` |
 | `bobCodeConsistency.validateTraceabilityCatalog` | `validateTraceabilityCatalog(mergeWorkflowOptions(input))` |
@@ -256,6 +258,7 @@ interface TraceabilityCatalog {
 | 関数 | 処理 |
 | --- | --- |
 | `runPrepareAiTraceabilityDraft` | diff summary と catalog を使い、AI draft prompt を `.bob-trace/ai-traceability-draft` に生成する。 |
+| `runCaptureAiTraceabilityDraft` | inline JSON、clipboard、path、既定 `ai-draft*.json` から draft を読み、proposed-only 制約を検証して workflow state 用 JSON 文字列を返す。 |
 | `runApplyAiTraceabilityDraft` | inline JSON、clipboard、path、既定 `ai-draft*.json` から draft を読み、catalog に反映する。 |
 | `runValidateTraceabilityCatalog` | catalog を検証し gate report を生成する。 |
 | `runCreateReviewInputFromTraceability` | accepted item から `review-input.yaml` を生成する。 |

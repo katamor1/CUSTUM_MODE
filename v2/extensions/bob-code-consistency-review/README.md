@@ -64,6 +64,7 @@
 | `Bob Code Consistency Review: AI draft 用プロンプトを作成` | `bobCodeConsistency.prepareAiReviewInputDraft` | diff summary、関連文書候補、schema enum、既存 YAML 診断をまとめた AI draft 用 Markdown を作成し clipboard にコピーする。 |
 | `Bob Code Consistency Review: AI draft JSON から review-input.yaml を生成` | `bobCodeConsistency.applyAiReviewInputDraft` | AI が返した `ReviewInputDraft` JSON を clipboard / 引数から読み、`ReviewInputBuilder` と validator を通して `review-input.yaml` に保存する。 |
 | `Bob Code Consistency Review: traceability AI draft 用プロンプトを作成` | `bobCodeConsistency.prepareAiTraceabilityDraft` | 文書候補、差分、既存 catalog をもとに traceability AI draft 用 prompt を作る。 |
+| `Bob Code Consistency Review: traceability AI draft JSON を取り込み` | `bobCodeConsistency.captureAiTraceabilityDraft` | `.bob-trace/ai-traceability-draft/ai-draft.json` などの proposed-only JSON を検証し、workflow state へ渡す。 |
 | `Bob Code Consistency Review: traceability AI draft JSON を catalog に反映` | `bobCodeConsistency.applyAiTraceabilityDraft` | AI が返した proposed-only JSON を `.bob-trace/traceability-catalog.json` に merge し、gate report を更新する。 |
 | `Bob Code Consistency Review: traceability prep を開く` | `bobCodeConsistency.openTraceabilityPrep` | Traceability Prep Webview を開き、人間が proposed item を承認 / 棄却 / 廃止する。 |
 | `Bob Code Consistency Review: traceability catalog を検証` | `bobCodeConsistency.validateTraceabilityCatalog` | catalog の gate 検証を行い、`.bob-trace/gate-report.md` を生成する。 |
@@ -125,7 +126,8 @@ traceability 機能は、元の要求書・設計書・テスト仕様書を書�
 
 ```text
 prepareAiTraceabilityDraft
-  -> AI に proposed-only JSON を返させる
+  -> AI に proposed-only JSON を返させ、.bob-trace/ai-traceability-draft/ai-draft.json に保存する
+  -> captureAiTraceabilityDraft
   -> applyAiTraceabilityDraft
   -> Traceability Prep Webview で人間が accepted / rejected / deprecated を判断
   -> validateTraceabilityCatalog

@@ -75,6 +75,12 @@ const WORKFLOW_COMMAND_ALLOWED_OPTIONS: Record<string, readonly string[]> = {
     "vcsRoot",
     "vcs_root"
   ],
+  "bobCodeConsistency.captureAiTraceabilityDraft": [
+    "aiTraceabilityDraftPromptPath",
+    "text",
+    "textEncoding",
+    "traceabilityDraftJsonPath"
+  ],
   "bobCodeConsistency.applyAiTraceabilityDraft": [
     "aiTraceabilityDraftPromptPath",
     "text",
@@ -119,6 +125,7 @@ export interface CodeConsistencyWorkflowHandlers {
   prepareAiReviewInputDraft: WorkflowCommandHandler
   applyAiReviewInputDraft: WorkflowCommandHandler
   prepareAiTraceabilityDraft: WorkflowCommandHandler
+  captureAiTraceabilityDraft: WorkflowCommandHandler
   applyAiTraceabilityDraft: WorkflowCommandHandler
   openTraceabilityPrep: WorkflowCommandHandler
   validateTraceabilityCatalog: WorkflowCommandHandler
@@ -154,6 +161,10 @@ export async function registerWorkflowProviders(handlers: CodeConsistencyWorkflo
   api.registerActionProvider({
     id: "bobCodeConsistency.prepareAiTraceabilityDraft",
     execute: (input) => handlers.prepareAiTraceabilityDraft(mergeWorkflowOptions("bobCodeConsistency.prepareAiTraceabilityDraft", input))
+  })
+  api.registerActionProvider({
+    id: "bobCodeConsistency.captureAiTraceabilityDraft",
+    execute: (input) => handlers.captureAiTraceabilityDraft(buildCaptureTraceabilityDraftOptions(input))
   })
   api.registerActionProvider({
     id: "bobCodeConsistency.applyAiTraceabilityDraft",
@@ -231,6 +242,10 @@ export function buildApplyTraceabilityDraftOptions(input: WorkflowActionExecutio
     return { ...options, text: draftText }
   }
   return options
+}
+
+function buildCaptureTraceabilityDraftOptions(input: WorkflowActionExecutionInput): Record<string, unknown> {
+  return mergeWorkflowOptions("bobCodeConsistency.captureAiTraceabilityDraft", input)
 }
 
 function mergeWorkflowOptions(commandId: string, input: WorkflowActionExecutionInput): Record<string, unknown> {

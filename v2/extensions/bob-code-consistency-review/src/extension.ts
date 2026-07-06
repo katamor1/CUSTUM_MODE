@@ -15,6 +15,7 @@ import {
 } from "./reviewExecutionCommands"
 import {
   runApplyAiTraceabilityDraft,
+  runCaptureAiTraceabilityDraft,
   runCreateReviewInputFromTraceability,
   runOpenTraceabilityPrep,
   runPrepareAiTraceabilityDraft,
@@ -72,6 +73,10 @@ export function activate(context: vscode.ExtensionContext): void {
       (textOrOptions?: unknown) => runApplyAiTraceabilityDraft(textOrOptions)
     ),
     vscode.commands.registerCommand(
+      "bobCodeConsistency.captureAiTraceabilityDraft",
+      (textOrOptions?: unknown) => runCaptureAiTraceabilityDraft(textOrOptions)
+    ),
+    vscode.commands.registerCommand(
       "bobCodeConsistency.openTraceabilityPrep",
       (options?: unknown) => runOpenTraceabilityPrep(context, options)
     ),
@@ -106,6 +111,7 @@ export function activate(context: vscode.ExtensionContext): void {
     prepareAiReviewInputDraft: runPrepareAiReviewInputDraft,
     applyAiReviewInputDraft: runApplyAiReviewInputDraft,
     prepareAiTraceabilityDraft: runPrepareAiTraceabilityDraft,
+    captureAiTraceabilityDraft: runCaptureAiTraceabilityDraft,
     applyAiTraceabilityDraft: runApplyAiTraceabilityDraft,
     openTraceabilityPrep: (options) => runOpenTraceabilityPrep(context, options),
     validateTraceabilityCatalog: runValidateTraceabilityCatalog,

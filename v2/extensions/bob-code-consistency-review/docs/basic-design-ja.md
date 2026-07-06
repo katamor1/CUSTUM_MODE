@@ -249,6 +249,7 @@ Bob 出力は YAML として扱い、既定では `.bob-review/bob-output/bob-ou
 - `openTraceabilityPrep` は Webview を開き、Domains / Items / Links / Decisions / Gate Report / Review Input Preview を表示する。
 - `validateTraceabilityCatalog` は catalog を検証し、gate report を生成する。
 - `prepareAiTraceabilityDraft` は catalog、diff summary、docs root、enum を含む prompt を `.bob-trace/ai-traceability-draft` に生成する。
+- `captureAiTraceabilityDraft` は proposed-only draft JSON を検証し、workflow state へ渡す。
 - `applyAiTraceabilityDraft` は inline JSON、clipboard、path、既定 `ai-draft*.json` から draft を読み、catalog に反映し、gate report を更新する。
 - `createReviewInputFromTraceability` は accepted item から artifact candidate を作り、`review-input.yaml` を生成する。
 
@@ -282,6 +283,7 @@ Bob 出力は YAML として扱い、既定では `.bob-review/bob-output/bob-ou
 | `bobCodeConsistency.prepareAiReviewInputDraft` | review-input AI draft 用 prompt を生成する。 |
 | `bobCodeConsistency.applyAiReviewInputDraft` | AI draft JSON から `review-input.yaml` を生成する。 |
 | `bobCodeConsistency.prepareAiTraceabilityDraft` | traceability AI draft 用 prompt を生成する。 |
+| `bobCodeConsistency.captureAiTraceabilityDraft` | traceability AI draft JSON を取り込む。 |
 | `bobCodeConsistency.applyAiTraceabilityDraft` | AI draft JSON を catalog に反映する。 |
 | `bobCodeConsistency.openTraceabilityPrep` | traceability prep Webview を開く。 |
 | `bobCodeConsistency.validateTraceabilityCatalog` | catalog を検証し gate report を生成する。 |

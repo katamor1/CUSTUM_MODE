@@ -53,6 +53,28 @@ test("default action registry injects workflowRoot into Bob command inputs", asy
   }])
 })
 
+test("default action registry injects workflowRoot into Bob code consistency command inputs", async () => {
+  const calls = []
+  const registry = createDefaultActionRegistry({
+    executeCommand: (command, ...args) => {
+      calls.push({ command, args })
+      return "ok"
+    }
+  })
+
+  const result = await registry.execute("vscode.executeCommand", {
+    args: ["bobCodeConsistency.prepareAiTraceabilityDraft", { docsRoot: "docs" }],
+    inputs: {},
+    workflowRoot: "C:\\repo\\workspace-b"
+  })
+
+  assert.equal(result.ok, true)
+  assert.deepEqual(calls, [{
+    command: "bobCodeConsistency.prepareAiTraceabilityDraft",
+    args: [{ docsRoot: "docs", workspaceRoot: "C:\\repo\\workspace-b" }]
+  }])
+})
+
 test("default action registry keeps explicit Bob command workspaceRoot", async () => {
   const calls = []
   const registry = createDefaultActionRegistry({

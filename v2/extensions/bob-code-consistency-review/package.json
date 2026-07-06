@@ -30,6 +30,7 @@
     "onCommand:bobCodeConsistency.prepareAiReviewInputDraft",
     "onCommand:bobCodeConsistency.applyAiReviewInputDraft",
     "onCommand:bobCodeConsistency.prepareAiTraceabilityDraft",
+    "onCommand:bobCodeConsistency.captureAiTraceabilityDraft",
     "onCommand:bobCodeConsistency.applyAiTraceabilityDraft",
     "onCommand:bobCodeConsistency.openTraceabilityPrep",
     "onCommand:bobCodeConsistency.validateTraceabilityCatalog",
@@ -87,6 +88,11 @@
       {
         "command": "bobCodeConsistency.applyAiTraceabilityDraft",
         "title": "traceability AI draft JSON を catalog に反映",
+        "category": "Bob Code Consistency Review"
+      },
+      {
+        "command": "bobCodeConsistency.captureAiTraceabilityDraft",
+        "title": "traceability AI draft JSON を取り込み",
         "category": "Bob Code Consistency Review"
       },
       {
@@ -221,6 +227,7 @@
         { "command": "bobCodeConsistency.prepareAiReviewInputDraft" },
         { "command": "bobCodeConsistency.applyAiReviewInputDraft" },
         { "command": "bobCodeConsistency.prepareAiTraceabilityDraft" },
+        { "command": "bobCodeConsistency.captureAiTraceabilityDraft" },
         { "command": "bobCodeConsistency.applyAiTraceabilityDraft" },
         { "command": "bobCodeConsistency.openTraceabilityPrep" },
         { "command": "bobCodeConsistency.validateTraceabilityCatalog" },

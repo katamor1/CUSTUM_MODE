@@ -38,6 +38,7 @@ import type {
   TaskSnapshotStore
 } from "./core/taskSnapshots"
 import { extractLastAssistantText } from "./resultHandoff"
+import { reviewTaskRegistry } from "./reviewTaskRegistry"
 
 export { createBobWorkflow } from "./bobWorkflowFactory"
 export { extractTaskWorkflowInputs } from "./bobTaskInputs"
@@ -309,7 +310,10 @@ export class BobWorkflowEngineRunner {
         await snapshot("completed", { workflow, run, step })
       },
       onStepReviewRequired: async ({ workflow, run, step }) => {
-        if (step) await sendControlBlock(run, step)
+        if (step) {
+          reviewTaskRegistry.register(run.runId, step.id, task)
+          await sendControlBlock(run, step)
+        }
         await this.openOperationHubForRun(run, step, "stepGate")
         await snapshot("review-required", { workflow, run, step })
       },

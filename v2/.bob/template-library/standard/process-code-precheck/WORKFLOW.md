@@ -12,6 +12,7 @@ stepCompletion: manual
 stepMessage: step
 stepExecution: { mode: engineSteps, allowOutOfOrder: false, showInBob: true }
 stepReview: { enabled: true, pauseAfter: agentAndCommand, requireAcceptBeforeNext: true, allowRetry: true, allowEditBeforeRetry: true, preserveAttempts: true }
+branching: { enabled: true }
 autoApproval: true
 workspaceRequired: true
 permissions: [read, todo]

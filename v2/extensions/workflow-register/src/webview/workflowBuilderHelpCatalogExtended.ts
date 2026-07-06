@@ -152,6 +152,22 @@ export const workflowBuilderExtendedHelpCatalog: Record<string, WorkflowBuilderH
     summary: "実行を禁止する command provider の一覧です。",
     effect: "shell 実行やワークスペース外書き込みなど、危険な操作を明示的に拒否できます。"
   },
+  "guardrails.allowedCommandIds": {
+    id: "guardrails.allowedCommandIds",
+    labelJa: "許可 VS Code command ID",
+    fieldKey: "guardrails.allowedCommandIds",
+    summary: "vscode.executeCommand provider 経由で実行を許可する VS Code command ID の一覧です。",
+    effect: "action.provider が vscode.executeCommand の command step では、args[0] がこの allow list に含まれている必要があります。",
+    caution: "allowedCommands には provider の vscode.executeCommand を入れ、allowedCommandIds には実際の command ID を入れます。"
+  },
+  "guardrails.deniedCommandIds": {
+    id: "guardrails.deniedCommandIds",
+    labelJa: "禁止 VS Code command ID",
+    fieldKey: "guardrails.deniedCommandIds",
+    summary: "vscode.executeCommand provider 経由で実行を禁止する VS Code command ID の一覧です。",
+    effect: "安全境界として、特定の VS Code command ID を明示的に拒否できます。",
+    caution: "allowedCommandIds と同じ command ID を書くと validation error になります。"
+  },
   "approval.id": {
     id: "approval.id",
     labelJa: "承認ルール ID",

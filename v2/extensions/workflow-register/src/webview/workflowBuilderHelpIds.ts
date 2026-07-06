@@ -74,6 +74,8 @@ export const WorkflowBuilderHelpIds = {
 
   GuardrailsAllowedCommands: "guardrails.allowedCommands",
   GuardrailsDeniedCommands: "guardrails.deniedCommands",
+  GuardrailsAllowedCommandIds: "guardrails.allowedCommandIds",
+  GuardrailsDeniedCommandIds: "guardrails.deniedCommandIds",
   ApprovalId: "approval.id",
   ApprovalWhen: "approval.when",
   ApprovalMessage: "approval.message",

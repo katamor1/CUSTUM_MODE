@@ -11,6 +11,7 @@ function runtimeSource() {
     "bobWorkflowRunner.ts",
     "bobStepRuntime.ts",
     "bobWorkflowMessages.ts",
+    "reviewTaskRegistry.ts",
     "webview/manualStepPanel.ts",
     "workflowInputPrompt.ts",
     "workflowRegisterService.ts",
@@ -142,6 +143,26 @@ test("Bob workflow runner opens Operation Hub when user action is required", () 
   assert.match(source, /vscode\.commands\.executeCommand\("workflowRegister\.openOperationHub", \{ runId: run\.runId, stepId: step\?\.id, reason \}\)/)
   assert.match(source, /await this\.openOperationHubForRun\(run, step, "stepGate"\)/)
   assert.match(source, /await this\.openOperationHubForRun\(run, step, "paused"\)/)
+})
+
+test("review-gated Bob tasks are completed when Operation Hub accepts the step", () => {
+  const runner = readSrc("bobWorkflowRunner.ts")
+  const stepReview = readSrc("commands", "stepReview.ts")
+
+  assert.match(runner, /import \{ reviewTaskRegistry \} from "\.\/reviewTaskRegistry"/)
+  assert.match(runner, /reviewTaskRegistry\.register\(run\.runId, step\.id, task\)/)
+  assert.match(stepReview, /import \{ reviewTaskRegistry \} from "\.\.\/reviewTaskRegistry"/)
+  assert.match(stepReview, /const acceptedStepId = run\.currentStep/)
+  assert.match(stepReview, /reviewTaskRegistry\.complete\(accepted\.runId, acceptedStepId\)/)
+})
+
+test("Operation Hub accept-and-run-next lets Bob task advance instead of standalone agent execution", () => {
+  const stepReview = readSrc("commands", "stepReview.ts")
+
+  assert.match(stepReview, /interface AcceptedStepResult \{[\s\S]*completedViaBobTask: boolean[\s\S]*\}/)
+  assert.match(stepReview, /const completedViaBobTask = reviewTaskRegistry\.complete\(accepted\.runId, acceptedStepId\)/)
+  assert.match(stepReview, /if \(accepted\.completedViaBobTask\) \{[\s\S]*return accepted\.run[\s\S]*\}/)
+  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", accepted\.run\.runId\)/)
 })
 
 test("Bob workflow result recovery is scoped to messages after the current step starts", () => {

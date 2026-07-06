@@ -4,6 +4,7 @@ const path = require("node:path")
 const { test } = require("node:test")
 
 const { parseWorkflowMarkdown } = require("../out/core/parser")
+const { validateWorkflowText } = require("../out/core/workflowValidator")
 
 test("v1 workflow parser accepts inputs, execution contract metadata, typed steps, and result sinks", () => {
   const parsed = parseWorkflowMarkdown({
@@ -119,14 +120,69 @@ test("repository code consistency workflow is clean for strict registration", ()
   const repoRoot = path.resolve(__dirname, "..", "..", "..")
   const filePath = path.join(repoRoot, ".bob", "workflows", "code-consistency-review", "WORKFLOW.md")
   const text = fs.readFileSync(filePath, "utf8")
+  const relativeFilePath = ".bob/workflows/code-consistency-review/WORKFLOW.md"
   const parsed = parseWorkflowMarkdown({
     sourceId: "workflow-register",
-    filePath: ".bob/workflows/code-consistency-review/WORKFLOW.md",
+    filePath: relativeFilePath,
+    text
+  })
+  const validation = validateWorkflowText({
+    sourceId: "workflow-register",
+    filePath: relativeFilePath,
     text
   })
 
   assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
+  assert.equal(validation.ok, true, validation.diagnostics.join("\n"))
   assert.deepEqual(parsed.diagnostics.filter((line) => line.trimStart().startsWith("- warn:")), [])
+})
+
+test("packaged code consistency workflow template matches traceability sidecar workflow", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..")
+  const filePath = path.join(
+    repoRoot,
+    "extensions",
+    "bob-code-consistency-review",
+    "templates",
+    ".bob",
+    "workflows",
+    "code-consistency-review",
+    "WORKFLOW.md"
+  )
+  const relativeFilePath = "extensions/bob-code-consistency-review/templates/.bob/workflows/code-consistency-review/WORKFLOW.md"
+  const text = fs.readFileSync(filePath, "utf8")
+  const parsed = parseWorkflowMarkdown({
+    sourceId: "workflow-register",
+    filePath: relativeFilePath,
+    text
+  })
+  const validation = validateWorkflowText({
+    sourceId: "workflow-register",
+    filePath: relativeFilePath,
+    text
+  })
+
+  assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
+  assert.equal(validation.ok, true, validation.diagnostics.join("\n"))
+  assert.deepEqual(parsed.diagnostics.filter((line) => line.trimStart().startsWith("- warn:")), [])
+  assert.ok(
+    parsed.workflow.guardrails.allowedCommands.includes("bobCodeConsistency.captureAiTraceabilityDraft"),
+    "template allows traceability draft capture"
+  )
+  assert.ok(
+    parsed.workflow.guardrails.allowedCommands.includes("bobCodeConsistency.createReviewInputFromTraceability"),
+    "template allows traceability review-input generation"
+  )
+  assert.deepEqual(
+    [
+      "collect-document-candidates",
+      "generate-traceability-draft",
+      "apply-traceability-draft",
+      "approve-traceability-catalog",
+      "create-review-input-from-traceability"
+    ].filter((stepId) => !parsed.workflow.engineSteps.some((step) => step.id === stepId)),
+    []
+  )
 })
 
 test("v1 workflow parser preserves Bob adapter metadata from typed steps", () => {

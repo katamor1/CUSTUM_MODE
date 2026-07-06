@@ -59,8 +59,10 @@ const RUN_ID_ACTIONS: readonly OperationHubActionId[] = [
 
 export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView
+  private panel?: vscode.WebviewPanel
   private focusedRunId?: string
   private readonly disposables: vscode.Disposable[] = []
+  private readonly panelDisposables: vscode.Disposable[] = []
 
   constructor(private readonly options: OperationHubProviderOptions) {}
 
@@ -72,24 +74,49 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
   }
 
   async open(input?: unknown): Promise<void> {
-    const parsed = parseOperationHubOpenInput(input)
-    this.focusedRunId = typeof parsed === "string" ? parsed : parsed?.runId
+    const parsed = this.applyOpenInput(input)
+    if (parsed && typeof parsed !== "string" && (parsed.reason === "stepGate" || parsed.reason === "paused")) {
+      await this.openPanel(parsed)
+      return
+    }
     await vscode.commands.executeCommand("workbench.view.explorer")
     await vscode.commands.executeCommand("workflowRegister.operationHub.focus")
     await this.refresh()
   }
 
+  async refreshFromCommand(): Promise<void> {
+    if (!this.view) {
+      await this.open(this.focusedRunId)
+      return
+    }
+    await this.refreshAll()
+  }
+
+  async openPanel(input?: unknown): Promise<void> {
+    this.applyOpenInput(input)
+    this.panel = this.ensurePanel()
+    this.panel.reveal(vscode.ViewColumn.One)
+    await this.refreshPanel()
+  }
+
   async refresh(): Promise<void> {
     if (!this.view) return
-    const model = await this.loadModel()
-    this.view.webview.html = renderOperationHubHtml({
-      cspSource: this.view.webview.cspSource,
-      nonce: nonce(),
-      model
-    })
+    await this.renderIntoWebview(this.view.webview, "compact")
+  }
+
+  async refreshPanel(): Promise<void> {
+    if (!this.panel) return
+    await this.renderIntoWebview(this.panel.webview, "panel")
+  }
+
+  async refreshAll(): Promise<void> {
+    await this.refresh()
+    await this.refreshPanel()
   }
 
   dispose(): void {
+    this.panel?.dispose()
+    while (this.panelDisposables.length > 0) this.panelDisposables.pop()?.dispose()
     for (const disposable of this.disposables) disposable.dispose()
   }
 
@@ -101,7 +128,11 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
     }
     try {
       if (message.action === "refresh") {
-        await this.refresh()
+        await this.refreshAll()
+        return
+      }
+      if (message.action === "openOperationHubPanel") {
+        await this.openPanel(message.runId ? { runId: message.runId } : undefined)
         return
       }
       if (message.action === "openArtifact") {
@@ -113,10 +144,44 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
         throw new Error(`Unsupported Operation Hub action: ${message.action}`)
       }
       await vscode.commands.executeCommand(command, ...commandArgsForAction(message))
-      await this.refresh()
+      await this.refreshAll()
     } catch (error) {
       void vscode.window.showErrorMessage(`Bob Operation Hub: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  private ensurePanel(): vscode.WebviewPanel {
+    if (this.panel) return this.panel
+    const panel = vscode.window.createWebviewPanel(
+      "workflowRegister.operationHubPanel",
+      "Bob Operation Hub",
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [this.options.extensionUri]
+      }
+    )
+    panel.webview.onDidReceiveMessage((message) => this.handleMessage(message), undefined, this.panelDisposables)
+    panel.onDidDispose(() => this.disposePanel(), undefined, this.panelDisposables)
+    this.panel = panel
+    return panel
+  }
+
+  private disposePanel(): void {
+    this.panel = undefined
+    while (this.panelDisposables.length > 0) this.panelDisposables.pop()?.dispose()
+  }
+
+  private async renderIntoWebview(webview: vscode.Webview, layout: "compact" | "panel"): Promise<void> {
+    const model = await this.loadModel()
+    webview.html = renderOperationHubHtml({
+      cspSource: webview.cspSource,
+      nonce: nonce(),
+      model,
+      refreshedAt: refreshTimestamp(),
+      layout
+    })
   }
 
   private async loadModel(): Promise<OperationHubModel> {
@@ -150,6 +215,12 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
       throw new Error("workspace 外の成果物は開けません。")
     }
     await vscode.window.showTextDocument(vscode.Uri.file(resolved), { preview: false })
+  }
+
+  private applyOpenInput(input: unknown): OperationHubOpenInput | undefined {
+    const parsed = parseOperationHubOpenInput(input)
+    this.focusedRunId = typeof parsed === "string" ? parsed : parsed?.runId
+    return parsed
   }
 }
 
@@ -236,4 +307,8 @@ function nonce(): string {
   let value = ""
   for (let i = 0; i < 24; i += 1) value += alphabet[Math.floor(Math.random() * alphabet.length)]
   return value
+}
+
+function refreshTimestamp(): string {
+  return new Date().toLocaleTimeString("ja-JP", { hour12: false })
 }

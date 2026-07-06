@@ -75,7 +75,9 @@ function injectWorkflowRoot(command: string, args: unknown[], workflowRoot: stri
 }
 
 function requiresWorkspaceRoot(command: string): boolean {
-  return command.startsWith("bobProcess.") || command.startsWith("bobTemplate.")
+  return command.startsWith("bobProcess.") ||
+    command.startsWith("bobTemplate.") ||
+    command.startsWith("bobCodeConsistency.")
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

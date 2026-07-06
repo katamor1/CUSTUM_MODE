@@ -29,7 +29,8 @@ requires:
     minVersion: "2.0.0"
 guardrails:
   allowedCommands:
-    - bobCodeConsistency.prepareAiTraceabilityDraft
+    - vscode.executeCommand
+    - bobCodeConsistency.captureAiTraceabilityDraft
     - bobCodeConsistency.applyAiTraceabilityDraft
     - bobCodeConsistency.openTraceabilityPrep
     - bobCodeConsistency.validateTraceabilityCatalog
@@ -38,6 +39,8 @@ guardrails:
     - bobCodeConsistency.captureBobOutput
     - bobCodeConsistency.validateOutput
     - bobCodeConsistency.triage
+  allowedCommandIds:
+    - bobCodeConsistency.prepareAiTraceabilityDraft
 inputs:
   reviewId:
     type: string
@@ -141,7 +144,16 @@ steps:
     title: 文書候補と差分サマリを収集
     type: command
     action:
-      provider: bobCodeConsistency.prepareAiTraceabilityDraft
+      provider: vscode.executeCommand
+      args:
+        - bobCodeConsistency.prepareAiTraceabilityDraft
+        - aiTraceabilityDraftPromptPath: "{{inputs.aiTraceabilityDraftPromptPath}}"
+          base: "{{inputs.base}}"
+          docsRoot: "{{inputs.docsRoot}}"
+          head: "{{inputs.head}}"
+          textEncoding: "{{inputs.textEncoding}}"
+          vcs: "{{inputs.vcs}}"
+          vcsRoot: "{{inputs.vcsRoot}}"
     prompt: traceability AI draft 用 prompt を生成してください。
     sendResult: true
     resultKey: traceabilityDraftPrompt
@@ -149,7 +161,7 @@ steps:
     required: true
     completeOnSuccess: true
   - id: generate-traceability-draft
-    title: AI が traceability proposed draft JSON を作成
+    title: traceability proposed draft JSON を生成
     type: agent
     required: true
     includeState:
@@ -157,7 +169,7 @@ steps:
     stateRequired: true
     resultKey: traceabilityDraftJson
     prompt: |
-      traceabilityDraftPrompt を読み、この step の最終応答として traceability catalog draft の JSON object だけを返してください。
+      state.traceabilityDraftPrompt の prompt を使い、traceability catalog draft JSON を作成してください。
 
       厳守事項:
       - Markdown、説明文、mermaid、リンク、ファイル作成報告は禁止です。

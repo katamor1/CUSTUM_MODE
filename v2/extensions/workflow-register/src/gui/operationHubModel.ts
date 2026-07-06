@@ -3,6 +3,7 @@ import type { CoreWorkflowDefinition, WorkflowRunState } from "../core/model"
 
 export const OPERATION_HUB_ALLOWED_ACTIONS = [
   "refresh",
+  "openOperationHubPanel",
   "openWorkflowBuilder",
   "validateWorkspaceWorkflows",
   "openRunControl",

@@ -1,6 +1,6 @@
 import * as path from "node:path"
 import * as vscode from "vscode"
-import { applyAiTraceabilityDraft, prepareAiTraceabilityDraftPrompt } from "./core/traceabilityAiDraftProvider"
+import { applyAiTraceabilityDraft, parseAiTraceabilityDraft, prepareAiTraceabilityDraftPrompt } from "./core/traceabilityAiDraftProvider"
 import { buildReviewInputDraftFromTraceability } from "./core/traceabilityCatalog"
 import {
   DEFAULT_TRACEABILITY_CATALOG_PATH,
@@ -68,6 +68,26 @@ export async function runPrepareAiTraceabilityDraft(options?: unknown): Promise<
   const warningSuffix = result.warnings.length > 0 ? `\nwarning: ${result.warnings.length} 件` : ""
   notifyInfo(`traceability AI draft 用プロンプトを作成して clipboard にコピーしました: ${result.promptPath}${warningSuffix}`)
   return result
+}
+
+export async function runCaptureAiTraceabilityDraft(textOrOptions?: unknown): Promise<unknown> {
+  const config = vscode.workspace.getConfiguration("bobCodeConsistency")
+  const record = optionRecord(textOrOptions)
+  const workspaceRoot = await requireBobWorkspaceRoot(record)
+  const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
+  const rawText = firstString(textOrOptions) ?? stringOption(record, "text") ?? await vscode.env.clipboard.readText()
+  const text = await resolveTraceabilityDraftText({ workspaceRoot, record, rawText, textEncoding })
+
+  try {
+    const draft = parseAiTraceabilityDraft(text)
+    const jsonText = JSON.stringify(draft, null, 2)
+    notifyInfo("traceability AI draft JSON を取り込みました。")
+    return jsonText
+  } catch (error) {
+    const message = `traceability AI draft JSON を取り込めません: ${error instanceof Error ? error.message : String(error)}`
+    notifyError(message)
+    return { status: "error", errors: [message] }
+  }
 }
 
 export async function runApplyAiTraceabilityDraft(textOrOptions?: unknown): Promise<unknown> {

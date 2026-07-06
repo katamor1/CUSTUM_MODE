@@ -29,12 +29,14 @@ test("extension registers code consistency workflow providers with workflow-regi
   assert.match(source, /id: "bobCodeConsistency\.validateOutput"/)
   assert.match(source, /id: "bobCodeConsistency\.triage"/)
   assert.match(source, /id: "bobCodeConsistency\.prepareAiTraceabilityDraft"/)
+  assert.match(source, /id: "bobCodeConsistency\.captureAiTraceabilityDraft"/)
   assert.match(source, /id: "bobCodeConsistency\.applyAiTraceabilityDraft"/)
   assert.match(source, /id: "bobCodeConsistency\.openTraceabilityPrep"/)
   assert.match(source, /id: "bobCodeConsistency\.validateTraceabilityCatalog"/)
   assert.match(source, /id: "bobCodeConsistency\.createReviewInputFromTraceability"/)
   for (const command of [
     "bobCodeConsistency.prepareAiTraceabilityDraft",
+    "bobCodeConsistency.captureAiTraceabilityDraft",
     "bobCodeConsistency.applyAiTraceabilityDraft",
     "bobCodeConsistency.openTraceabilityPrep",
     "bobCodeConsistency.validateTraceabilityCatalog",
@@ -79,6 +81,26 @@ test("Bob workflow template uses command providers instead of manual CLI instruc
   assert.match(workflow, /provider: bobCodeConsistency\.captureBobOutput/)
   assert.match(workflow, /provider: bobCodeConsistency\.validateOutput/)
   assert.match(workflow, /provider: bobCodeConsistency\.triage/)
+  const collectStepStart = workflow.indexOf("  - id: collect-document-candidates")
+  const generateStepStart = workflow.indexOf("  - id: generate-traceability-draft")
+  const collectStep = workflow.slice(collectStepStart, generateStepStart)
+  const applyStepStart = workflow.indexOf("  - id: apply-traceability-draft")
+  const generateStep = workflow.slice(generateStepStart, applyStepStart)
+  assert.match(workflow, /allowedCommands:[\s\S]*- vscode\.executeCommand/)
+  assert.match(workflow, /allowedCommandIds:[\s\S]*- bobCodeConsistency\.prepareAiTraceabilityDraft/)
+  assert.match(collectStep, /id: collect-document-candidates[\s\S]*provider: vscode\.executeCommand/)
+  assert.match(collectStep, /args:[\s\S]*- bobCodeConsistency\.prepareAiTraceabilityDraft/)
+  assert.match(collectStep, /aiTraceabilityDraftPromptPath: "\{\{inputs\.aiTraceabilityDraftPromptPath\}\}"/)
+  assert.match(collectStep, /base: "\{\{inputs\.base\}\}"/)
+  assert.match(collectStep, /docsRoot: "\{\{inputs\.docsRoot\}\}"/)
+  assert.match(collectStep, /head: "\{\{inputs\.head\}\}"/)
+  assert.match(collectStep, /textEncoding: "\{\{inputs\.textEncoding\}\}"/)
+  assert.match(collectStep, /vcs: "\{\{inputs\.vcs\}\}"/)
+  assert.match(collectStep, /vcsRoot: "\{\{inputs\.vcsRoot\}\}"/)
+  assert.match(workflow, /allowedCommands:[\s\S]*- bobCodeConsistency\.captureAiTraceabilityDraft/)
+  assert.match(generateStep, /id: generate-traceability-draft[\s\S]*type: agent/)
+  assert.doesNotMatch(generateStep, /provider: bobCodeConsistency\.captureAiTraceabilityDraft/)
+  assert.match(generateStep, /resultKey: traceabilityDraftJson/)
   assert.match(workflow, /id: apply-traceability-draft[\s\S]*includeState:[\s\S]*- traceabilityDraftJson/)
   assert.match(workflow, /Markdown、説明文、mermaid、リンク、ファイル作成報告は禁止/)
   assert.doesNotMatch(workflow, /id: copy-traceability-draft-json/)

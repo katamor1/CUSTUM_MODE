@@ -7,6 +7,7 @@ const yaml = require("js-yaml")
 const outRoot = path.resolve(__dirname, "..", "out")
 const repoRoot = path.resolve(__dirname, "..", "..", "..")
 const { parseWorkflowMarkdown } = require(path.join(outRoot, "core", "parser"))
+const { validateWorkflowText } = require(path.join(outRoot, "core", "workflowValidator"))
 const { validateWorkflowTemplate } = require(path.join(outRoot, "template", "templateValidation"))
 const {
   generateCustomizedWorkflow,
@@ -85,7 +86,13 @@ test("standard process-code-precheck template library is tracked and parses clea
     filePath: ".bob/template-library/standard/process-code-precheck/WORKFLOW.md",
     text: workflowText
   })
+  const workflowValidation = validateWorkflowText({
+    sourceId: "workflow-register",
+    filePath: ".bob/template-library/standard/process-code-precheck/WORKFLOW.md",
+    text: workflowText
+  })
   assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
+  assert.equal(workflowValidation.ok, true, workflowValidation.diagnostics.join("\n"))
   assert.equal(parsed.workflow.name, "process-code-precheck")
   assert.ok(parsed.workflow.guardrails.allowedCommands.includes("vscode.executeCommand"))
   assert.ok(parsed.workflow.guardrails.allowedCommands.includes("bobCodeConsistency.preprocess"))

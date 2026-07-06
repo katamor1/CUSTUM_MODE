@@ -4,6 +4,7 @@ const path = require("node:path")
 const { test } = require("node:test")
 
 const { parseWorkflowMarkdown } = require("../out/core/parser")
+const { validateWorkflowText } = require("../out/core/workflowValidator")
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..")
 const expectedProcessWorkflows = [
@@ -34,14 +35,22 @@ const processCommandIds = [
 
 test("Phase 3 process workflow templates parse cleanly and enforce command guardrails", () => {
   for (const workflowName of expectedProcessWorkflows) {
+    const relativeFilePath = `.bob/workflows/${workflowName}/WORKFLOW.md`
     const workflowFile = path.join(repoRoot, ".bob", "workflows", workflowName, "WORKFLOW.md")
+    const text = fs.readFileSync(workflowFile, "utf8")
     const parsed = parseWorkflowMarkdown({
       sourceId: "workflow-register",
-      filePath: `.bob/workflows/${workflowName}/WORKFLOW.md`,
-      text: fs.readFileSync(workflowFile, "utf8")
+      filePath: relativeFilePath,
+      text
+    })
+    const validation = validateWorkflowText({
+      sourceId: "workflow-register",
+      filePath: relativeFilePath,
+      text
     })
 
     assert.equal(parsed.ok, true, `${workflowName}\n${parsed.diagnostics.join("\n")}`)
+    assert.equal(validation.ok, true, `${workflowName}\n${validation.diagnostics.join("\n")}`)
     assert.equal(parsed.workflow.name, workflowName)
     assert.equal(parsed.workflow.schemaVersion, "workflow-register/v1")
     assert.equal(parsed.workflow.stepExecution.mode, "engineSteps")
