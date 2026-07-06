@@ -9,7 +9,8 @@ const {
 
 test("package contributes the Operation Hub command and Explorer view", () => {
   const packageJson = readJson("package.json")
-  const source = readSrc("extensionWithAuthoring.ts")
+  const core = readSrc("extension.ts")
+  const wrapper = readSrc("extensionWithAuthoring.ts")
 
   assertContributesCommand(packageJson, "workflowRegister.openOperationHub")
   assert.ok(packageJson.activationEvents.includes("onView:workflowRegister.operationHub"))
@@ -17,8 +18,10 @@ test("package contributes the Operation Hub command and Explorer view", () => {
     packageJson.contributes.views.explorer.some((view) => view.id === "workflowRegister.operationHub" && view.name === "Bob Operation Hub"),
     "Operation Hub explorer view contribution"
   )
-  assert.match(source, /registerWebviewViewProvider\("workflowRegister\.operationHub"/)
-  assert.match(source, /registerCommand\("workflowRegister\.openOperationHub"/)
+  assert.match(core, /registerWebviewViewProvider\("workflowRegister\.operationHub"/)
+  assert.match(core, /registerCommand\("workflowRegister\.openOperationHub"/)
+  assert.doesNotMatch(wrapper, /registerWebviewViewProvider\("workflowRegister\.operationHub"/)
+  assert.doesNotMatch(wrapper, /registerCommand\("workflowRegister\.openOperationHub"/)
 })
 
 test("Operation Hub model builds home setup catalog and run monitor sections", () => {
@@ -131,11 +134,67 @@ test("Operation Hub offers the next-step action for idle running workflow runs",
     ]
   })
 
+  assert.equal(model.runMonitor[0].statusLabel, "次ステップ実行待ち")
   assert.ok(model.runMonitor[0].primaryActions.some((action) => (
     action.id === "runNextStep" &&
     action.commandId === "workflowRegister.runNextStep" &&
     action.variant === "primary"
   )))
+})
+
+test("Operation Hub focused run is pinned first and marked for operator action", () => {
+  const { buildOperationHubModel } = require("../out/gui/operationHubModel")
+
+  const model = buildOperationHubModel({
+    workspaceName: "sample-repo",
+    workspaceRoots: ["C:\\work\\sample-repo"],
+    extensionStatus: [],
+    setup: {
+      bobRootPresent: true,
+      workflowsPresent: true,
+      runStatePresent: true,
+      mcpConfigPresent: true,
+      traceabilityPresent: false
+    },
+    workflows: [],
+    focusedRunId: "run-older",
+    runs: [
+      {
+        root: "C:\\work\\sample-repo",
+        run: {
+          runId: "run-newer",
+          workflowId: "qa.review",
+          workflowName: "Newer",
+          status: "running",
+          currentStep: "generate",
+          inputs: {},
+          state: {},
+          steps: [{ id: "generate", title: "生成", type: "agent", status: "pending" }],
+          createdAt: "2026-07-05T01:00:00.000Z",
+          updatedAt: "2026-07-05T01:03:00.000Z"
+        }
+      },
+      {
+        root: "C:\\work\\sample-repo",
+        run: {
+          runId: "run-older",
+          workflowId: "qa.review",
+          workflowName: "Older",
+          status: "reviewing",
+          currentStep: "humanGate",
+          inputs: {},
+          state: {},
+          steps: [{ id: "humanGate", title: "人間確認", type: "manual", status: "reviewing" }],
+          createdAt: "2026-07-05T01:00:00.000Z",
+          updatedAt: "2026-07-05T01:01:00.000Z"
+        }
+      }
+    ]
+  })
+
+  assert.equal(model.runMonitor[0].runId, "run-older")
+  assert.equal(model.runMonitor[0].focused, true)
+  assert.equal(model.runMonitor[1].focused, false)
 })
 
 test("Operation Hub html uses nonce protected scripts and data-action buttons", () => {
@@ -171,9 +230,63 @@ test("Operation Hub html uses nonce protected scripts and data-action buttons", 
   assert.ok(OPERATION_HUB_ALLOWED_ACTIONS.includes("openRunControl"))
 })
 
+test("Operation Hub html highlights the focused run", () => {
+  const { renderOperationHubHtml } = require("../out/gui/operationHubHtml")
+  const { buildOperationHubModel } = require("../out/gui/operationHubModel")
+
+  const model = buildOperationHubModel({
+    workspaceName: "sample-repo",
+    workspaceRoots: ["C:\\work\\sample-repo"],
+    extensionStatus: [],
+    setup: {
+      bobRootPresent: true,
+      workflowsPresent: true,
+      runStatePresent: true,
+      mcpConfigPresent: true,
+      traceabilityPresent: false
+    },
+    workflows: [],
+    focusedRunId: "run-focus",
+    runs: [
+      {
+        root: "C:\\work\\sample-repo",
+        run: {
+          runId: "run-focus",
+          workflowId: "qa.review",
+          workflowName: "QA Review",
+          status: "reviewing",
+          currentStep: "humanGate",
+          inputs: {},
+          state: {},
+          steps: [{ id: "humanGate", title: "人間確認", type: "manual", status: "reviewing" }],
+          createdAt: "2026-07-05T01:00:00.000Z",
+          updatedAt: "2026-07-05T01:02:00.000Z"
+        }
+      }
+    ]
+  })
+  const html = renderOperationHubHtml({ model, cspSource: "vscode-resource:", nonce: "nonce-123" })
+
+  assert.match(html, /class="card focused-run"/)
+  assert.match(html, /操作対象/)
+  assert.match(html, /run-focus/)
+})
+
 test("Operation Hub provider routes accept-and-run-next with the run id", () => {
   const source = readSrc("gui", "operationHubProvider.ts")
 
   assert.match(source, /acceptAndRunNextStep: "workflowRegister\.acceptAndRunNextStep"/)
-  assert.match(source, /\["resumeRun", "retryCurrentStep", "acceptCurrentStep", "acceptAndRunNextStep", "runNextStep"/)
+  assert.match(source, /const RUN_ID_ACTIONS: readonly OperationHubActionId\[] = \[/)
+  assert.match(source, /"acceptAndRunNextStep"/)
+  assert.match(source, /RUN_ID_ACTIONS\.includes\(message\.action\)/)
+})
+
+test("Operation Hub provider accepts run focus arguments from the open command", () => {
+  const core = readSrc("extension.ts")
+  const provider = readSrc("gui", "operationHubProvider.ts")
+
+  assert.match(core, /registerCommand\("workflowRegister\.openOperationHub", \(input\?: unknown\) => operationHub\.open\(input\)\)/)
+  assert.match(provider, /type OperationHubOpenInput = string \| \{ runId\?: string; stepId\?: string; reason\?: "stepGate" \| "paused" \}/)
+  assert.match(provider, /private focusedRunId\?: string/)
+  assert.match(provider, /focusedRunId: this\.focusedRunId/)
 })

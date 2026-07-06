@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
@@ -5,16 +6,20 @@ import {
   buildAnalyzeFunctionInvocation,
   buildBuildProbeInvocation,
   buildFinalizeDossierInvocation,
+  buildGenerateHarnessSkeletonInvocation,
   buildGenerateTestDesignInvocation,
   buildPrepareEvidenceInvocation,
   buildReanalyzeFunctionInvocation,
   buildRunTestsInvocation,
+  buildSuiteManifestPath,
+  buildSuiteRegisterInvocation,
+  buildSuiteRunInvocation,
   CliInvocation,
   FunctionTarget,
   relativeSourcePath,
 } from './cli/commandBuilder';
 import { CliResult, runCliInvocation } from './cli/cliRunner';
-import { parseCliResult } from './cli/cliResultParser';
+import { formatCliFailureMessage, parseCliResult } from './cli/cliResultParser';
 import { DEFAULT_CLI_PATH, resolveCliPath } from './config/bundledCli';
 import { AdapterSettings, defaultSourceRootFromWorkspaceFolders, RawSettings, readAdapterSettingsFromObject } from './config/settings';
 import { buildSettingsViewModel, SettingsActionKind, SettingsFieldId, SettingsViewModel } from './config/settingsViewModel';
@@ -22,6 +27,8 @@ import { validateSettings } from './config/validation';
 import { resolveFunctionNameFromText } from './functionTarget/regexFunctionResolver';
 import { ReportPaths, resolveReportPaths } from './reports/reportPathResolver';
 import { openMarkdown, openReport } from './reports/reportOpener';
+import { SuiteDashboardPanel } from './suite/suiteDashboard';
+import { readSelectedSuiteEntryIds, SuitePanelProvider } from './suite/suitePanel';
 import { WorkflowPanelProvider } from './workflow/workflowPanel';
 import {
   completeAwaitingSaveIfMatches,
@@ -37,6 +44,7 @@ import {
 const LAST_DOSSIER_KEY = 'unitTestRunner.lastFunctionDossierMarkdown';
 const LAST_WORKSPACE_KEY = 'unitTestRunner.lastOutputWorkspace';
 const LAST_COMMAND_KEY = 'unitTestRunner.lastCliCommand';
+const LAST_SUITE_ERROR_KEY = 'unitTestRunner.lastSuiteError';
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('Unit Test Runner');
@@ -51,10 +59,19 @@ export function activate(context: vscode.ExtensionContext): void {
       workflowPanel.refresh();
     },
   );
+  let suitePanel: SuitePanelProvider;
+  let suiteDashboard: SuiteDashboardPanel;
+  const suiteManifestPath = () => buildSuiteManifestPath(readConfig(context));
+  const lastSuiteError = () => context.workspaceState.get<string>(LAST_SUITE_ERROR_KEY);
+  suiteDashboard = new SuiteDashboardPanel(context, suiteManifestPath, lastSuiteError);
+  suitePanel = new SuitePanelProvider(context, suiteManifestPath, lastSuiteError);
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(WorkflowPanelProvider.viewType, workflowPanel));
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider(SuitePanelProvider.viewType, suitePanel));
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration('unitTestRunner')) {
       workflowPanel.refresh();
+      suitePanel.refresh();
+      suiteDashboard.refresh();
     }
   }));
   context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(async (document) => {
@@ -78,10 +95,19 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('unitTestRunner.openChangeImpactReport', async () => openLastReport(context, 'changeImpactReportMd')),
     vscode.commands.registerCommand('unitTestRunner.openRegressionSelection', async () => openLastReport(context, 'regressionSelectionCsv')),
     vscode.commands.registerCommand('unitTestRunner.generateTestDesign', async () => runWorkspaceCommand(context, output, 'testDesign', workflowPanel)),
+    vscode.commands.registerCommand('unitTestRunner.generateHarnessSkeleton', async () => runWorkspaceCommand(context, output, 'harness', workflowPanel)),
     vscode.commands.registerCommand('unitTestRunner.buildProbeDryRun', async () => runWorkspaceCommand(context, output, 'buildProbeDryRun', workflowPanel)),
     vscode.commands.registerCommand('unitTestRunner.runBuildProbe', async () => runWorkspaceCommand(context, output, 'buildProbeRun', workflowPanel)),
     vscode.commands.registerCommand('unitTestRunner.runTests', async () => runWorkspaceCommand(context, output, 'runTests', workflowPanel)),
     vscode.commands.registerCommand('unitTestRunner.prepareEvidence', async () => runWorkspaceCommand(context, output, 'evidence', workflowPanel)),
+    vscode.commands.registerCommand('unitTestRunner.registerCurrentFunctionInSuite', async () => registerActiveFunctionInSuite(context, output, workflowPanel, suitePanel, suiteDashboard)),
+    vscode.commands.registerCommand('unitTestRunner.openSuite', async () => suiteDashboard.open()),
+    vscode.commands.registerCommand('unitTestRunner.openSuiteDashboard', async () => suiteDashboard.open()),
+    vscode.commands.registerCommand('unitTestRunner.openSuiteManifest', async () => openSuiteManifest(context)),
+    vscode.commands.registerCommand('unitTestRunner.runSelectedSuiteTests', async () => runSuiteCommand(context, output, { selected: true, run: true }, suitePanel, suiteDashboard)),
+    vscode.commands.registerCommand('unitTestRunner.runSuiteByTag', async () => runSuiteByTag(context, output, suitePanel, suiteDashboard)),
+    vscode.commands.registerCommand('unitTestRunner.runAllSuiteTestsRequireGreen', async () => runSuiteCommand(context, output, { all: true, run: true, requireGreen: true }, suitePanel, suiteDashboard)),
+    vscode.commands.registerCommand('unitTestRunner.openSuiteRunReport', async () => openSuiteRunReport(context)),
     vscode.commands.registerCommand('unitTestRunner.openOutputWorkspace', async () => openOutputWorkspace(context)),
     vscode.commands.registerCommand('unitTestRunner.copyLastCommand', async () => copyLastCommand(context)),
     vscode.commands.registerCommand('unitTestRunner.openLastFunctionDossier', async () => openLastReport(context, 'functionDossierMd')),
@@ -95,7 +121,7 @@ export function deactivate(): void {
 async function analyzeActiveFunction(context: vscode.ExtensionContext, output: vscode.OutputChannel, workflowPanel: WorkflowPanelProvider): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
-    throw new Error('Open a C source file before running UnitTestRunner.');
+    throw new Error('UnitTestRunnerを実行する前にCソースファイルを開いてください。');
   }
   const settings = readConfig(context);
   showValidation(settings);
@@ -126,7 +152,7 @@ async function analyzeActiveFunction(context: vscode.ExtensionContext, output: v
 async function reanalyzeActiveFunction(context: vscode.ExtensionContext, output: vscode.OutputChannel, workflowPanel: WorkflowPanelProvider): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
-    throw new Error('Open a C source file before running UnitTestRunner.');
+    throw new Error('UnitTestRunnerを実行する前にCソースファイルを開いてください。');
   }
   const settings = readConfig(context);
   showValidation(settings);
@@ -154,6 +180,78 @@ async function reanalyzeActiveFunction(context: vscode.ExtensionContext, output:
   }
 }
 
+async function registerActiveFunctionInSuite(context: vscode.ExtensionContext, output: vscode.OutputChannel, workflowPanel: WorkflowPanelProvider, suitePanel: SuitePanelProvider, suiteDashboard: SuiteDashboardPanel): Promise<void> {
+  const target = await activeFunctionTarget(context);
+  const settings = readConfig(context);
+  const invocation = buildSuiteRegisterInvocation(settings, target, ['selected', 'regression']);
+  const completed = await executeSuiteInvocation(context, output, invocation, suitePanel, suiteDashboard);
+  if (!completed) {
+    return;
+  }
+  await context.globalState.update(LAST_WORKSPACE_KEY, target.outputWorkspace);
+  workflowPanel.refresh();
+  suiteDashboard.refresh();
+  void vscode.window.showInformationMessage('UnitTestRunner: 現在関数をスイートに登録しました。');
+}
+
+async function activeFunctionTarget(context: vscode.ExtensionContext): Promise<FunctionTarget> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    throw new Error('UnitTestRunnerを実行する前にCソースファイルを開いてください。');
+  }
+  const settings = readConfig(context);
+  showValidation(settings);
+  const functionName = await resolveFunctionName(editor);
+  const sourceRelativePath = relativeSourcePath(editor.document.uri.fsPath, settings.sourceRoot);
+  return {
+    sourcePath: editor.document.uri.fsPath,
+    sourceRelativePath,
+    functionName,
+    project: settings.defaultProject,
+    configuration: settings.defaultConfiguration,
+    outputWorkspace: path.join(settings.outputRoot, functionName),
+  };
+}
+
+interface SuiteCommandOptions {
+  selected?: boolean;
+  tag?: string;
+  all?: boolean;
+  run: boolean;
+  requireGreen?: boolean;
+}
+
+async function runSuiteByTag(context: vscode.ExtensionContext, output: vscode.OutputChannel, suitePanel: SuitePanelProvider, suiteDashboard: SuiteDashboardPanel): Promise<void> {
+  const tag = await vscode.window.showInputBox({
+    prompt: '実行するスイートタグを入力してください。',
+    value: 'selected',
+  });
+  if (!tag) {
+    throw new Error('スイートタグの指定が必要です。');
+  }
+  await runSuiteCommand(context, output, { tag: tag.trim(), run: true }, suitePanel, suiteDashboard);
+}
+
+async function runSuiteCommand(context: vscode.ExtensionContext, output: vscode.OutputChannel, options: SuiteCommandOptions, suitePanel: SuitePanelProvider, suiteDashboard: SuiteDashboardPanel): Promise<void> {
+  const settings = readConfig(context);
+  showValidation(settings);
+  const entryIds = options.selected ? readSelectedSuiteEntryIds(context) : undefined;
+  if (options.selected && (!entryIds || entryIds.length === 0)) {
+    throw new Error('スイートで実行する関数を選択してください。');
+  }
+  const invocation = buildSuiteRunInvocation(settings, {
+    entryIds,
+    tag: options.tag,
+    all: options.all,
+    run: options.run,
+    requireGreen: options.requireGreen,
+  });
+  await executeSuiteInvocation(context, output, invocation, suitePanel, suiteDashboard);
+  if (options.all && options.requireGreen) {
+    suiteDashboard.open();
+  }
+}
+
 function readRawConfig(): RawSettings {
   const config = vscode.workspace.getConfiguration('unitTestRunner');
   return {
@@ -162,9 +260,11 @@ function readRawConfig(): RawSettings {
     workspaceRoot: config.get('workspaceRoot'),
     dswPath: config.get('dswPath'),
     outputRoot: config.get('outputRoot'),
+    suiteManifestPath: config.get('suiteManifestPath'),
     defaultConfiguration: config.get('defaultConfiguration'),
     defaultProject: config.get('defaultProject'),
     projectName: config.get('projectName'),
+    vcvarsPath: config.get('vcvarsPath'),
     autoOpenDossier: config.get('autoOpenDossier'),
     finalizeDossierAfterAnalyze: config.get('finalizeDossierAfterAnalyze'),
     useJsonOutput: config.get('useJsonOutput'),
@@ -199,7 +299,7 @@ function showValidation(settings: AdapterSettings): void {
     }
   }
   if (!validation.ok) {
-    throw new Error(`Invalid UnitTestRunner settings: ${validation.warnings.map((warning) => warning.message).join(' ')}`);
+    throw new Error(`UnitTestRunnerの設定が不足しています: ${validation.warnings.map((warning) => warning.message).join(' ')}`);
   }
 }
 
@@ -288,6 +388,10 @@ async function resetSetting(fieldId: SettingsFieldId): Promise<void> {
     await config.update('cliPath', DEFAULT_CLI_PATH, vscode.ConfigurationTarget.Workspace);
     return;
   }
+  if (fieldId === 'suiteManifestPath') {
+    await config.update('suiteManifestPath', '', vscode.ConfigurationTarget.Workspace);
+    return;
+  }
   await config.update(settingKeyForField(fieldId), undefined, vscode.ConfigurationTarget.Workspace);
   for (const alias of legacySettingKeysForField(fieldId)) {
     await config.update(alias, undefined, vscode.ConfigurationTarget.Workspace);
@@ -299,8 +403,10 @@ function settingKeyForField(fieldId: SettingsFieldId): string {
     sourceRoot: 'sourceRoot',
     dswPath: 'dswPath',
     outputRoot: 'outputRoot',
+    suiteManifestPath: 'suiteManifestPath',
     defaultConfiguration: 'defaultConfiguration',
     defaultProject: 'defaultProject',
+    vcvarsPath: 'vcvarsPath',
     cliPath: 'cliPath',
   };
   return keys[fieldId];
@@ -325,12 +431,18 @@ function defaultUriForField(value: string, fileSelection: boolean): vscode.Uri |
 
 function filePickerFilters(fieldId: SettingsFieldId): Record<string, string[]> {
   if (fieldId === 'dswPath') {
-    return { 'Visual C++ Workspace': ['dsw'], 'All Files': ['*'] };
+    return { 'Visual C++ workspace': ['dsw'], 'すべてのファイル': ['*'] };
   }
   if (fieldId === 'cliPath') {
-    return { Executable: ['exe'], 'All Files': ['*'] };
+    return { '実行ファイル': ['exe'], 'すべてのファイル': ['*'] };
   }
-  return { 'All Files': ['*'] };
+  if (fieldId === 'suiteManifestPath') {
+    return { 'JSON': ['json'], 'すべてのファイル': ['*'] };
+  }
+  if (fieldId === 'vcvarsPath') {
+    return { 'Batch files': ['bat', 'cmd'], 'すべてのファイル': ['*'] };
+  }
+  return { 'すべてのファイル': ['*'] };
 }
 
 function inputPrompt(fieldId: SettingsFieldId): string {
@@ -343,11 +455,17 @@ function inputPrompt(fieldId: SettingsFieldId): string {
   if (fieldId === 'outputRoot') {
     return '生成物の出力ルートフォルダを入力してください。関数名フォルダはこの下に自動作成されます。';
   }
+  if (fieldId === 'suiteManifestPath') {
+    return '複数関数回帰スイートmanifestのパスを入力してください。空にすると outputRoot\\suites\\default\\suite_manifest.json を使います。';
+  }
   if (fieldId === 'defaultConfiguration') {
     return 'VC6構成名を入力してください。';
   }
   if (fieldId === 'defaultProject') {
     return '既定プロジェクト名を入力してください。空にすると指定なしになります。';
+  }
+  if (fieldId === 'vcvarsPath') {
+    return 'VC6環境設定バッチの絶対パスを入力してください。例: C:\\Program Files\\Microsoft Visual Studio\\VC98\\Bin\\VCVARS32.BAT';
   }
   if (fieldId === 'cliPath') {
     return '外部CLI exeの絶対パスを入力してください。同梱CLIを使う場合は unit-test-runner または空にします。';
@@ -365,16 +483,16 @@ async function resolveFunctionName(editor: vscode.TextEditor): Promise<string> {
     return resolved;
   }
   const prompt = await vscode.window.showInputBox({
-    prompt: 'Function name to analyze',
-    validateInput: (value) => (/^[A-Za-z_]\w*$/.test(value) ? undefined : 'Enter a C function identifier.'),
+    prompt: '解析する関数名を入力してください。',
+    validateInput: (value) => (/^[A-Za-z_]\w*$/.test(value) ? undefined : 'Cの関数識別子を入力してください。'),
   });
   if (!prompt) {
-    throw new Error('Function analysis cancelled.');
+    throw new Error('関数解析をキャンセルしました。');
   }
   return prompt;
 }
 
-async function runWorkspaceCommand(context: vscode.ExtensionContext, output: vscode.OutputChannel, kind: 'finalize' | 'testDesign' | 'buildProbeDryRun' | 'buildProbeRun' | 'runTests' | 'evidence', workflowPanel: WorkflowPanelProvider): Promise<void> {
+async function runWorkspaceCommand(context: vscode.ExtensionContext, output: vscode.OutputChannel, kind: 'finalize' | 'testDesign' | 'harness' | 'buildProbeDryRun' | 'buildProbeRun' | 'runTests' | 'evidence', workflowPanel: WorkflowPanelProvider): Promise<void> {
   const settings = readConfig(context);
   showValidation(settings);
   const workspace = await lastWorkspace(context);
@@ -383,6 +501,8 @@ async function runWorkspaceCommand(context: vscode.ExtensionContext, output: vsc
     invocation = buildFinalizeDossierInvocation(settings, workspace);
   } else if (kind === 'testDesign') {
     invocation = buildGenerateTestDesignInvocation(settings, path.join(workspace, 'reports', 'function_dossier.json'));
+  } else if (kind === 'harness') {
+    invocation = buildGenerateHarnessSkeletonInvocation(settings, workspace);
   } else if (kind === 'buildProbeDryRun') {
     invocation = buildBuildProbeInvocation(settings, workspace, false);
   } else if (kind === 'buildProbeRun') {
@@ -402,9 +522,9 @@ async function runWorkspaceCommand(context: vscode.ExtensionContext, output: vsc
 
 async function executeInvocation(context: vscode.ExtensionContext, output: vscode.OutputChannel, invocation: CliInvocation, outputWorkspace: string, workflowPanel: WorkflowPanelProvider): Promise<ReportPaths> {
   if (invocation.requiresConfirmation) {
-    const selected = await vscode.window.showWarningMessage('This command may execute generated tools or tests. Continue?', { modal: true }, 'Continue');
-    if (selected !== 'Continue') {
-      throw new Error('UnitTestRunner command cancelled.');
+    const selected = await vscode.window.showWarningMessage('このコマンドは生成されたツールまたはテストを実行する可能性があります。続行しますか？', { modal: true }, '続行');
+    if (selected !== '続行') {
+      throw new Error('UnitTestRunnerコマンドをキャンセルしました。');
     }
   }
   await context.globalState.update(LAST_COMMAND_KEY, invocation.displayCommand);
@@ -421,19 +541,108 @@ async function executeInvocation(context: vscode.ExtensionContext, output: vscod
   output.append(result.stdout);
   output.append(result.stderr);
   if (result.timedOut) {
-    await recordWorkflowError(context, workflowPanel, 'unit-test-runner timed out.');
-    throw new Error('unit-test-runner timed out.');
+    await recordWorkflowError(context, workflowPanel, 'unit-test-runnerがタイムアウトしました。');
+    throw new Error('unit-test-runnerがタイムアウトしました。');
   }
   if (result.exitCode !== 0) {
-    await recordWorkflowError(context, workflowPanel, `unit-test-runner exited with code ${result.exitCode ?? 'unknown'}.`);
-    throw new Error(`unit-test-runner exited with code ${result.exitCode ?? 'unknown'}.`);
+    const message = formatCliFailureMessage(result.stdout, result.stderr, result.exitCode);
+    await recordWorkflowError(context, workflowPanel, message);
+    throw new Error(message);
   }
   const parsed = parseCliResult(result.stdout, result.stderr, outputWorkspace);
   await context.globalState.update(LAST_WORKSPACE_KEY, parsed.reports.workspace);
   return parsed.reports;
 }
 
-function workflowCommandKind(kind: 'finalize' | 'testDesign' | 'buildProbeDryRun' | 'buildProbeRun' | 'runTests' | 'evidence'): WorkflowCommandKind {
+async function executeSuiteInvocation(context: vscode.ExtensionContext, output: vscode.OutputChannel, invocation: CliInvocation, suitePanel: SuitePanelProvider, suiteDashboard: SuiteDashboardPanel): Promise<boolean> {
+  if (invocation.requiresConfirmation) {
+    const selected = await vscode.window.showWarningMessage('このコマンドは登録済みスイートのテストを実行する可能性があります。続行しますか？', { modal: true }, '続行');
+    if (selected !== '続行') {
+      return false;
+    }
+  }
+  await context.globalState.update(LAST_COMMAND_KEY, invocation.displayCommand);
+  output.show(true);
+  output.appendLine(`> ${invocation.displayCommand}`);
+  let result: CliResult;
+  try {
+    result = await runCliInvocation(invocation);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await recordSuiteError(context, suitePanel, suiteDashboard, message);
+    await showSuiteError(context, `unit-test-runnerを起動できませんでした。${message}`);
+    return false;
+  }
+  output.append(result.stdout);
+  output.append(result.stderr);
+  if (result.timedOut) {
+    const message = 'unit-test-runnerがタイムアウトしました。';
+    await recordSuiteError(context, suitePanel, suiteDashboard, message);
+    await showSuiteError(context, message);
+    return false;
+  }
+  if (result.exitCode !== 0) {
+    const message = formatCliFailureMessage(result.stdout, result.stderr, result.exitCode);
+    await recordSuiteError(context, suitePanel, suiteDashboard, message);
+    await showSuiteError(context, message);
+    return false;
+  }
+  await context.workspaceState.update(LAST_SUITE_ERROR_KEY, undefined);
+  suitePanel.refresh();
+  suiteDashboard.refresh();
+  const summary = suiteSummaryFromStdout(result.stdout);
+  if (summary) {
+    void vscode.window.showInformationMessage(`UnitTestRunner: スイート実行完了。GREEN ${summary.green} / Not GREEN ${summary.notGreen} / Total ${summary.total}`);
+  }
+  return true;
+}
+
+async function recordSuiteError(context: vscode.ExtensionContext, suitePanel: SuitePanelProvider, suiteDashboard: SuiteDashboardPanel, message: string): Promise<void> {
+  await context.workspaceState.update(LAST_SUITE_ERROR_KEY, message);
+  suitePanel.refresh();
+  suiteDashboard.refresh();
+}
+
+async function showSuiteError(context: vscode.ExtensionContext, message: string): Promise<void> {
+  const selected = await vscode.window.showErrorMessage(`UnitTestRunner: ${message}`, '実行レポートを開く');
+  if (selected === '実行レポートを開く') {
+    try {
+      await openSuiteRunReport(context);
+    } catch {
+      // The command may have failed before a report was written.
+    }
+  }
+}
+
+function suiteSummaryFromStdout(stdout: string): { total: number; green: number; notGreen: number } | undefined {
+  try {
+    const parsed = JSON.parse(stdout) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const data = (parsed as { data?: unknown }).data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return undefined;
+    }
+    const summary = (data as { summary?: unknown }).summary;
+    if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+      return undefined;
+    }
+    return {
+      total: numberFromUnknown((summary as { total?: unknown }).total),
+      green: numberFromUnknown((summary as { green?: unknown }).green),
+      notGreen: numberFromUnknown((summary as { not_green?: unknown }).not_green),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function numberFromUnknown(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function workflowCommandKind(kind: 'finalize' | 'testDesign' | 'harness' | 'buildProbeDryRun' | 'buildProbeRun' | 'runTests' | 'evidence'): WorkflowCommandKind {
   return kind;
 }
 
@@ -468,9 +677,9 @@ async function lastWorkspace(context: vscode.ExtensionContext): Promise<string> 
   if (workspace) {
     return workspace;
   }
-  const selected = await vscode.window.showInputBox({ prompt: 'Output workspace path' });
+  const selected = await vscode.window.showInputBox({ prompt: '出力workspaceのパスを入力してください。' });
   if (!selected) {
-    throw new Error('Output workspace is required.');
+    throw new Error('出力workspaceの指定が必要です。');
   }
   await context.globalState.update(LAST_WORKSPACE_KEY, selected);
   return selected;
@@ -481,7 +690,24 @@ async function openLastReport(context: vscode.ExtensionContext, key: keyof Repor
   const remembered = key === 'functionDossierMd' ? context.globalState.get<string>(LAST_DOSSIER_KEY) : undefined;
   const reportPath = remembered || (workspace ? resolveReportPaths(workspace)[key] : undefined);
   if (!reportPath) {
-    throw new Error('No output workspace is recorded.');
+    throw new Error('記録済みの出力workspaceがありません。');
+  }
+  await openReport(reportPath);
+}
+
+async function openSuiteManifest(context: vscode.ExtensionContext): Promise<void> {
+  const suitePath = buildSuiteManifestPath(readConfig(context));
+  if (!fs.existsSync(suitePath)) {
+    throw new Error(`スイートmanifestがまだありません: ${suitePath}`);
+  }
+  await openReport(suitePath);
+}
+
+async function openSuiteRunReport(context: vscode.ExtensionContext): Promise<void> {
+  const suitePath = buildSuiteManifestPath(readConfig(context));
+  const reportPath = path.join(path.dirname(suitePath), 'reports', 'suite_run_report.md');
+  if (!fs.existsSync(reportPath)) {
+    throw new Error(`スイート実行レポートがまだありません: ${reportPath}`);
   }
   await openReport(reportPath);
 }
@@ -494,7 +720,7 @@ async function openOutputWorkspace(context: vscode.ExtensionContext): Promise<vo
 async function copyLastCommand(context: vscode.ExtensionContext): Promise<void> {
   const command = context.globalState.get<string>(LAST_COMMAND_KEY);
   if (!command) {
-    throw new Error('No UnitTestRunner command is recorded.');
+    throw new Error('記録済みのUnitTestRunnerコマンドがありません。');
   }
   await vscode.env.clipboard.writeText(command);
 }

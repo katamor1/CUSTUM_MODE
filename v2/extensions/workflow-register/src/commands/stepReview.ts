@@ -25,6 +25,9 @@ interface AcceptOptions {
   silent?: boolean
 }
 
+const RUN_NEXT_STEP_LABEL = "次のステップを実行"
+const OPEN_OPERATION_HUB_LABEL = "Operation Hub を開く"
+
 export async function acceptCurrentStep(options: StepReviewCommandOptions, runId?: string, acceptOptions: AcceptOptions = {}): Promise<WorkflowRunState | string> {
   const selection = runId ? await findRunSelection(runId) : await pickRunSelection("Accept reviewed workflow step", (run) => run.status === "reviewing")
   if (!selection) return runId ? `Workflow run not found or not waiting for review: ${runId}` : "No reviewing workflow run selected."
@@ -38,7 +41,7 @@ export async function acceptCurrentStep(options: StepReviewCommandOptions, runId
     : accepted.status === "completed"
     ? `Accepted final step and completed workflow run: ${accepted.runId}`
     : `Accepted step; next step is ${accepted.currentStep}: ${accepted.runId}`
-  if (!acceptOptions.silent) await vscode.window.showInformationMessage(message)
+  if (!acceptOptions.silent) await showAcceptedStepMessage(accepted, message)
   return accepted
 }
 
@@ -54,6 +57,23 @@ export async function acceptAndRunNextStep(options: StepReviewCommandOptions, ru
     return accepted
   }
   return vscode.commands.executeCommand("workflowRegister.runNextStep", accepted.runId)
+}
+
+async function showAcceptedStepMessage(accepted: WorkflowRunState, message: string): Promise<void> {
+  if (accepted.status !== "running" || !accepted.currentStep) {
+    await vscode.window.showInformationMessage(message)
+    return
+  }
+  const selected = await vscode.window.showInformationMessage(
+    `${message}. 次のステップはまだ開始されていません。`,
+    RUN_NEXT_STEP_LABEL,
+    OPEN_OPERATION_HUB_LABEL
+  )
+  if (selected === RUN_NEXT_STEP_LABEL) {
+    await vscode.commands.executeCommand("workflowRegister.runNextStep", accepted.runId)
+  } else if (selected === OPEN_OPERATION_HUB_LABEL) {
+    await vscode.commands.executeCommand("workflowRegister.openOperationHub", { runId: accepted.runId, stepId: accepted.currentStep, reason: "stepGate" })
+  }
 }
 
 export async function inspectCurrentStep(options: StepReviewCommandOptions, runId?: string): Promise<void> {

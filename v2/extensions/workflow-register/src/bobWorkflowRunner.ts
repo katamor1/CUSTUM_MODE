@@ -154,9 +154,9 @@ export class BobWorkflowEngineRunner {
         await vscode.window.showErrorMessage(`Bob workflow run failed: ${run.error ?? run.runId}`)
       }
       if ((run.status === "reviewing" || run.status === "held") && run.error) {
-        await vscode.window.showWarningMessage(`Bob workflow step gate: ${run.error}`)
+        await vscode.window.showWarningMessage("ワークフローはユーザー操作待ちです。Operation Hub を開きました。")
       }
-      return run.status === "completed" || run.status === "running" || run.status === "paused" || run.status === "reviewing" || run.status === "checkpoint"
+      return run.status === "completed" || run.status === "running" || run.status === "paused" || run.status === "reviewing" || run.status === "held" || run.status === "checkpoint"
     } catch (error) {
       await vscode.window.showErrorMessage(
         `Bob workflow execution failed: ${error instanceof Error ? error.message : String(error)}`
@@ -298,6 +298,7 @@ export class BobWorkflowEngineRunner {
         await snapshot("handoff-failed", { workflow, run, step, agentText, error })
       },
       onStepHeld: async ({ workflow, run, step, error }) => {
+        await this.openOperationHubForRun(run, step, "stepGate")
         await snapshot("held", { workflow, run, step, error })
       },
       onStepFailed: async ({ workflow, run, step, error }) => {
@@ -309,6 +310,7 @@ export class BobWorkflowEngineRunner {
       },
       onStepReviewRequired: async ({ workflow, run, step }) => {
         if (step) await sendControlBlock(run, step)
+        await this.openOperationHubForRun(run, step, "stepGate")
         await snapshot("review-required", { workflow, run, step })
       },
       onRunPaused: async ({ workflow, run, step }) => {
@@ -320,9 +322,18 @@ export class BobWorkflowEngineRunner {
           "- pause mode: graceful; no in-flight AI response was force-cancelled."
         ].join("\n"), "user")
         await sendControlBlock(run, step, true)
+        await this.openOperationHubForRun(run, step, "paused")
         await snapshot("paused", { workflow, run, step })
       },
       onWorkflowCompleted: async ({ workflow, run }) => snapshot("completed", { workflow, run })
+    }
+  }
+
+  private async openOperationHubForRun(run: WorkflowRunState, step: EngineStep | undefined, reason: "stepGate" | "paused"): Promise<void> {
+    try {
+      await vscode.commands.executeCommand("workflowRegister.openOperationHub", { runId: run.runId, stepId: step?.id, reason })
+    } catch {
+      await vscode.window.showWarningMessage("Operation Hub を自動表示できませんでした。Explorer から Bob Operation Hub を開いてください。")
     }
   }
 

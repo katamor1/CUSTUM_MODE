@@ -6,8 +6,10 @@ export type SettingsFieldId =
   | 'sourceRoot'
   | 'dswPath'
   | 'outputRoot'
+  | 'suiteManifestPath'
   | 'defaultConfiguration'
   | 'defaultProject'
+  | 'vcvarsPath'
   | 'cliPath';
 
 export type SettingsFieldState = 'configured' | 'default' | 'missing' | 'warning' | 'optional';
@@ -110,6 +112,8 @@ function fieldSpecs(raw: RawSettings, settings: ReturnType<typeof readAdapterSet
   const configuredCliPath = nonEmptyString(raw.cliPath) ?? '';
   const configuredDefaultConfiguration = nonEmptyString(raw.defaultConfiguration) ?? '';
   const configuredDefaultProject = nonEmptyString(raw.defaultProject) ?? nonEmptyString(raw.projectName) ?? '';
+  const configuredVcvarsPath = nonEmptyString(raw.vcvarsPath) ?? '';
+  const configuredSuiteManifestPath = nonEmptyString(raw.suiteManifestPath) ?? '';
   return [
     {
       id: 'sourceRoot',
@@ -152,6 +156,22 @@ function fieldSpecs(raw: RawSettings, settings: ReturnType<typeof readAdapterSet
       ],
     },
     {
+      id: 'suiteManifestPath',
+      label: 'スイートmanifest',
+      settingKey: 'unitTestRunner.suiteManifestPath',
+      description: '複数関数回帰スイートのmanifestです。未設定時は出力ルート配下の suites/default を使います。',
+      effectiveValue: settings.suiteManifestPath || (settings.outputRoot ? `${settings.outputRoot}\\suites\\default\\suite_manifest.json` : ''),
+      configuredValue: configuredSuiteManifestPath,
+      defaulted: !configuredSuiteManifestPath,
+      optional: true,
+      advanced: true,
+      actions: [
+        { id: 'pickSuiteManifestPath', kind: 'pickFile', label: 'manifestを選択' },
+        { id: 'inputSuiteManifestPath', kind: 'inputText', label: 'パスを入力' },
+        { id: 'resetSuiteManifestPath', kind: 'reset', label: '既定値に戻す' },
+      ],
+    },
+    {
       id: 'defaultConfiguration',
       label: '既定構成',
       settingKey: 'unitTestRunner.defaultConfiguration',
@@ -176,6 +196,22 @@ function fieldSpecs(raw: RawSettings, settings: ReturnType<typeof readAdapterSet
       actions: [
         { id: 'inputDefaultProject', kind: 'inputText', label: 'プロジェクト名を入力', primary: true },
         { id: 'resetDefaultProject', kind: 'reset', label: 'クリア' },
+      ],
+    },
+    {
+      id: 'vcvarsPath',
+      label: 'VC6 vcvars32.bat',
+      settingKey: 'unitTestRunner.vcvarsPath',
+      description: 'ビルドプローブ実行前に呼び出すVC6環境設定バッチです。nmake/clがPATHに無い場合に指定します。',
+      effectiveValue: settings.vcvarsPath ?? '',
+      configuredValue: configuredVcvarsPath,
+      defaulted: false,
+      optional: true,
+      advanced: true,
+      actions: [
+        { id: 'pickVcvarsPath', kind: 'pickFile', label: 'batを選択', primary: true },
+        { id: 'inputVcvarsPath', kind: 'inputText', label: 'パスを入力' },
+        { id: 'resetVcvarsPath', kind: 'reset', label: 'クリア' },
       ],
     },
     {

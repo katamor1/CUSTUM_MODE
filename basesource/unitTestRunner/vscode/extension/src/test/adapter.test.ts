@@ -1,11 +1,12 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import { describe, it } from 'node:test';
+import * as os from 'os';
 import * as path from 'path';
 
-import { buildAnalyzeFunctionInvocation, buildFinalizeDossierInvocation, buildGenerateTestDesignInvocation, buildReanalyzeFunctionInvocation, buildRunTestsInvocation } from '../cli/commandBuilder';
+import { buildAnalyzeFunctionInvocation, buildBuildProbeInvocation, buildFinalizeDossierInvocation, buildGenerateHarnessSkeletonInvocation, buildGenerateTestDesignInvocation, buildReanalyzeFunctionInvocation, buildRunTestsInvocation, buildSuiteManifestPath, buildSuiteRegisterInvocation, buildSuiteRunInvocation } from '../cli/commandBuilder';
 import { runCliInvocation } from '../cli/cliRunner';
-import { parseCliResult, parseCliResultReportPaths } from '../cli/cliResultParser';
+import { formatCliFailureMessage, parseCliResult, parseCliResultReportPaths } from '../cli/cliResultParser';
 import { DEFAULT_CLI_PATH, resolveCliPath } from '../config/bundledCli';
 import { defaultSourceRootFromWorkspaceFolders, readAdapterSettingsFromObject } from '../config/settings';
 import { buildSettingsViewModel } from '../config/settingsViewModel';
@@ -13,6 +14,8 @@ import { validateSettings } from '../config/validation';
 import { resolveFunctionNameFromText } from '../functionTarget/regexFunctionResolver';
 import { resolveReportPaths } from '../reports/reportPathResolver';
 import { commandRequiresConfirmation } from '../safety/confirmation';
+import { readSuiteViewModel } from '../suite/suiteViewModel';
+import { renderSettings } from '../workflow/settingsPanelRenderer';
 import {
   completeAwaitingSaveIfMatches,
   createInitialWorkflowState,
@@ -22,6 +25,7 @@ import {
   markWorkflowCommandFailed,
   markWorkflowCommandSucceeded,
   WorkflowReportAvailability,
+  WORKFLOW_STEP_DEFINITIONS,
   workflowLegacyProjection,
 } from '../workflow/workflowState';
 
@@ -91,7 +95,7 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
     assert.equal(fields.get('sourceRoot')?.effectiveValue, 'C:\\work\\product');
     assert.equal(fields.get('dswPath')?.state, 'missing');
     assert.equal(fields.get('outputRoot')?.state, 'warning');
-    assert.ok(fields.get('outputRoot')?.messages.some((message) => message.includes('production repository pollution')));
+    assert.ok(fields.get('outputRoot')?.messages.some((message) => message.includes('本番リポジトリへ生成物が混入')));
     assert.equal(fields.get('defaultConfiguration')?.state, 'default');
     assert.equal(fields.get('defaultProject')?.state, 'configured');
     assert.ok(fields.get('sourceRoot')?.actions.some((action) => action.kind === 'inputText'));
@@ -99,6 +103,59 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
     assert.ok(fields.get('outputRoot')?.actions.some((action) => action.kind === 'inputText'));
     assert.ok(fields.get('cliPath')?.actions.some((action) => action.kind === 'inputText'));
     assert.ok(fields.get('cliPath')?.actions.some((action) => action.kind === 'reset'));
+  });
+
+  it('collapses the settings panel by default only when required workspace settings are ready', () => {
+    const ready = buildSettingsViewModel(
+      {
+        cliPath: 'unit-test-runner',
+        sourceRoot: 'C:\\work\\product',
+        dswPath: 'C:\\work\\product\\Product.dsw',
+        outputRoot: 'D:\\unit-test-output',
+        defaultConfiguration: 'Win32 Debug',
+      },
+      'C:\\work\\product',
+    );
+    const missing = buildSettingsViewModel(
+      {
+        cliPath: 'unit-test-runner',
+        sourceRoot: 'C:\\work\\product',
+        dswPath: '',
+        outputRoot: 'D:\\unit-test-output',
+        defaultConfiguration: 'Win32 Debug',
+      },
+      'C:\\work\\product',
+    );
+    const warning = buildSettingsViewModel(
+      {
+        cliPath: 'unit-test-runner',
+        sourceRoot: 'C:\\work\\product',
+        dswPath: 'C:\\work\\product\\Product.dsw',
+        outputRoot: 'C:\\work\\product\\generated',
+        defaultConfiguration: 'Win32 Debug',
+      },
+      'C:\\work\\product',
+    );
+
+    assert.equal(ready.ready, true);
+    assert.equal(missing.ready, false);
+    assert.equal(warning.ready, true);
+    assert.ok(warning.warnings.length > 0);
+
+    const readyHtml = renderSettings(ready);
+    const missingHtml = renderSettings(missing);
+    const warningHtml = renderSettings(warning);
+
+    assert.match(readyHtml, /<details class="settings">/);
+    assert.doesNotMatch(readyHtml, /<details class="settings" open>/);
+    assert.match(readyHtml, /<summary class="settings-summary">/);
+    assert.match(readyHtml, /設定を表示/);
+    assert.match(readyHtml, /data-setting-kind="pickFile"/);
+
+    assert.match(missingHtml, /<details class="settings" open>/);
+    assert.match(missingHtml, /未設定の必須項目があります。/);
+    assert.match(warningHtml, /<details class="settings" open>/);
+    assert.match(warningHtml, /本番リポジトリへ生成物が混入/);
   });
 
   it('resolves selected and cursor function names without parsing C in VS Code', () => {
@@ -119,6 +176,7 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
         outputRoot: 'C:\\unit test workspace',
         defaultConfiguration: 'Win32 Debug',
         defaultProject: 'Control',
+        vcvarsPath: 'C:\\Program Files\\Microsoft Visual Studio\\VC98\\Bin\\VCVARS32.BAT',
         useJsonOutput: true,
       },
       'C:\\work\\product',
@@ -137,6 +195,7 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
     const finalize = buildFinalizeDossierInvocation(settings, target.outputWorkspace);
     const runTests = buildRunTestsInvocation(settings, target.outputWorkspace, true);
     const testDesign = buildGenerateTestDesignInvocation(settings, path.join(target.outputWorkspace, 'reports', 'function_dossier.json'));
+    const harness = buildGenerateHarnessSkeletonInvocation(settings, target.outputWorkspace);
 
     assert.equal(analyze.command, settings.cliPath);
     assert.ok(analyze.args.includes('--json'));
@@ -148,7 +207,91 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
     assert.ok(analyze.displayCommand.includes('"C:\\unit test workspace\\Control_Update"'));
     assert.deepEqual(finalize.args.slice(0, 3), ['--json', 'finalize-dossier', '--workspace']);
     assert.deepEqual(testDesign.args.slice(0, 3), ['--json', 'generate-test-design', '--dossier']);
+    assert.deepEqual(harness.args.slice(0, 2), ['--json', 'generate-harness-skeleton']);
+    assert.deepEqual(harness.args.slice(harness.args.indexOf('--test-case-design'), harness.args.indexOf('--test-case-design') + 2), ['--test-case-design', path.join(target.outputWorkspace, 'reports', 'test_case_design.json')]);
+    assert.deepEqual(harness.args.slice(harness.args.indexOf('--out'), harness.args.indexOf('--out') + 2), ['--out', target.outputWorkspace]);
+    const buildProbe = buildBuildProbeInvocation(settings, target.outputWorkspace, true);
+    assert.deepEqual(buildProbe.args.slice(buildProbe.args.indexOf('--vcvars'), buildProbe.args.indexOf('--vcvars') + 2), ['--vcvars', settings.vcvarsPath]);
     assert.equal(runTests.requiresConfirmation, true);
+  });
+
+  it('builds suite manifest, register, and run invocations from VS Code settings', () => {
+    const settings = readAdapterSettingsFromObject(
+      {
+        cliPath: 'unit-test-runner',
+        sourceRoot: 'C:\\work\\product',
+        dswPath: 'C:\\work\\product\\Product.dsw',
+        outputRoot: 'D:\\unit-test-output',
+        defaultConfiguration: 'Win32 Debug',
+        defaultProject: 'Control',
+        useJsonOutput: true,
+      },
+      'C:\\work\\product',
+    );
+    const target = {
+      sourcePath: 'C:\\work\\product\\src\\control.c',
+      sourceRelativePath: 'src/control.c',
+      functionName: 'Control_Update',
+      project: 'Control',
+      configuration: 'Win32 Debug',
+      outputWorkspace: 'D:\\unit-test-output\\Control_Update',
+    };
+
+    const suitePath = buildSuiteManifestPath(settings);
+    const register = buildSuiteRegisterInvocation(settings, target, ['selected', 'regression']);
+    const selectedRun = buildSuiteRunInvocation(settings, { entryIds: ['Control_Update-abc123'], run: true });
+    const tagRun = buildSuiteRunInvocation(settings, { tag: 'selected', run: false });
+    const allGreen = buildSuiteRunInvocation(settings, { all: true, run: true, requireGreen: true });
+
+    assert.equal(suitePath, path.join(settings.outputRoot, 'suites', 'default', 'suite_manifest.json'));
+    assert.deepEqual(register.args.slice(0, 4), ['--json', 'suite-register', '--suite', suitePath]);
+    assert.deepEqual(register.args.slice(register.args.indexOf('--workspace'), register.args.indexOf('--workspace') + 2), ['--workspace', target.outputWorkspace]);
+    assert.deepEqual(register.args.slice(register.args.indexOf('--tags'), register.args.indexOf('--tags') + 2), ['--tags', 'selected,regression']);
+    assert.deepEqual(register.args.slice(register.args.indexOf('--source-root'), register.args.indexOf('--source-root') + 2), ['--source-root', settings.sourceRoot]);
+    assert.deepEqual(register.args.slice(register.args.indexOf('--dsw'), register.args.indexOf('--dsw') + 2), ['--dsw', settings.dswPath]);
+    assert.deepEqual(selectedRun.args.slice(selectedRun.args.indexOf('--entry-id'), selectedRun.args.indexOf('--entry-id') + 2), ['--entry-id', 'Control_Update-abc123']);
+    assert.ok(selectedRun.args.includes('--run'));
+    assert.equal(selectedRun.requiresConfirmation, true);
+    assert.deepEqual(tagRun.args.slice(tagRun.args.indexOf('--tag'), tagRun.args.indexOf('--tag') + 2), ['--tag', 'selected']);
+    assert.ok(tagRun.args.includes('--dry-run'));
+    assert.ok(allGreen.args.includes('--all'));
+    assert.ok(allGreen.args.includes('--require-green'));
+  });
+
+  it('uses an explicit suiteManifestPath setting when present', () => {
+    const settings = readAdapterSettingsFromObject(
+      {
+        cliPath: 'unit-test-runner',
+        sourceRoot: 'C:\\work\\product',
+        dswPath: 'C:\\work\\product\\Product.dsw',
+        outputRoot: 'D:\\unit-test-output',
+        suiteManifestPath: 'E:\\suites\\release\\suite_manifest.json',
+      },
+      'C:\\work\\product',
+    );
+
+    assert.equal(buildSuiteManifestPath(settings), 'E:\\suites\\release\\suite_manifest.json');
+  });
+
+  it('exposes vcvarsPath as an optional advanced setting for build execution', () => {
+    const model = buildSettingsViewModel(
+      {
+        cliPath: 'unit-test-runner',
+        sourceRoot: 'C:\\work\\product',
+        dswPath: 'C:\\work\\product\\Product.dsw',
+        outputRoot: 'D:\\unit-test-output',
+        defaultConfiguration: 'Win32 Debug',
+        vcvarsPath: 'C:\\VC98\\Bin\\VCVARS32.BAT',
+      },
+      'C:\\work\\product',
+    );
+    const field = model.fields.find((item) => item.id === 'vcvarsPath');
+
+    assert.ok(field);
+    assert.equal(field.settingKey, 'unitTestRunner.vcvarsPath');
+    assert.equal(field.state, 'configured');
+    assert.equal(field.advanced, true);
+    assert.ok(field.actions.some((action) => action.kind === 'pickFile'));
   });
 
   it('prefers bundled CLI only when cliPath is default or empty', () => {
@@ -185,6 +328,8 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
         status: 'dossier_finalized',
         reports: {
           function_dossier_md: 'C:\\work\\out\\Control_Update\\reports\\top_level_dossier.md',
+          test_case_design_md: 'C:\\work\\out\\Control_Update\\reports\\top_level_design.md',
+          test_case_design_json: 'C:\\work\\out\\Control_Update\\reports\\top_level_design.json',
           test_case_design_csv: 'C:\\work\\out\\Control_Update\\reports\\top_level_design.csv',
         },
       }),
@@ -210,9 +355,13 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
     assert.equal(path.basename(parsed.functionDossierMd ?? ''), 'function_dossier.md');
     assert.equal(path.basename(parsed.reviewChecklistMd ?? ''), 'review_checklist.md');
     assert.equal(path.basename(topLevel.functionDossierMd ?? ''), 'top_level_dossier.md');
+    assert.equal(path.basename(topLevel.testCaseDesignMd ?? ''), 'top_level_design.md');
+    assert.equal(path.basename(topLevel.testCaseDesignJson ?? ''), 'top_level_design.json');
     assert.equal(path.basename(topLevel.testCaseDesignCsv ?? ''), 'top_level_design.csv');
     assert.equal(path.basename(fallback.nextActionsMd ?? ''), 'next_actions.md');
     assert.equal(path.basename(direct.unresolvedItemsMd ?? ''), 'unresolved_items.md');
+    assert.equal(path.basename(direct.testCaseDesignMd ?? ''), 'test_case_design.md');
+    assert.equal(path.basename(direct.testCaseDesignJson ?? ''), 'test_case_design.json');
     assert.equal(path.basename(direct.changeImpactReportMd ?? ''), 'change_impact_report.md');
     assert.equal(path.basename(direct.regressionSelectionCsv ?? ''), 'regression_selection.csv');
     assert.equal(path.basename(directStep19.changeImpactReportMd ?? ''), 'custom_change.md');
@@ -222,8 +371,55 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
   it('warns when CLI JSON omits report paths and uses conventional paths', () => {
     const parsed = parseCliResult(JSON.stringify({ status: 'ok', data: {} }), '', 'C:\\work\\out\\Control_Update');
 
-    assert.ok(parsed.warnings.some((warning) => warning.includes('report paths')));
+    assert.ok(parsed.warnings.some((warning) => warning.includes('レポートパス')));
     assert.equal(path.basename(parsed.reports.functionDossierMd ?? ''), 'function_dossier.md');
+  });
+
+  it('formats nonzero CLI JSON with environment diagnostics for panel errors', () => {
+    const message = formatCliFailureMessage(
+      JSON.stringify({
+        status: 'build_probe_environment_missing',
+        exit_code: 30,
+        command: 'build-probe',
+        message: 'Build probe could not run because the VC6 environment is missing.',
+        errors: ['VC6 build tools were not found on PATH.'],
+      }),
+      '',
+      30,
+    );
+
+    assert.match(message, /終了コード 30/);
+    assert.match(message, /VC6 build tools were not found on PATH\./);
+    assert.match(message, /build-probe/);
+  });
+
+  it('formats suite require-green failures with a clear non-green summary', () => {
+    const message = formatCliFailureMessage(
+      JSON.stringify({
+        status: 'suite_run_failed',
+        exit_code: 32,
+        command: 'suite-run',
+        message: 'Suite run completed.',
+        data: {
+          summary: {
+            total: 2,
+            green: 1,
+            not_green: 1,
+            executed: 2,
+            failed: 1,
+          },
+          reports: {
+            suite_run_report_md: 'D:\\out\\suites\\default\\reports\\suite_run_report.md',
+          },
+        },
+      }),
+      '',
+      32,
+    );
+
+    assert.match(message, /全件GREENではありません/);
+    assert.match(message, /GREEN 1 \/ Not GREEN 1 \/ Total 2/);
+    assert.match(message, /suite_run_report\.md/);
   });
 
   it('requires confirmation only for explicit build and test execution commands', () => {
@@ -250,6 +446,7 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
   it('declares command palette activation and copy-last-command contribution', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
     const commands = new Set(packageJson.contributes.commands.map((item: { command: string }) => item.command));
+    const commandTitles = new Map<string, string>(packageJson.contributes.commands.map((item: { command: string; title: string }) => [item.command, item.title]));
     const activationEvents = new Set(packageJson.activationEvents);
 
     for (const command of [
@@ -262,10 +459,26 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
       'unitTestRunner.openRegressionSelection',
       'unitTestRunner.copyLastCommand',
       'unitTestRunner.openLastFunctionDossier',
+      'unitTestRunner.generateHarnessSkeleton',
+      'unitTestRunner.registerCurrentFunctionInSuite',
+      'unitTestRunner.openSuite',
+      'unitTestRunner.runSelectedSuiteTests',
+      'unitTestRunner.runSuiteByTag',
+      'unitTestRunner.runAllSuiteTestsRequireGreen',
+      'unitTestRunner.openSuiteDashboard',
+      'unitTestRunner.openSuiteManifest',
+      'unitTestRunner.openSuiteRunReport',
     ]) {
       assert.ok(commands.has(command), command);
       assert.ok(activationEvents.has(`onCommand:${command}`), command);
     }
+    assert.equal(commandTitles.get('unitTestRunner.analyzeCurrentFunction'), 'UnitTestRunner: 現在関数を解析');
+    assert.equal(commandTitles.get('unitTestRunner.openLastFunctionDossier'), 'UnitTestRunner: 最後の関数dossierを開く');
+    assert.equal(commandTitles.get('unitTestRunner.openSuite'), 'UnitTestRunner: スイートを開く');
+    assert.equal(commandTitles.get('unitTestRunner.openSuiteManifest'), 'UnitTestRunner: スイートmanifestを開く');
+    assert.equal(commandTitles.get('unitTestRunner.runAllSuiteTestsRequireGreen'), 'UnitTestRunner: スイート全件GREEN確認');
+    assert.equal([...commandTitles.values()].some((title) => title.includes('Analyze Current Function')), false);
+    assert.equal([...commandTitles.values()].some((title) => title.includes('Open Last Function Dossier')), false);
   });
 
   it('declares editor context menu and workflow view contributions', () => {
@@ -274,13 +487,110 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
     const contextMenus = packageJson.contributes.menus['editor/context'] as Array<{ command: string; when: string }>;
     const activityContainers = packageJson.contributes.viewsContainers.activitybar as Array<{ id: string; icon: string }>;
     const workflowViews = packageJson.contributes.views.unitTestRunner as Array<{ id: string; name: string; type?: string }>;
+    const configuration = packageJson.contributes.configuration.properties as Record<string, unknown>;
 
     assert.ok(activationEvents.has('onView:unitTestRunner.workflow'));
     assert.ok(activationEvents.has('onStartupFinished'));
     assert.ok(contextMenus.some((item) => item.command === 'unitTestRunner.analyzeCurrentFunction' && item.when.includes('editorLangId == c')));
     assert.ok(contextMenus.some((item) => item.command === 'unitTestRunner.analyzeSelectedFunction' && item.when.includes('editorHasSelection')));
     assert.ok(activityContainers.some((item) => item.id === 'unitTestRunner' && item.icon === 'media/unit-test-runner.svg'));
-    assert.ok(workflowViews.some((item) => item.id === 'unitTestRunner.workflow' && item.name === 'Workflow' && item.type === 'webview'));
+    assert.ok(workflowViews.some((item) => item.id === 'unitTestRunner.workflow' && item.name === 'ワークフロー' && item.type === 'webview'));
+    assert.ok(workflowViews.some((item) => item.id === 'unitTestRunner.suite' && item.name === 'スイート' && item.type === 'webview'));
+    assert.ok(configuration['unitTestRunner.suiteManifestPath']);
+  });
+
+  it('combines suite manifest entries with the latest suite run report for dashboard rows', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'utr-suite-view-'));
+    const suitePath = path.join(root, 'suites', 'default', 'suite_manifest.json');
+    const reportPath = path.join(root, 'suites', 'default', 'reports', 'suite_run_report.json');
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      suitePath,
+      JSON.stringify({
+        schema_version: '0.1',
+        suite_id: 'default',
+        source_root: 'C:/work/product',
+        dsw_path: 'C:/work/product/Product.dsw',
+        entries: [
+          {
+            entry_id: 'Shared-111111111111',
+            enabled: true,
+            tags: ['selected', 'regression'],
+            function: { name: 'Shared', source: 'shared.c', project: 'App', configuration: 'Win32 Debug' },
+            workspace: 'D:/out/Shared',
+            dossier: 'D:/out/Shared/reports/function_dossier.json',
+            test_execution_report: 'D:/out/Shared/reports/test_execution_report.json',
+            registered_at: '2026-07-07T00:00:00Z',
+          },
+          {
+            entry_id: 'Shared2-222222222222',
+            enabled: true,
+            tags: ['regression'],
+            function: { name: 'Shared2', source: 'shared.c', project: 'App', configuration: 'Win32 Debug' },
+            workspace: 'D:/out/Shared2',
+            dossier: 'D:/out/Shared2/reports/function_dossier.json',
+            test_execution_report: 'D:/out/Shared2/reports/test_execution_report.json',
+            registered_at: '2026-07-07T00:00:00Z',
+          },
+        ],
+      }),
+      'utf-8',
+    );
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({
+        schema_version: '0.1',
+        status: 'suite_run_failed',
+        suite_id: 'default',
+        summary: { total: 2, green: 1, not_green: 1, executed: 2, failed: 1 },
+        results: [
+          {
+            entry_id: 'Shared-111111111111',
+            function: 'Shared',
+            workspace: 'D:/out/Shared',
+            execution_status: 'passed',
+            green_status: 'green',
+            executed: true,
+            total_tests: 3,
+            passed_tests: 3,
+            failed_tests: 0,
+            inconclusive_tests: 0,
+            unresolved_review_count: 0,
+            report_path: 'D:/out/Shared/reports/test_execution_report.json',
+          },
+          {
+            entry_id: 'Shared2-222222222222',
+            function: 'Shared2',
+            workspace: 'D:/out/Shared2',
+            execution_status: 'error',
+            green_status: 'not_green',
+            executed: false,
+            total_tests: 0,
+            passed_tests: 0,
+            failed_tests: 0,
+            inconclusive_tests: 0,
+            unresolved_review_count: 1,
+            report_path: 'D:/out/Shared2/reports/test_execution_report.json',
+            error: 'VC6 build tools were not found on PATH.',
+          },
+        ],
+      }),
+      'utf-8',
+    );
+
+    const model = readSuiteViewModel(suitePath, new Set(['Shared2-222222222222']), '直近エラー');
+    const rows = new Map(model.entries.map((entry) => [entry.entryId, entry]));
+
+    assert.equal(model.reportPath, reportPath);
+    assert.deepEqual(model.summary, { total: 2, green: 1, notGreen: 1, executed: 2, failed: 1 });
+    assert.equal(model.lastError, '直近エラー');
+    assert.equal(rows.get('Shared-111111111111')?.greenStatus, 'green');
+    assert.equal(rows.get('Shared-111111111111')?.totalTests, 3);
+    assert.equal(rows.get('Shared2-222222222222')?.selected, true);
+    assert.equal(rows.get('Shared2-222222222222')?.lastRunStatus, 'error');
+    assert.equal(rows.get('Shared2-222222222222')?.greenStatus, 'not_green');
+    assert.equal(rows.get('Shared2-222222222222')?.unresolvedReviewCount, 1);
+    assert.equal(rows.get('Shared2-222222222222')?.error, 'VC6 build tools were not found on PATH.');
   });
 
   it('packages a VS Code extension README for the details view', () => {
@@ -298,8 +608,37 @@ describe('UnitTestRunner VS Code thin adapter core', () => {
     assert.equal(deriveCurrentWorkflowStepId(base, availability()), 'analyze');
     assert.equal(deriveCurrentWorkflowStepId(base, availability({ functionDossier: true })), 'reviewDossier');
     assert.equal(deriveCurrentWorkflowStepId(base, availability({ functionDossier: true, testCaseDesign: true })), 'reviewTestDesign');
-    assert.equal(deriveCurrentWorkflowStepId(base, availability({ functionDossier: true, testCaseDesign: true, buildProbeReport: true })), 'reviewBuildProbe');
+    assert.equal(deriveCurrentWorkflowStepId(
+      { ...base, completedStepIds: ['settings', 'reviewTestDesign'] },
+      availability({ functionDossier: true, testCaseDesign: true }),
+    ), 'generateHarnessSkeleton');
+    assert.equal(deriveCurrentWorkflowStepId(base, availability({ functionDossier: true, testCaseDesign: true, harnessSkeletonReport: true })), 'buildProbeDryRun');
+    assert.equal(deriveCurrentWorkflowStepId(base, availability({ functionDossier: true, testCaseDesign: true, harnessSkeletonReport: true, buildProbeReport: true })), 'reviewBuildProbe');
     assert.equal(deriveCurrentWorkflowStepId(base, availability({ functionDossier: true, testCaseDesign: true, buildProbeReport: true, testExecutionReport: true, evidencePackage: true })), 'reviewEvidence');
+  });
+
+  it('shows harness generation as the required bridge from reviewed design to build probe', () => {
+    const reviewIndex = WORKFLOW_STEP_DEFINITIONS.findIndex((step) => step.id === 'reviewTestDesign');
+    const harnessIndex = WORKFLOW_STEP_DEFINITIONS.findIndex((step) => step.id === 'generateHarnessSkeleton');
+    const probeIndex = WORKFLOW_STEP_DEFINITIONS.findIndex((step) => step.id === 'buildProbeDryRun');
+    const harnessStep = WORKFLOW_STEP_DEFINITIONS[harnessIndex];
+
+    assert.ok(reviewIndex >= 0);
+    assert.ok(harnessIndex > reviewIndex);
+    assert.ok(probeIndex > harnessIndex);
+    assert.match(harnessStep.purpose, /Build Probe/);
+    assert.match(harnessStep.requiredAction, /test_case_design\.json/);
+    assert.equal(harnessStep.actions[0].commandId, 'unitTestRunner.generateHarnessSkeleton');
+  });
+
+  it('exposes markdown and json reports from the test design review step', () => {
+    const reviewStep = WORKFLOW_STEP_DEFINITIONS.find((step) => step.id === 'reviewTestDesign');
+    assert.ok(reviewStep);
+    const actions = new Map(reviewStep.actions.map((action) => [action.label, action]));
+
+    assert.equal(actions.get('CSVを開く')?.reportKey, 'testCaseDesignCsv');
+    assert.equal(actions.get('Markdownを開く')?.reportKey, 'testCaseDesignMd');
+    assert.equal(actions.get('JSONを開く')?.reportKey, 'testCaseDesignJson');
   });
 
   it('completes an awaiting-save workflow step only for the matching file', () => {

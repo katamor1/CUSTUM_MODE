@@ -20,6 +20,14 @@ export interface CliInvocation {
   requiresConfirmation: boolean;
 }
 
+export interface SuiteRunSelector {
+  entryIds?: string[];
+  tag?: string;
+  all?: boolean;
+  run: boolean;
+  requireGreen?: boolean;
+}
+
 export function buildAnalyzeFunctionInvocation(settings: AdapterSettings, target: FunctionTarget): CliInvocation {
   const args = jsonPrefix(settings).concat([
     'analyze-function',
@@ -80,6 +88,9 @@ export function buildFinalizeDossierInvocation(settings: AdapterSettings, worksp
 
 export function buildBuildProbeInvocation(settings: AdapterSettings, workspace: string, run: boolean): CliInvocation {
   const args = jsonPrefix(settings).concat(['build-probe', '--workspace', workspace, run ? '--run' : '--dry-run']);
+  if (settings.vcvarsPath) {
+    args.push('--vcvars', settings.vcvarsPath);
+  }
   return invocation(settings, args, run && settings.runBuildProbeRequiresConfirmation);
 }
 
@@ -88,12 +99,70 @@ export function buildRunTestsInvocation(settings: AdapterSettings, workspace: st
   return invocation(settings, args, run && settings.runTestsRequiresConfirmation);
 }
 
+export function buildSuiteManifestPath(settings: AdapterSettings): string {
+  return settings.suiteManifestPath || path.join(settings.outputRoot, 'suites', 'default', 'suite_manifest.json');
+}
+
+export function buildSuiteRegisterInvocation(settings: AdapterSettings, target: FunctionTarget, tags: string[]): CliInvocation {
+  const args = jsonPrefix(settings).concat([
+    'suite-register',
+    '--suite',
+    buildSuiteManifestPath(settings),
+    '--workspace',
+    target.outputWorkspace,
+    '--tags',
+    tags.join(','),
+    '--source-root',
+    settings.sourceRoot,
+    '--dsw',
+    settings.dswPath,
+  ]);
+  return invocation(settings, args, false);
+}
+
+export function buildSuiteRunInvocation(settings: AdapterSettings, selector: SuiteRunSelector): CliInvocation {
+  const args = jsonPrefix(settings).concat(['suite-run', '--suite', buildSuiteManifestPath(settings)]);
+  if (selector.all) {
+    args.push('--all');
+  } else if (selector.tag) {
+    args.push('--tag', selector.tag);
+  } else {
+    for (const entryId of selector.entryIds ?? []) {
+      args.push('--entry-id', entryId);
+    }
+  }
+  args.push(selector.run ? '--run' : '--dry-run');
+  if (selector.requireGreen) {
+    args.push('--require-green');
+  }
+  return invocation(settings, args, selector.run && settings.runTestsRequiresConfirmation);
+}
+
 export function buildPrepareEvidenceInvocation(settings: AdapterSettings, workspace: string): CliInvocation {
   return invocation(settings, jsonPrefix(settings).concat(['prepare-evidence', '--workspace', workspace]), false);
 }
 
 export function buildGenerateTestDesignInvocation(settings: AdapterSettings, dossierPath: string): CliInvocation {
   return invocation(settings, jsonPrefix(settings).concat(['generate-test-design', '--dossier', dossierPath]), false);
+}
+
+export function buildGenerateHarnessSkeletonInvocation(settings: AdapterSettings, workspace: string): CliInvocation {
+  const reports = path.join(workspace, 'reports');
+  const args = jsonPrefix(settings).concat([
+    'generate-harness-skeleton',
+    '--function-signature',
+    path.join(reports, 'function_signature.json'),
+    '--global-access',
+    path.join(reports, 'global_access.json'),
+    '--call-report',
+    path.join(reports, 'call_report.json'),
+    '--test-case-design',
+    path.join(reports, 'test_case_design.json'),
+    '--out',
+    workspace,
+    '--overwrite',
+  ]);
+  return invocation(settings, args, false);
 }
 
 export function relativeSourcePath(sourcePath: string, sourceRoot: string): string {

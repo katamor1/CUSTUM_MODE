@@ -33,7 +33,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     title: "差分レポート作成",
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.mjs"),
+      preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
@@ -43,6 +43,32 @@ function createWindow(): void {
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });
+  if (process.env.DIFFREPO_ELECTRON_DIAGNOSTICS === "1") {
+    mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+      console.error(`[renderer:did-fail-load] ${errorCode} ${errorDescription} ${validatedUrl}`);
+    });
+    mainWindow.webContents.on("render-process-gone", (_event, details) => {
+      console.error(`[renderer:gone] ${details.reason} ${details.exitCode}`);
+    });
+    mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+      console.error(`[renderer:console:${level}] ${sourceId}:${line} ${message}`);
+    });
+    mainWindow.webContents.once("did-finish-load", () => {
+      void mainWindow.webContents.executeJavaScript(
+        `JSON.stringify({
+          url: location.href,
+          title: document.title,
+          bodyText: document.body?.innerText?.slice(0, 300) ?? "",
+          hasBridge: Boolean(window.diffRepo),
+          htmlLength: document.documentElement?.outerHTML?.length ?? 0
+        })`
+      ).then((snapshot) => {
+        console.error(`[renderer:snapshot] ${snapshot}`);
+      }).catch((error: unknown) => {
+        console.error(`[renderer:snapshot:error] ${error instanceof Error ? error.message : String(error)}`);
+      });
+    });
+  }
   const windowCloseCoordinator = createCloseCoordinator({
     hasActiveJob: () => jobManager.hasActiveJob(),
     cancel: () => jobManager.cancel(),

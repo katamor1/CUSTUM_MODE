@@ -26,6 +26,8 @@ interface OperationHubMessage {
   artifactPath?: string
 }
 
+type OperationHubOpenInput = string | { runId?: string; stepId?: string; reason?: "stepGate" | "paused" }
+
 const ACTION_COMMANDS: Partial<Record<OperationHubActionId, string>> = {
   openWorkflowBuilder: "workflowRegister.openWorkflowBuilder",
   validateWorkspaceWorkflows: "workflowRegister.validateWorkspaceWorkflows",
@@ -43,8 +45,21 @@ const ACTION_COMMANDS: Partial<Record<OperationHubActionId, string>> = {
   inspectRunControl: "workflowRegister.inspectRunControl"
 }
 
+const RUN_ID_ACTIONS: readonly OperationHubActionId[] = [
+  "resumeRun",
+  "retryCurrentStep",
+  "acceptCurrentStep",
+  "acceptAndRunNextStep",
+  "runNextStep",
+  "openManualStepPanel",
+  "pauseCurrentRun",
+  "inspectRunControl",
+  "openRunControl"
+]
+
 export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView
+  private focusedRunId?: string
   private readonly disposables: vscode.Disposable[] = []
 
   constructor(private readonly options: OperationHubProviderOptions) {}
@@ -56,7 +71,9 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
     void this.refresh()
   }
 
-  async open(): Promise<void> {
+  async open(input?: unknown): Promise<void> {
+    const parsed = parseOperationHubOpenInput(input)
+    this.focusedRunId = typeof parsed === "string" ? parsed : parsed?.runId
     await vscode.commands.executeCommand("workbench.view.explorer")
     await vscode.commands.executeCommand("workflowRegister.operationHub.focus")
     await this.refresh()
@@ -120,7 +137,8 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
       ],
       setup: await setupState(roots),
       workflows: this.options.api.listWorkflows(),
-      runs: runs.flat()
+      runs: runs.flat(),
+      focusedRunId: this.focusedRunId
     })
   }
 
@@ -151,10 +169,21 @@ export function parseOperationHubMessage(message: unknown): OperationHubMessage 
 
 function commandArgsForAction(message: OperationHubMessage): unknown[] {
   if (message.action === "runWorkflow") return message.workflowId ? [message.workflowId] : []
-  if (["resumeRun", "retryCurrentStep", "acceptCurrentStep", "acceptAndRunNextStep", "runNextStep", "openManualStepPanel", "pauseCurrentRun", "inspectRunControl", "openRunControl"].includes(message.action)) {
+  if (RUN_ID_ACTIONS.includes(message.action)) {
     return message.runId ? [message.runId] : []
   }
   return []
+}
+
+function parseOperationHubOpenInput(input: unknown): OperationHubOpenInput | undefined {
+  if (typeof input === "string") return input.trim() ? input : undefined
+  if (!input || typeof input !== "object") return undefined
+  const candidate = input as Partial<Record<"runId" | "stepId" | "reason", unknown>>
+  if (typeof candidate.runId !== "string" || candidate.runId.trim().length === 0) return undefined
+  const parsed: OperationHubOpenInput = { runId: candidate.runId }
+  if (typeof candidate.stepId === "string") parsed.stepId = candidate.stepId
+  if (candidate.reason === "stepGate" || candidate.reason === "paused") parsed.reason = candidate.reason
+  return parsed
 }
 
 async function workflowRootCandidates(folders: readonly vscode.WorkspaceFolder[]): Promise<MarkerRootCandidate[]> {

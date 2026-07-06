@@ -130,7 +130,18 @@ test("Bob workflow runner surfaces step review gates without failing the run", (
   const source = readSrc("bobWorkflowRunner.ts")
 
   assert.match(source, /if \(\(run\.status === "reviewing" \|\| run\.status === "held"\) && run\.error\)/)
-  assert.match(source, /vscode\.window\.showWarningMessage\(`Bob workflow step gate: \$\{run\.error\}`\)/)
+  assert.match(source, /vscode\.window\.showWarningMessage\("ワークフローはユーザー操作待ちです。Operation Hub を開きました。"\)/)
+  assert.match(source, /run\.status === "held"/)
+  assert.doesNotMatch(source, /Bob workflow step gate:/)
+})
+
+test("Bob workflow runner opens Operation Hub when user action is required", () => {
+  const source = readSrc("bobWorkflowRunner.ts")
+
+  assert.match(source, /private async openOperationHubForRun\(run: WorkflowRunState, step: EngineStep \| undefined, reason: "stepGate" \| "paused"\): Promise<void>/)
+  assert.match(source, /vscode\.commands\.executeCommand\("workflowRegister\.openOperationHub", \{ runId: run\.runId, stepId: step\?\.id, reason \}\)/)
+  assert.match(source, /await this\.openOperationHubForRun\(run, step, "stepGate"\)/)
+  assert.match(source, /await this\.openOperationHubForRun\(run, step, "paused"\)/)
 })
 
 test("Bob workflow result recovery is scoped to messages after the current step starts", () => {

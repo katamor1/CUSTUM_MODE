@@ -23,6 +23,7 @@ from unit_test_runner.reanalysis import (
     reanalyze_function_workflow,
     select_regression_from_reports,
 )
+from unit_test_runner.suite import SuiteRunPolicy, list_entries, register_workspace, remove_entry, run_suite
 from unit_test_runner.reanalysis.reanalysis_models import ReanalysisPolicy
 from unit_test_runner.dossier import (
     analyze_function_workflow,
@@ -41,7 +42,7 @@ from unit_test_runner.vc6.dsp_parser import parse_dsp as parse_dsp_project
 from unit_test_runner.vc6.source_membership import map_source_membership
 
 from .errors import CLIError
-from .exit_codes import EXIT_BUILD_PROBE_FAILED, EXIT_ENVIRONMENT_WARNING, EXIT_INPUT_ERROR, EXIT_NOT_FOUND, EXIT_OK, EXIT_OUTPUT_ERROR
+from .exit_codes import EXIT_BUILD_PROBE_FAILED, EXIT_ENVIRONMENT_WARNING, EXIT_INPUT_ERROR, EXIT_NOT_FOUND, EXIT_OK, EXIT_OUTPUT_ERROR, EXIT_TESTS_FAILED
 from .result import CLIResult
 
 
@@ -64,6 +65,10 @@ def dispatch(args: argparse.Namespace) -> CLIResult:
         "generate-test-design": handle_generate_test_design,
         "reconcile-test-cases": handle_reconcile_test_cases,
         "select-regression-tests": handle_select_regression_tests,
+        "suite-register": handle_suite_register,
+        "suite-list": handle_suite_list,
+        "suite-remove": handle_suite_remove,
+        "suite-run": handle_suite_run,
     }
     return handlers[args.command](args)
 
@@ -382,6 +387,7 @@ def handle_generate_harness_skeleton(args: argparse.Namespace) -> CLIResult:
 def handle_build_probe(args: argparse.Namespace) -> CLIResult:
     if args.workspace:
         workspace = _existing_dir(args.workspace, "workspace", args.command)
+        _require_build_probe_workspace_reports(workspace, args.command)
         workspace_report, probe_report = generate_build_workspace_from_workspace(
             workspace,
             run_probe=args.run,
@@ -436,31 +442,67 @@ def handle_build_probe(args: argparse.Namespace) -> CLIResult:
     raise CLIError("build-probe requires --workspace, --dossier, or explicit report inputs.", EXIT_INPUT_ERROR, args.command)
 
 
+def _require_build_probe_workspace_reports(workspace: Path, command: str) -> None:
+    reports = workspace / "reports"
+    required = [
+        reports / "build_context.json",
+        reports / "source_digest.json",
+        reports / "harness_skeleton_report.json",
+    ]
+    missing = [path.relative_to(workspace).as_posix() for path in required if not path.is_file()]
+    if not missing:
+        return
+    hint = "Run analyze-function with --phase harness or --phase execution before build-probe --workspace."
+    raise CLIError("build-probe --workspace requires generated reports: " + ", ".join(missing) + ". " + hint, EXIT_INPUT_ERROR, command)
+
+
 def _build_probe_result(command: str, workspace: Path, workspace_report, probe_report) -> CLIResult:
+    build_workspace_json = workspace / "reports" / "build_workspace_report.json"
+    build_workspace_md = workspace / "reports" / "build_workspace_report.md"
+    build_probe_json = workspace / "reports" / "build_probe_report.json"
+    build_probe_md = workspace / "reports" / "build_probe_report.md"
     payload = {
         "build_workspace": {
-            "json": str(workspace / "reports" / "build_workspace_report.json"),
-            "markdown": str(workspace / "reports" / "build_workspace_report.md"),
+            "json": str(build_workspace_json),
+            "markdown": str(build_workspace_md),
             "status": workspace_report.status,
         },
         "build_probe": {
-            "json": str(workspace / "reports" / "build_probe_report.json"),
-            "markdown": str(workspace / "reports" / "build_probe_report.md"),
+            "json": str(build_probe_json),
+            "markdown": str(build_probe_md),
             "status": probe_report.status,
             "executed": probe_report.executed,
         },
+        "reports": {
+            "build_workspace_report_json": str(build_workspace_json),
+            "build_workspace_report_md": str(build_workspace_md),
+            "build_probe_report_json": str(build_probe_json),
+            "build_probe_report_md": str(build_probe_md),
+        },
     }
     exit_code = EXIT_OK
+    errors = []
     if probe_report.status == "failed":
         exit_code = EXIT_BUILD_PROBE_FAILED
     elif probe_report.status == "environment_missing":
         exit_code = EXIT_ENVIRONMENT_WARNING
+    if exit_code != EXIT_OK:
+        errors = [diagnostic.message for diagnostic in probe_report.diagnostics if diagnostic.severity == "error"]
+    status = "build_workspace_generated"
+    if probe_report.status == "environment_missing":
+        status = "build_probe_environment_missing"
+    elif probe_report.executed:
+        status = f"build_probe_{probe_report.status}"
+    message = "Build workspace generated."
+    if errors:
+        message = errors[0]
     return CLIResult(
-        status="build_workspace_generated" if not probe_report.executed else f"build_probe_{probe_report.status}",
+        status=status,
         exit_code=exit_code,
         command=command,
-        message="Build workspace generated.",
+        message=message,
         data=payload,
+        errors=errors,
         legacy_payload=payload,
     )
 
@@ -652,6 +694,108 @@ def handle_select_regression_tests(args: argparse.Namespace) -> CLIResult:
     )
 
 
+def handle_suite_register(args: argparse.Namespace) -> CLIResult:
+    try:
+        manifest = register_workspace(
+            Path(args.suite),
+            Path(args.workspace),
+            tags=_split_tags(args.tags),
+            source_root=Path(args.source_root) if args.source_root else None,
+            dsw_path=Path(args.dsw) if args.dsw else None,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise CLIError(str(exc), EXIT_INPUT_ERROR, args.command) from exc
+    entry = manifest.entries[-1]
+    payload = {
+        "suite": str(Path(args.suite).resolve()),
+        "entry": entry.to_dict(),
+        "entry_count": len(manifest.entries),
+    }
+    return CLIResult(
+        status="suite_registered",
+        exit_code=EXIT_OK,
+        command=args.command,
+        message="Suite entry registered.",
+        data=payload,
+        legacy_payload=payload,
+    )
+
+
+def handle_suite_list(args: argparse.Namespace) -> CLIResult:
+    try:
+        entries = list_entries(Path(args.suite), tag=args.tag)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise CLIError(str(exc), EXIT_INPUT_ERROR, args.command) from exc
+    payload = {
+        "suite": str(Path(args.suite).resolve()),
+        "entries": [entry.to_dict() for entry in entries],
+        "entry_count": len(entries),
+    }
+    return CLIResult(
+        status="suite_listed",
+        exit_code=EXIT_OK,
+        command=args.command,
+        message="Suite entries listed.",
+        data=payload,
+        legacy_payload=payload,
+    )
+
+
+def handle_suite_remove(args: argparse.Namespace) -> CLIResult:
+    try:
+        manifest = remove_entry(Path(args.suite), args.entry_id)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise CLIError(str(exc), EXIT_INPUT_ERROR, args.command) from exc
+    payload = {
+        "suite": str(Path(args.suite).resolve()),
+        "removed_entry_id": args.entry_id,
+        "entry_count": len(manifest.entries),
+    }
+    return CLIResult(
+        status="suite_removed",
+        exit_code=EXIT_OK,
+        command=args.command,
+        message="Suite entry removed.",
+        data=payload,
+        legacy_payload=payload,
+    )
+
+
+def handle_suite_run(args: argparse.Namespace) -> CLIResult:
+    policy = SuiteRunPolicy(
+        run_tests=args.run,
+        dry_run=args.dry_run or not args.run,
+        timeout_seconds=args.timeout,
+        fail_fast=args.fail_fast,
+        require_green=args.require_green,
+    )
+    try:
+        report, paths = run_suite(
+            Path(args.suite),
+            entry_ids=args.entry_ids,
+            tag=args.tag,
+            all_entries=args.all,
+            policy=policy,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise CLIError(str(exc), EXIT_INPUT_ERROR, args.command) from exc
+    payload = report.to_dict()
+    payload["reports"] = {
+        "suite_run_report_json": str(paths["json"]),
+        "suite_run_report_md": str(paths["markdown"]),
+        "suite_run_report_csv": str(paths["csv"]),
+    }
+    failed = report.status == "failed"
+    return CLIResult(
+        status="suite_run_failed" if failed else "suite_run_completed",
+        exit_code=EXIT_TESTS_FAILED if failed else EXIT_OK,
+        command=args.command,
+        message="Suite run completed.",
+        data=payload,
+        legacy_payload=payload,
+    )
+
+
 def handle_run_tests(args: argparse.Namespace) -> CLIResult:
     workspace = _existing_dir(args.workspace, "workspace", args.command)
     report, manifest = prepare_test_execution_evidence(
@@ -672,6 +816,10 @@ def handle_run_tests(args: argparse.Namespace) -> CLIResult:
         data=payload,
         legacy_payload=payload,
     )
+
+
+def _split_tags(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def handle_prepare_evidence(args: argparse.Namespace) -> CLIResult:

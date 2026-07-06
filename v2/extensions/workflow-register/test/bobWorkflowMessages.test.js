@@ -101,7 +101,7 @@ test("workflow state and command result are isolated as data-only prompt content
   assert.equal(payload.value, maliciousResult)
 })
 
-test("workflow control block links held manual runs to the manual step panel", () => {
+test("workflow control block directs operators to the Operation Hub without command links", () => {
   const held = buildWorkflowControlBlock({
     runId: "run-1",
     stepId: "check-file",
@@ -114,8 +114,21 @@ test("workflow control block links held manual runs to the manual step panel", (
     status: "running",
     currentStep: "collect"
   })
+  const paused = buildWorkflowControlBlock({
+    runId: "run-3",
+    stepId: "review",
+    status: "paused",
+    currentStep: "review",
+    includeResume: true
+  })
 
-  assert.match(held, /Open manual step page/)
-  assert.match(held, /workflowRegister\.openManualStepPanel/)
-  assert.doesNotMatch(running, /Open manual step page/)
+  for (const message of [held, running, paused]) {
+    assert.match(message, /Bob Operation Hub/)
+    assert.match(message, /Run Monitor/)
+    assert.match(message, /runId="run-/)
+    assert.doesNotMatch(message, /command:/)
+    assert.doesNotMatch(message, /workflowRegister\./)
+  }
+  assert.match(held, /status="held"/)
+  assert.match(paused, /status="paused"/)
 })

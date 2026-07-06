@@ -97,7 +97,7 @@ class HarnessSkeletonGenerationTests(unittest.TestCase):
             self.assertTrue(payload["unresolved_placeholders"])
             self.assertTrue(payload["build_hints"])
             self.assertTrue((Path(temp_dir) / "reports" / "harness_skeleton_report.json").exists())
-            self.assertIn("# Harness Skeleton Report", (Path(temp_dir) / "reports" / "harness_skeleton_report.md").read_text(encoding="utf-8"))
+            self.assertIn("# ハーネスひな形レポート", (Path(temp_dir) / "reports" / "harness_skeleton_report.md").read_text(encoding="utf-8"))
 
     def test_c90_compatibility_check_ignores_strings_and_matches_tokens(self):
         self.assertTrue(is_c90_compatible_text('const char *url = "http://example";\n'))
@@ -106,6 +106,47 @@ class HarnessSkeletonGenerationTests(unittest.TestCase):
         self.assertFalse(is_c90_compatible_text("for ( int i = 0; i < 3; i++) { }\n"))
         self.assertFalse(is_c90_compatible_text("#include <stdint.h>\n"))
         self.assertFalse(is_c90_compatible_text("static inline int helper(void) { return 0; }\n"))
+
+    def test_harness_asserts_reviewed_global_and_char_array_string_expectations(self):
+        design = self.test_case_design.to_dict()
+        design["test_cases"][0]["expected_observations"].extend(
+            [
+                {
+                    "observation_kind": "global_value",
+                    "target_name": "g_error",
+                    "expected_expression": "SENSOR_FAIL",
+                    "source": "global_access",
+                    "review_required": False,
+                    "confidence": "medium",
+                    "note": None,
+                },
+                {
+                    "observation_kind": "char_array_string",
+                    "target_name": "buffer",
+                    "expected_expression": '"NG"',
+                    "source": "parameter_access",
+                    "review_required": False,
+                    "confidence": "medium",
+                    "note": None,
+                },
+            ]
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            generate_harness_skeleton(
+                self.signature.to_dict(),
+                self.global_access.to_dict(),
+                self.call_report.to_dict(),
+                design,
+                Path(temp_dir),
+            )
+
+            test_source = (Path(temp_dir) / "generated" / "tests" / "test_Control_Update.c").read_bytes().decode("cp932")
+            self.assertIn("#include <string.h>", test_source)
+            self.assertIn("extern int g_error;", test_source)
+            self.assertIn("UTR_ASSERT_EQ_INT(SENSOR_FAIL, g_error);", test_source)
+            self.assertIn('UTR_ASSERT_TRUE(strcmp(buffer, "NG") == 0);', test_source)
+            self.assertEqual([], c90_forbidden_tokens(test_source))
 
     def test_generate_harness_cli_and_analyze_function_connect_harness_generation(self):
         with tempfile.TemporaryDirectory() as temp_dir:

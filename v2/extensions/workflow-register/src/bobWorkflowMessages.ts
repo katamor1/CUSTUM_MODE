@@ -19,19 +19,22 @@ export interface WorkflowControlBlockInput {
 }
 
 export function buildWorkflowControlBlock(input: WorkflowControlBlockInput): string {
-  const encodedRunId = encodeURIComponent(JSON.stringify([input.runId]))
-  const commandLink = (label: string, command: string) => `[${label}](command:${command}?${encodedRunId}) \`${command}\``
+  const openTag = [
+    `<workflow_controls runId="${escapeXmlAttribute(input.runId)}"`,
+    input.stepId ? ` stepId="${escapeXmlAttribute(input.stepId)}"` : "",
+    input.status ? ` status="${escapeXmlAttribute(input.status)}"` : "",
+    ">"
+  ].join("")
   const lines = [
     "Workflow controls:",
-    `<workflow_controls runId="${escapeXmlAttribute(input.runId)}"${input.stepId ? ` stepId="${escapeXmlAttribute(input.stepId)}"` : ""}${input.status ? ` status="${escapeXmlAttribute(input.status)}"` : ""}>`,
-    `- ${commandLink("Pause after current step", "workflowRegister.pauseAfterCurrentStep")}`,
-    `- ${commandLink("Pause before next AI call", "workflowRegister.pauseBeforeNextAiCall")}`,
-    `- ${commandLink("Inspect run control", "workflowRegister.inspectRunControl")}`,
-    `- ${commandLink("Inspect current step", "workflowRegister.inspectCurrentStep")}`,
-    `- ${commandLink("Open current step in Builder", "workflowRegister.openCurrentStepInBuilder")}`
+    openTag,
+    "Bob Operation Hub の Run Monitor で操作してください。",
+    `- runId: ${input.runId}`,
+    `- currentStep: ${input.currentStep ?? input.stepId ?? "none"}`,
+    `- status: ${input.status ?? "unknown"}`,
+    "- 状態に応じて「承認して次へ」「再試行」「再開」「手順を開く」「詳細」を選択してください。"
   ]
-  if (input.status === "held") lines.push(`- ${commandLink("Open manual step page", "workflowRegister.openManualStepPanel")}`)
-  if (input.includeResume) lines.push(`- ${commandLink("Resume paused run", "workflowRegister.resumePausedRun")}`)
+  if (input.includeResume) lines.push("- 一時停止中の run は Run Monitor の「再開」から続行してください。")
   lines.push(
     "</workflow_controls>",
     "",

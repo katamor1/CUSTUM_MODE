@@ -2,6 +2,7 @@ import * as vscode from "vscode"
 import type { ActionProvider } from "./core/actionRegistry"
 import type { AgentProvider, CoreWorkflowDefinition } from "./core/model"
 import type { ResultSinkRegistry } from "./core/resultSinkRegistry"
+import { OperationHubProvider } from "./gui/operationHubProvider"
 import { WorkflowRegisterService } from "./workflowRegisterService"
 import type { StepCompletionOptions } from "./workflowRegisterService"
 
@@ -96,8 +97,24 @@ export interface WorkflowRegisterApi {
  */
 export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi {
   const service = new WorkflowRegisterService(String(context.extension.packageJSON.version ?? "unknown"))
-  context.subscriptions.push(service)
+  const api: WorkflowRegisterApi = {
+    registerActionProvider: (provider) => service.registerActionProvider(provider),
+    registerAgentProvider: (provider) => service.registerAgentProvider(provider),
+    registerResultSink: (type, handler) => service.registerResultSink(type, handler),
+    listWorkflows: () => service.listCoreWorkflows(),
+    runWorkflow: (workflowId, inputs) => service.runWorkflow(workflowId, inputs),
+    runWorkflowStep: (workflowId, stepId, inputs) => service.runWorkflowStep(workflowId, stepId, inputs),
+    runNextStep: (runId) => service.runNextStep(runId),
+    approveBranchCheckpoint: (runId) => service.approveBranchCheckpoint(runId),
+    abortBranchCheckpoint: (runId) => service.abortBranchCheckpoint(runId),
+    inspectBranching: (runId) => service.inspectBranching(runId)
+  }
+  const operationHub = new OperationHubProvider({ api, extensionUri: context.extensionUri })
   context.subscriptions.push(
+    service,
+    operationHub,
+    vscode.window.registerWebviewViewProvider("workflowRegister.operationHub", operationHub),
+    vscode.commands.registerCommand("workflowRegister.openOperationHub", (input?: unknown) => operationHub.open(input)),
     vscode.commands.registerCommand("workflowRegister.reload", () => service.reload({ showReport: true })),
     vscode.commands.registerCommand("workflowRegister.inspect", () => service.inspect()),
     vscode.commands.registerCommand("workflowRegister.completeCurrentStep", (options?: StepCompletionOptions) => service.completeCurrentStep(options)),
@@ -133,18 +150,7 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     )
     context.subscriptions.push({ dispose: () => clearTimeout(timer) })
   }
-  return {
-    registerActionProvider: (provider) => service.registerActionProvider(provider),
-    registerAgentProvider: (provider) => service.registerAgentProvider(provider),
-    registerResultSink: (type, handler) => service.registerResultSink(type, handler),
-    listWorkflows: () => service.listCoreWorkflows(),
-    runWorkflow: (workflowId, inputs) => service.runWorkflow(workflowId, inputs),
-    runWorkflowStep: (workflowId, stepId, inputs) => service.runWorkflowStep(workflowId, stepId, inputs),
-    runNextStep: (runId) => service.runNextStep(runId),
-    approveBranchCheckpoint: (runId) => service.approveBranchCheckpoint(runId),
-    abortBranchCheckpoint: (runId) => service.abortBranchCheckpoint(runId),
-    inspectBranching: (runId) => service.inspectBranching(runId)
-  }
+  return api
 }
 
 /**

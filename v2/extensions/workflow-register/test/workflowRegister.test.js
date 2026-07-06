@@ -96,6 +96,16 @@ test("authoring wrapper delegates accept-and-run-next to the core next-step comm
   assert.doesNotMatch(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.resumeRun", accepted\.runId\)/)
 })
 
+test("accept-only review command tells operators the next step is not started", () => {
+  const stepReview = readSrc("commands", "stepReview.ts")
+
+  assert.match(stepReview, /const RUN_NEXT_STEP_LABEL = "次のステップを実行"/)
+  assert.match(stepReview, /const OPEN_OPERATION_HUB_LABEL = "Operation Hub を開く"/)
+  assert.match(stepReview, /次のステップはまだ開始されていません。/)
+  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", accepted\.runId\)/)
+  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.openOperationHub", \{ runId: accepted\.runId, stepId: accepted\.currentStep/)
+})
+
 test("package exposes task snapshot retention settings", () => {
   const packageJson = readJson("package.json")
   const properties = packageJson.contributes.configuration.properties

@@ -32,7 +32,9 @@ export function renderOperationHubHtml(input: RenderOperationHubHtmlInput): stri
     .section { border-top: 1px solid var(--vscode-panel-border); padding-top: 12px; }
     .grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
     .card { border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-editor-background); padding: 10px; }
+    .card.focused-run { border-color: var(--vscode-focusBorder); box-shadow: inset 3px 0 0 var(--vscode-focusBorder); }
     .card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .title-badges { display: flex; align-items: center; gap: 4px; }
     .badge { border-radius: 3px; border: 1px solid var(--vscode-panel-border); padding: 1px 5px; font-size: 11px; white-space: nowrap; }
     .ok { color: var(--vscode-testing-iconPassed); }
     .warning { color: var(--vscode-editorWarning-foreground); }
@@ -108,8 +110,12 @@ function renderWorkflow(workflow: OperationHubWorkflowSummary): string {
 
 function renderRun(run: OperationHubRunSummary): string {
   const percent = run.totalStepCount === 0 ? 0 : Math.round((run.completedStepCount / run.totalStepCount) * 100)
-  return `<article class="card">
-    <div class="card-title"><h3>${escapeHtml(run.workflowName)}</h3><span class="badge ${run.status === "failed" ? "error" : "info"}">${escapeHtml(run.statusLabel)}</span></div>
+  const cardClass = run.focused ? "card focused-run" : "card"
+  const focusBadge = run.focused ? `<span class="badge warning">操作対象</span>` : ""
+  const statusKind = run.status === "failed" ? "error" : "info"
+  const statusBadge = `<span class="badge ${statusKind}">${escapeHtml(run.statusLabel)}</span>`
+  return `<article class="${cardClass}">
+    <div class="card-title"><h3>${escapeHtml(run.workflowName)}</h3><span class="title-badges">${focusBadge}${statusBadge}</span></div>
     <div class="muted"><code>${escapeHtml(run.runId)}</code> / ${escapeHtml(run.currentStepLabel)}</div>
     <div class="progress" aria-label="progress"><span style="width:${percent}%"></span></div>
     <div class="muted">${run.completedStepCount}/${run.totalStepCount} step / updated ${escapeHtml(run.updatedAt)}</div>
