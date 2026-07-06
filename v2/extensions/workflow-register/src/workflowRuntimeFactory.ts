@@ -42,13 +42,13 @@ export interface WorkflowRuntimeFactoryOptions {
 export class WorkflowRuntimeFactory {
   constructor(private readonly options: WorkflowRuntimeFactoryOptions) {}
 
-  createEngine(workspaceRoot: string): WorkflowEngine {
+  createEngine(workspaceRoot: string, agentProvider?: AgentProvider): WorkflowEngine {
     const snapshotStore = this.createTaskSnapshotStore(workspaceRoot)
     return new WorkflowEngine({
       actions: this.options.actionRegistry,
       resultSinks: this.createResultSinks(workspaceRoot),
       runStore: this.createRunStore(workspaceRoot),
-      agentProvider: this.options.agentProvider() ?? this.createCommandAgentProvider(),
+      agentProvider: agentProvider ?? this.options.agentProvider() ?? this.createCommandAgentProvider(),
       preflightChecks: this.createPreflightChecks(workspaceRoot),
       manualCompletion: (input) => this.holdStandaloneManualStep(input),
       recoverResultText: snapshotStore

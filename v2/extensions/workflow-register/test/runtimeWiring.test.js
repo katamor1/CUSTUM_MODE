@@ -53,7 +53,7 @@ test("standalone workflow launcher wires an AgentProvider through API or configu
   assert.match(source, /import \{ createCommandAgentProvider \} from "\.\/core\/agentProvider"/)
   assert.match(source, /registerAgentProvider: \(provider: AgentProvider\) => void/)
   assert.match(source, /registerAgentProvider: \(provider\) => service\.registerAgentProvider\(provider\)/)
-  assert.match(source, /agentProvider: this\.options\.agentProvider\(\) \?\? this\.createCommandAgentProvider\(\)/)
+  assert.match(source, /agentProvider: agentProvider \?\? this\.options\.agentProvider\(\) \?\? this\.createCommandAgentProvider\(\)/)
   assert.match(source, orderedPattern(
     "createCommandAgentProvider({",
     'command: config.get<string>("agentCommand", ""),',
@@ -163,6 +163,22 @@ test("Operation Hub accept-and-run-next lets Bob task advance instead of standal
   assert.match(stepReview, /const completedViaBobTask = reviewTaskRegistry\.complete\(accepted\.runId, acceptedStepId\)/)
   assert.match(stepReview, /if \(accepted\.completedViaBobTask\) \{[\s\S]*return accepted\.run[\s\S]*\}/)
   assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", accepted\.run\.runId\)/)
+})
+
+test("standalone next-step commands reuse the Bob review task agent provider", () => {
+  const workflowRunCommands = readSrc("workflowRunCommands.ts")
+  const runtimeFactory = readSrc("workflowRuntimeFactory.ts")
+
+  assert.match(workflowRunCommands, /import \{ reviewTaskRegistry \} from "\.\/reviewTaskRegistry"/)
+  assert.match(workflowRunCommands, /const agentProvider = reviewTaskRegistry\.agentProviderForRun\(run\.runId, workflow\)/)
+  assert.match(workflowRunCommands, /this\.options\.runtimeFactory\.createEngine\(selection\.root, agentProvider\)/)
+  assert.match(workflowRunCommands, orderedPattern(
+    'private async resumeOrRetryRun(mode: "resume" | "retry", runId?: string): Promise<unknown> {',
+    "const agentProvider = reviewTaskRegistry.agentProviderForRun(run.runId, workflow)",
+    "const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)"
+  ))
+  assert.match(runtimeFactory, /createEngine\(workspaceRoot: string, agentProvider\?: AgentProvider\): WorkflowEngine/)
+  assert.match(runtimeFactory, /agentProvider: agentProvider \?\? this\.options\.agentProvider\(\) \?\? this\.createCommandAgentProvider\(\)/)
 })
 
 test("Bob workflow result recovery is scoped to messages after the current step starts", () => {

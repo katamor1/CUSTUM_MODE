@@ -14,6 +14,7 @@ import {
   pickRunSelection
 } from "./workflowRunSelection"
 import { WorkflowRuntimeFactory } from "./workflowRuntimeFactory"
+import { reviewTaskRegistry } from "./reviewTaskRegistry"
 
 export type RunCommandArg = string | { runId?: string; run?: { runId?: string } } | undefined
 
@@ -124,9 +125,10 @@ export class WorkflowRunCommandService {
     }
     const workflow = this.options.coreWorkflows.get(run.workflowId)
     if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
+    const agentProvider = reviewTaskRegistry.agentProviderForRun(run.runId, workflow)
     const pendingTransitionStepId = pendingReviewTransitionStepId(run)
     if (pendingTransitionStepId) {
-      const engine = this.options.runtimeFactory.createEngine(selection.root)
+      const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)
       const result = await engine.runWorkflow(workflow, run.inputs, {
         executionMode: "singleStep",
         stepId: pendingTransitionStepId,
@@ -149,7 +151,7 @@ export class WorkflowRunCommandService {
       await vscode.window.showInformationMessage(message)
       return run
     }
-    const engine = this.options.runtimeFactory.createEngine(selection.root)
+    const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)
     const result = await engine.runWorkflow(workflow, run.inputs, {
       executionMode: "singleStep",
       stepId: next.id,
@@ -306,7 +308,8 @@ export class WorkflowRunCommandService {
     }
     const workflow = this.options.coreWorkflows.get(run.workflowId)
     if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
-    const engine = this.options.runtimeFactory.createEngine(selection.root)
+    const agentProvider = reviewTaskRegistry.agentProviderForRun(run.runId, workflow)
+    const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)
     const result = mode === "resume"
       ? await engine.resumeRun(targetRunId, { workflow, completeHeldStep: true })
       : await engine.retryCurrentStep(targetRunId, workflow)
