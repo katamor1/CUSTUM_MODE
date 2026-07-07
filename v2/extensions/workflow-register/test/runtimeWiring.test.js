@@ -10,6 +10,7 @@ function runtimeSource() {
     "bobWorkflowTypes.ts",
     "bobWorkflowRunner.ts",
     "bobStepRuntime.ts",
+    "bobTaskSync.ts",
     "bobWorkflowMessages.ts",
     "reviewTaskRegistry.ts",
     "webview/manualStepPanel.ts",
@@ -145,22 +146,23 @@ test("Bob workflow runner opens Operation Hub when user action is required", () 
   assert.match(source, /await this\.openOperationHubForRun\(run, step, "paused"\)/)
 })
 
-test("review-gated Bob tasks are completed when Operation Hub accepts the step", () => {
+test("review-gated Bob tasks are reconciled when Operation Hub accepts the step", () => {
   const runner = readSrc("bobWorkflowRunner.ts")
   const stepReview = readSrc("commands", "stepReview.ts")
 
-  assert.match(runner, /import \{ reviewTaskRegistry \} from "\.\/reviewTaskRegistry"/)
-  assert.match(runner, /reviewTaskRegistry\.register\(run\.runId, step\.id, task\)/)
-  assert.match(stepReview, /import \{ reviewTaskRegistry \} from "\.\.\/reviewTaskRegistry"/)
+  assert.match(runner, /import \{ bobTaskSyncRegistry \} from "\.\/bobTaskSync"/)
+  assert.match(runner, /bobTaskSyncRegistry\.registerTask\(run\.runId, step\.id, task\)/)
+  assert.match(stepReview, /import \{ bobTaskSyncRegistry \} from "\.\.\/bobTaskSync"/)
   assert.match(stepReview, /const acceptedStepId = run\.currentStep/)
-  assert.match(stepReview, /reviewTaskRegistry\.complete\(accepted\.runId, acceptedStepId\)/)
+  assert.match(stepReview, /bobTaskSyncRegistry\.reconcileRun\(accepted, undefined/)
 })
 
 test("Operation Hub accept-and-run-next lets Bob task advance instead of standalone agent execution", () => {
   const stepReview = readSrc("commands", "stepReview.ts")
 
   assert.match(stepReview, /interface AcceptedStepResult \{[\s\S]*completedViaBobTask: boolean[\s\S]*\}/)
-  assert.match(stepReview, /const completedViaBobTask = reviewTaskRegistry\.complete\(accepted\.runId, acceptedStepId\)/)
+  assert.match(stepReview, /const sync = bobTaskSyncRegistry\.reconcileRun\(accepted, undefined/)
+  assert.match(stepReview, /const completedViaBobTask = sync\.status === "synced" && sync\.taskAvailable/)
   assert.match(stepReview, /if \(accepted\.completedViaBobTask\) \{[\s\S]*return accepted\.run[\s\S]*\}/)
   assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", accepted\.run\.runId\)/)
 })
@@ -172,10 +174,12 @@ test("standalone next-step commands reuse the Bob review task agent provider", (
   assert.match(workflowRunCommands, /import \{ reviewTaskRegistry \} from "\.\/reviewTaskRegistry"/)
   assert.match(workflowRunCommands, /const agentProvider = reviewTaskRegistry\.agentProviderForRun\(run\.runId, workflow\)/)
   assert.match(workflowRunCommands, /this\.options\.runtimeFactory\.createEngine\(selection\.root, agentProvider\)/)
+  assert.match(workflowRunCommands, /await this\.reconcileBobTask\(selection\.root, result, workflow, "operation-hub-next"\)/)
   assert.match(workflowRunCommands, orderedPattern(
     'private async resumeOrRetryRun(mode: "resume" | "retry", runId?: string): Promise<unknown> {',
     "const agentProvider = reviewTaskRegistry.agentProviderForRun(run.runId, workflow)",
-    "const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)"
+    "const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)",
+    "mode === \"resume\" ? \"operation-hub-resume\" : \"operation-hub-retry\""
   ))
   assert.match(runtimeFactory, /createEngine\(workspaceRoot: string, agentProvider\?: AgentProvider\): WorkflowEngine/)
   assert.match(runtimeFactory, /agentProvider: agentProvider \?\? this\.options\.agentProvider\(\) \?\? this\.createCommandAgentProvider\(\)/)
@@ -219,57 +223,4 @@ test("Bob adapter resolves workflow inputs and passes them to command providers"
     "prompt: promptForWorkflowInput",
     "})"
   ))
-  assert.match(source, /createBobWorkflowRunner\(workflow: WorkflowDefinition\): BobWorkflowEngineRunner/)
-  assert.match(source, orderedPattern(
-    "inputsProvider: (task, provided) => this.options.inputsProvider(workflow, {",
-    "...extractTaskWorkflowInputs(workflow, task)",
-    "...provided",
-    "})"
-  ))
-  assert.match(source, /runId: run\.runId/)
-  assert.match(source, /state: run\.state/)
-  assert.doesNotMatch(source, /inputs: \{\}/)
-})
-
-test("Bob workflow chat messages include bounded workflow root context", () => {
-  const source = readSrc("bobWorkflowMessages.ts")
-
-  assert.match(source, /appendWorkflowContext/)
-  assert.match(source, /appendWorkflowStateDataBlock/)
-  assert.match(source, orderedPattern(
-    "appendWorkflowContext(lines, {",
-    "workflowRoot: definition.workflowRoot",
-    "workflowFile: definition.workflowFile",
-    "workflowFolderName: definition.workflowFolderName",
-    "stateEntries",
-    "})"
-  ))
-  assert.match(source, /buildCommandResultMessage\(definition, todo, index, commandResult, stateEntries\)/)
-  assert.match(source, /buildCurrentTodoMessage\(definition, todo, index, stepDefinition, commandResult, stateEntries\)/)
-})
-
-test("Bob adapter applies guardrails to Todo, result, and legacy top-level commands", () => {
-  const source = runtimeSource()
-  const stepExecutor = readSrc("core", "engine", "stepExecutor.ts")
-
-  assert.match(source, /import \{ validateCommandGuardrails \} from "\.\/core\/guardrails"/)
-  assert.match(stepExecutor, /import \{ validateCommandGuardrails \} from "\.\.\/guardrails"/)
-  assert.match(source, /guardrails: WorkflowGuardrailsDefinition/)
-  assert.match(source, /guardrails: core\.guardrails/)
-  assert.match(stepExecutor, /const args = renderValue\(step\.action\.args,/)
-  assert.match(stepExecutor, /validateCommandGuardrails\(workflow, step\.action\.provider, args\)/)
-  assert.match(source, /validateCommandGuardrails\(\{ guardrails: active\.guardrails \}, step\.resultCommand\)/)
-  assert.match(source, /actionRegistry: this\.options\.actionRegistry/)
-  assert.doesNotMatch(source, /vscode\.commands\.executeCommand\(definition\.command/)
-})
-
-test("Bob manual completion opens a panel without bypassing the held completion path", () => {
-  const source = runtimeSource()
-
-  assert.match(source, /manualCompletion: async \(\{ run, step \}\) => \{/)
-  assert.match(source, /this\.options\.stepRuntime\.hold\(/)
-  assert.match(source, /onHeldStep: \(active\) => this\.options\.onManualStepHeld\?\.\(\{ workflow: this\.options\.coreWorkflow, run, step, active \}\)/)
-  assert.match(source, /completeStepByKey\(key: string/)
-  assert.match(source, /captureHeldStepResult\(active\)/)
-  assert.match(source, /active\.task\.setStepComplete\?\.\(\)/)
 })

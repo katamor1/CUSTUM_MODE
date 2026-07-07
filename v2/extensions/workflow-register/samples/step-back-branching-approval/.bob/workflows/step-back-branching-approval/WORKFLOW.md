@@ -5,10 +5,29 @@ description: 入力、生成、事前チェック、ユーザー承認を差し�
 title: Step-back Branching Approval
 mode: agent
 workspaceRequired: true
+todo: false
+todoRequired: false
+todoAsSteps: false
+stepCompletion: auto
+stepMessage: current
 stepExecution:
   mode: engineSteps
   allowOutOfOrder: false
   showInBob: true
+stepReview:
+  enabled: false
+  pauseAfter: none
+  requireAcceptBeforeNext: false
+  allowRetry: true
+  allowEditBeforeRetry: true
+  preserveAttempts: true
+guardrails:
+  allowedCommands:
+    - vscode.executeCommand
+  allowedCommandIds:
+    - example.preapprovalCheck
+  deniedCommands:
+    - shell
 branching:
   enabled: true
   loops:

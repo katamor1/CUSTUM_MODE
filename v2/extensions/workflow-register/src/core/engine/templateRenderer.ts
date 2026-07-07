@@ -86,10 +86,10 @@ export function formatStateValue(value: unknown): string {
 }
 
 export function replacementResultText(value: unknown): string | undefined {
+  if (typeof value === "string") return value
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
   const record = value as Record<string, unknown>
   for (const key of ["jsonText", "artifactText", "resultText"]) {
     if (typeof record[key] === "string") return record[key] as string
   }
-  return undefined
 }

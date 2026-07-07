@@ -15,6 +15,18 @@ export interface WorkflowScaffoldInput {
   template: WorkflowTemplateKind
 }
 
+type WorkflowScaffoldStepCompletion = "auto" | "manual"
+type WorkflowScaffoldStepMessage = "full" | "current" | "silent" | "step"
+type WorkflowScaffoldStepReviewPauseAfter = "everyStep" | "agentAndCommand" | "none"
+
+interface WorkflowHeaderOptions {
+  stepCompletion?: WorkflowScaffoldStepCompletion
+  stepMessage?: WorkflowScaffoldStepMessage
+  stepReviewEnabled?: boolean
+  stepReviewPauseAfter?: WorkflowScaffoldStepReviewPauseAfter
+  stepReviewRequireAcceptBeforeNext?: boolean
+}
+
 export const workflowTemplates: Array<{ id: WorkflowTemplateKind; label: string; description: string }> = [
   { id: "simple-agent", label: "Simple Agent Workflow", description: "One AI step with a prompt." },
   { id: "command-then-agent", label: "Command then Agent Workflow", description: "One command step followed by one AI step." },
@@ -88,7 +100,18 @@ function titleFromName(name: string): string {
   return name.split(/[._-]+/).filter(Boolean).map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`).join(" ") || "New Workflow"
 }
 
-function header(name: string, title: string, description: string, extra: string): string {
+function header(
+  name: string,
+  title: string,
+  description: string,
+  extra: string,
+  options: WorkflowHeaderOptions = {}
+): string {
+  const stepCompletion = options.stepCompletion ?? "auto"
+  const stepMessage = options.stepMessage ?? "current"
+  const stepReviewEnabled = options.stepReviewEnabled ?? false
+  const stepReviewPauseAfter = options.stepReviewPauseAfter ?? (stepReviewEnabled ? "agentAndCommand" : "none")
+  const stepReviewRequireAcceptBeforeNext = options.stepReviewRequireAcceptBeforeNext ?? stepReviewEnabled
   return `---
 schemaVersion: workflow-register/v1
 name: ${name}
@@ -96,6 +119,22 @@ description: ${quote(description)}
 title: ${quote(title)}
 mode: agent
 workspaceRequired: true
+todo: false
+todoRequired: false
+todoAsSteps: false
+stepCompletion: ${stepCompletion}
+stepMessage: ${stepMessage}
+stepExecution:
+  mode: engineSteps
+  allowOutOfOrder: false
+  showInBob: true
+stepReview:
+  enabled: ${stepReviewEnabled}
+  pauseAfter: ${stepReviewPauseAfter}
+  requireAcceptBeforeNext: ${stepReviewRequireAcceptBeforeNext}
+  allowRetry: true
+  allowEditBeforeRetry: true
+  preserveAttempts: true
 ${extra.trimEnd()}
 ---
 # ${title}
@@ -118,7 +157,12 @@ function simpleAgentTemplate(name: string, title: string, description: string): 
 }
 
 function commandThenAgentTemplate(name: string, title: string, description: string): string {
-  return `${header(name, title, description, `steps:
+  return `${header(name, title, description, `guardrails:
+  allowedCommands:
+    - vscode.executeCommand
+  allowedCommandIds:
+    - example.commandId
+steps:
   - id: collect-context
     title: Collect context
     type: command
@@ -143,9 +187,7 @@ Replace example.commandId with a real VS Code command before running this workfl
 }
 
 function manualChecklistTemplate(name: string, title: string, description: string): string {
-  return header(name, title, description, `stepCompletion: manual
-stepMessage: step
-steps:
+  return header(name, title, description, `steps:
   - id: prepare
     title: Prepare inputs
     type: manual
@@ -172,7 +214,7 @@ steps:
     userAction:
       message: |
         Confirm that all follow-up actions are captured before completing the workflow.
-      completeLabel: Finish`)
+      completeLabel: Finish`, { stepCompletion: "manual", stepMessage: "step" })
 }
 
 function inputDrivenAgentTemplate(name: string, title: string, description: string): string {
@@ -249,8 +291,10 @@ steps:
 function guardedCommandTemplate(name: string, title: string, description: string): string {
   return `${header(name, title, description, `guardrails:
   allowedCommands:
+    - vscode.executeCommand
+  allowedCommandIds:
     - example.safeCommand
-  deniedCommands:
+  deniedCommandIds:
     - example.destructiveCommand
   requireApproval:
     - id: command-approval
@@ -275,7 +319,7 @@ steps:
 
 ## Setup
 
-Replace example.safeCommand with a real command and keep destructive commands in deniedCommands.
+Replace example.safeCommand with a real command and keep destructive command IDs in deniedCommandIds.
 `
 }
 
@@ -289,6 +333,11 @@ function reviewWorkflowTemplate(name: string, title: string, description: string
       - code
       - docs
       - workflow
+guardrails:
+  allowedCommands:
+    - vscode.executeCommand
+  allowedCommandIds:
+    - example.collectReviewContext
 steps:
   - id: collect-review-context
     title: Collect review context

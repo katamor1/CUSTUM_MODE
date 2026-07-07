@@ -1,0 +1,7 @@
+schema_version: bazaar-review-triage/v1
+review_id: bazaar-r125-project-rule-review
+decision: needs_investigation
+accepted: 0
+rejected: 0
+needs_investigation: 1
+deferred: 0

@@ -117,21 +117,9 @@ inputs:
     title: human triage path
     default: .bob-review/human-triage
 artifacts:
-  - id: traceabilityDraftPrompt
-    producedBy: collect-document-candidates
-    path: .bob-trace/ai-traceability-draft/ai-draft-prompt.md
-  - id: traceabilityCatalog
-    producedBy: apply-traceability-draft
-    path: .bob-trace/traceability-catalog.json
   - id: traceabilityGateReport
     producedBy: validate-traceability-catalog
     path: .bob-trace/gate-report.md
-  - id: reviewInput
-    producedBy: create-review-input-from-traceability
-    path: review-input.yaml
-  - id: reviewPackage
-    producedBy: preprocess-review-package
-    path: .bob-review/review-package
   - id: bobOutput
     producedBy: capture-bob-output
     path: .bob-review/bob-output/bob-output.yaml
@@ -179,17 +167,40 @@ steps:
       - link は from / to を持たず proposed_from / proposed_to だけを使ってください。
       - accepted / rejected / deprecated は人間だけが決めます。
       - 不確かな対応は無理に補完せず proposed 候補として残してください。
+      - 出力が長くなりそうな場合は候補数を絞り、途中で切らず、必ず閉じた JSON object として完結させてください。
+      - item.type は requirement / basic_design / detailed_design / test_spec / qa_item / review_finding のいずれかだけです。
+      - TC prefix や test_spec 文書由来の item は type: "test_spec" にしてください。test_case は無効です。
+  - id: validate-traceability-draft
+    title: traceability draft JSON を検証・正規化
+    type: command
+    action:
+      provider: bobCodeConsistency.captureAiTraceabilityDraft
+      args:
+        text: "{{state.traceabilityDraftJson}}"
+        aiTraceabilityDraftPromptPath: "{{inputs.aiTraceabilityDraftPromptPath}}"
+        textEncoding: "{{inputs.textEncoding}}"
+    includeState:
+      - traceabilityDraftJson
+    stateRequired: true
+    prompt: state.traceabilityDraftJson を JSON として検証し、正規化してください。
+    sendResult: true
+    resultKey: validatedTraceabilityDraftJson
+    maxResultBytes: 30000
+    required: true
+    completeOnSuccess: true
   - id: apply-traceability-draft
     title: AI draft JSON を sidecar catalog に反映
     type: command
     action:
       provider: bobCodeConsistency.applyAiTraceabilityDraft
+      args:
+        text: "{{state.validatedTraceabilityDraftJson}}"
     includeState:
-      - traceabilityDraftJson
+      - validatedTraceabilityDraftJson
     stateRequired: true
-    prompt: state.traceabilityDraftJson を検証し、traceability catalog へ merge して gate report を生成してください。
+    prompt: state.validatedTraceabilityDraftJson を検証し、traceability catalog へ merge して gate report を生成してください。
     sendResult: true
-    resultKey: traceabilityCatalog
+    resultKey: traceabilityCatalogResult
     maxResultBytes: 30000
     required: true
     completeOnSuccess: true

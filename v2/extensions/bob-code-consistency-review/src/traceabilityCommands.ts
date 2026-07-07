@@ -30,6 +30,13 @@ import { openTraceabilityPrepWebview } from "./webview/traceabilityPrepWebview"
 import { optionRecord } from "./workflowProviderRegistration"
 
 const TRACEABILITY_DRAFT_FILE_NAMES = ["ai-draft.json", "ai-draft-output.json", "ai-draft-result.json"]
+const TRACEABILITY_DRAFT_ITEM_TYPE_ALIASES: Record<string, string> = {
+  test: "test_spec",
+  test_case: "test_spec",
+  test_cases: "test_spec",
+  testcase: "test_spec",
+  test_specification: "test_spec"
+}
 
 export async function runPrepareAiTraceabilityDraft(options?: unknown): Promise<unknown> {
   const config = vscode.workspace.getConfiguration("bobCodeConsistency")
@@ -76,7 +83,7 @@ export async function runCaptureAiTraceabilityDraft(textOrOptions?: unknown): Pr
   const workspaceRoot = await requireBobWorkspaceRoot(record)
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
   const rawText = firstString(textOrOptions) ?? stringOption(record, "text") ?? await vscode.env.clipboard.readText()
-  const text = await resolveTraceabilityDraftText({ workspaceRoot, record, rawText, textEncoding })
+  const text = canonicalizeTraceabilityDraftText(await resolveTraceabilityDraftText({ workspaceRoot, record, rawText, textEncoding }))
 
   try {
     const draft = parseAiTraceabilityDraft(text)
@@ -100,7 +107,7 @@ export async function runApplyAiTraceabilityDraft(textOrOptions?: unknown): Prom
     config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
   const rawText = firstString(textOrOptions) ?? stringOption(record, "text") ?? await vscode.env.clipboard.readText()
-  const text = await resolveTraceabilityDraftText({ workspaceRoot, record, rawText, textEncoding })
+  const text = canonicalizeTraceabilityDraftText(await resolveTraceabilityDraftText({ workspaceRoot, record, rawText, textEncoding }))
   const result = await applyAiTraceabilityDraft({ workspaceRoot, catalogPath, text, textEncoding })
 
   if (result.status === "error") {
@@ -222,6 +229,13 @@ async function resolveTraceabilityDraftText(input: {
   }
 
   return input.rawText
+}
+
+function canonicalizeTraceabilityDraftText(text: string): string {
+  return text.replace(/("type"\s*:\s*")([^"]+)(")/g, (_match, prefix: string, rawType: string, suffix: string) => {
+    const canonical = TRACEABILITY_DRAFT_ITEM_TYPE_ALIASES[rawType.trim().toLowerCase()]
+    return canonical ? `${prefix}${canonical}${suffix}` : `${prefix}${rawType}${suffix}`
+  })
 }
 
 function looksLikeInlineJson(text: string): boolean {

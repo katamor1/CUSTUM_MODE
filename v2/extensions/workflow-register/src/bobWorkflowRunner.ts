@@ -15,6 +15,7 @@ import {
   buildWorkflowStartMessage,
   shouldIncludeCommandResult
 } from "./bobWorkflowMessages"
+import { bobTaskSyncRegistry } from "./bobTaskSync"
 import { isObject } from "./bobTaskInputs"
 import { getTaskMessageCount, StepRuntime } from "./bobStepRuntime"
 import type { ActionRegistry } from "./core/actionRegistry"
@@ -101,18 +102,20 @@ export class BobWorkflowEngineRunner {
     }
     const snapshotStore = this.options.taskSnapshotStore(workspaceRoot)
     const snapshotProvider = createBobTaskSnapshotProvider(task)
+    const runStore = this.options.runStore(workspaceRoot)
     const manuallyCompleted = new Set<string>()
     const messageStartIndexes = new Map<string, number>()
     const engine = new WorkflowEngine({
       actions: this.options.actionRegistry,
       resultSinks: this.options.resultSinks(workspaceRoot),
-      runStore: this.options.runStore(workspaceRoot),
+      runStore,
       agentProvider: this.createAgentProvider(task),
       preflightChecks: this.options.preflightChecks(workspaceRoot),
       hooks: this.createHooks(
         task,
         snapshotProvider,
         snapshotStore,
+        runStore,
         manuallyCompleted,
         messageStartIndexes
       ),
@@ -209,6 +212,7 @@ export class BobWorkflowEngineRunner {
     task: BobWorkflowTask,
     snapshotProvider: TaskSnapshotProvider,
     snapshotStore: TaskSnapshotStore | undefined,
+    runStore: RunStateStore,
     manuallyCompleted: Set<string>,
     messageStartIndexes: Map<string, number>
   ): WorkflowExecutionHooks {
@@ -244,10 +248,21 @@ export class BobWorkflowEngineRunner {
         includeResume
       }), "user")
     }
+    const reconcileBobTodo = async (workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep | undefined, alreadyApplied: boolean) => {
+      if (!step) return
+      const sync = bobTaskSyncRegistry.reconcileRun(run, workflow, {
+        reason: alreadyApplied ? "manual-completed" : "bob-runner-step-completed",
+        task,
+        alreadyApplied
+      })
+      if (sync.status !== "synced") console.warn(sync.message)
+      await runStore.saveRun(run)
+    }
     return {
       onWorkflowStart: async ({ workflow, run }) => snapshot("workflow-start", { workflow, run }),
       onStepStart: async ({ workflow, run, step }) => {
         if (!step) return
+        bobTaskSyncRegistry.registerTask(run.runId, step.id, task)
         messageStartIndexes.set(stepKey(run.runId, step.id), getTaskMessageCount(task))
         const context = this.todoContext(step.id)
         const stepDefinition = this.options.definition.stepsById[step.id]
@@ -299,6 +314,7 @@ export class BobWorkflowEngineRunner {
         await snapshot("handoff-failed", { workflow, run, step, agentText, error })
       },
       onStepHeld: async ({ workflow, run, step, error }) => {
+        if (step) bobTaskSyncRegistry.registerTask(run.runId, step.id, task)
         await this.openOperationHubForRun(run, step, "stepGate")
         await snapshot("held", { workflow, run, step, error })
       },
@@ -306,18 +322,20 @@ export class BobWorkflowEngineRunner {
         await snapshot("failed", { workflow, run, step, error })
       },
       onStepCompleted: async ({ workflow, run, step }) => {
-        if (step && !manuallyCompleted.has(stepKey(run.runId, step.id))) task.setStepComplete?.()
+        await reconcileBobTodo(workflow, run, step, Boolean(step && manuallyCompleted.has(stepKey(run.runId, step.id))))
         await snapshot("completed", { workflow, run, step })
       },
       onStepReviewRequired: async ({ workflow, run, step }) => {
         if (step) {
           reviewTaskRegistry.register(run.runId, step.id, task)
+          bobTaskSyncRegistry.registerTask(run.runId, step.id, task)
           await sendControlBlock(run, step)
         }
         await this.openOperationHubForRun(run, step, "stepGate")
         await snapshot("review-required", { workflow, run, step })
       },
       onRunPaused: async ({ workflow, run, step }) => {
+        if (step) bobTaskSyncRegistry.registerTask(run.runId, step.id, task)
         await task.sendMessage?.([
           "Workflow run paused.",
           "",

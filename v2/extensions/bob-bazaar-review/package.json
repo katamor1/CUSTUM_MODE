@@ -42,245 +42,82 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "bobBazaar.openReviewGui",
-        "title": "GUI を開く",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.openResultCaptureGui",
-        "title": "Result Capture GUI を開く",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.openHumanTriageGui",
-        "title": "Human Triage GUI を開く",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.collectReviewContext",
-        "title": "レビューコンテキストを収集",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.loadReviewRules",
-        "title": "プロジェクト規約を読み込む",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.captureReviewResult",
-        "title": "レビュー結果を取り込む",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.saveReviewResultFromClipboard",
-        "title": "クリップボードからレビュー結果を保存",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.configureMcp",
-        "title": "Bob MCP を設定",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.initProjectRules",
-        "title": "プロジェクト規約を初期化",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.reviewRevision",
-        "title": "1リビジョンを Bob でレビュー",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.reviewRange",
-        "title": "リビジョン範囲を Bob でレビュー",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.reviewRevisionWithProjectRules",
-        "title": "1リビジョンをプロジェクト規約付きでレビュー",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.reviewRangeWithProjectRules",
-        "title": "リビジョン範囲をプロジェクト規約付きでレビュー",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.validateReviewResultJson",
-        "title": "レビュー結果 JSON を検証",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.records.initCampaign",
-        "title": "実績 campaign を初期化",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.records.createRecord",
-        "title": "実績 record を作成",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.records.validateRecord",
-        "title": "実績 record を検証",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.records.createTriage",
-        "title": "人間 triage 雛形を生成",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.records.validateTriage",
-        "title": "人間 triage を検証",
-        "category": "Bob Bazaar Review"
-      },
-      {
-        "command": "bobBazaar.records.generateSummary",
-        "title": "実績 campaign summary を生成",
-        "category": "Bob Bazaar Review"
-      }
+      { "command": "bobBazaar.openReviewGui", "title": "GUI を開く", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.openResultCaptureGui", "title": "Result Capture GUI を開く", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.openHumanTriageGui", "title": "Human Triage GUI を開く", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.collectReviewContext", "title": "レビューコンテキストを収集", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.loadReviewRules", "title": "プロジェクト規約を読み込む", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.captureReviewResult", "title": "レビュー結果を取り込む", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.saveReviewResultFromClipboard", "title": "クリップボードからレビュー結果を保存", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.configureMcp", "title": "Bob MCP を設定", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.initProjectRules", "title": "プロジェクト規約を初期化", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.reviewRevision", "title": "1リビジョンを Bob でレビュー", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.reviewRange", "title": "リビジョン範囲を Bob でレビュー", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.reviewRevisionWithProjectRules", "title": "1リビジョンをプロジェクト規約付きでレビュー", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.reviewRangeWithProjectRules", "title": "リビジョン範囲をプロジェクト規約付きでレビュー", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.validateReviewResultJson", "title": "レビュー結果 JSON を検証", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.records.initCampaign", "title": "実績 campaign を初期化", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.records.createRecord", "title": "実績 record を作成", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.records.validateRecord", "title": "実績 record を検証", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.records.createTriage", "title": "人間 triage 雛形を生成", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.records.validateTriage", "title": "人間 triage を検証", "category": "Bob Bazaar Review" },
+      { "command": "bobBazaar.records.generateSummary", "title": "実績 campaign summary を生成", "category": "Bob Bazaar Review" }
     ],
     "configuration": {
       "title": "Bob Bazaar レビュー支援",
       "properties": {
-        "bobBazaar.bzrPath": {
-          "type": "string",
-          "default": "bzr",
-          "description": "Bazaar 実行ファイルのパス。PATH に bzr がない場合は絶対パスを指定します。"
-        },
-        "bobBazaar.textEncoding": {
-          "type": "string",
-          "default": "auto",
-          "enum": [
-            "auto",
-            "utf8",
-            "shift_jis",
-            "cp932",
-            "windows-31j"
-          ],
-          "description": "Bazaar の log / diff / cat 出力を読み取る文字コード。auto は UTF-8 を優先し、文字化けが疑われる場合に Shift-JIS 系として読み直します。"
-        },
-        "bobBazaar.mcpServerName": {
-          "type": "string",
-          "default": "bazaar",
-          "description": ".bob/mcp.json に書き込む MCP サーバー名。"
-        },
-        "bobBazaar.maxDiffBytes": {
-          "type": "number",
-          "default": 1048576,
-          "minimum": 32768,
-          "maximum": 5242880,
-          "description": "生成するレビュー packet に含める Bazaar diff の最大サイズ。"
-        },
-        "bobBazaar.maxAddedFileContentBytes": {
-          "type": "number",
-          "default": 262144,
-          "minimum": 0,
-          "maximum": 2097152,
-          "description": "新規追加ファイル本文をレビュー packet に含める最大合計サイズ。0 の場合、追加ファイル本文セクションを省略します。"
-        },
-        "bobBazaar.projectRules.checklistPath": {
-          "type": "string",
-          "default": ".bob/review/checklist.json",
-          "description": "プロジェクト固有レビュー checklist JSON のワークスペース相対パスまたは絶対パス。"
-        },
-        "bobBazaar.projectRules.schemaPath": {
-          "type": "string",
-          "default": ".bob/review/review-result.schema.json",
-          "description": "レビュー結果 JSON schema のワークスペース相対パスまたは絶対パス。"
-        }
+        "bobBazaar.bzrPath": { "type": "string", "default": "bzr", "description": "Bazaar 実行ファイルのパス。PATH に bzr がない場合は絶対パスを指定します。" },
+        "bobBazaar.textEncoding": { "type": "string", "default": "auto", "enum": ["auto", "utf8", "shift_jis", "cp932", "windows-31j"], "description": "Bazaar の log / diff / cat 出力を読み取る文字コード。auto は UTF-8 を優先し、文字化けが疑われる場合に Shift-JIS 系として読み直します。" },
+        "bobBazaar.mcpServerName": { "type": "string", "default": "bazaar", "description": ".bob/mcp.json に書き込む MCP サーバー名。" },
+        "bobBazaar.maxDiffBytes": { "type": "number", "default": 1048576, "minimum": 32768, "maximum": 5242880, "description": "生成するレビュー packet に含める Bazaar diff の最大サイズ。" },
+        "bobBazaar.maxAddedFileContentBytes": { "type": "number", "default": 262144, "minimum": 0, "maximum": 2097152, "description": "新規追加ファイル本文をレビュー packet に含める最大合計サイズ。0 の場合、追加ファイル本文セクションを省略します。" },
+        "bobBazaar.projectRules.checklistPath": { "type": "string", "default": ".bob/review/checklist.json", "description": "プロジェクト固有レビュー checklist JSON のワークスペース相対パスまたは絶対パス。" },
+        "bobBazaar.projectRules.schemaPath": { "type": "string", "default": ".bob/review/review-result.schema.json", "description": "レビュー結果 JSON schema のワークスペース相対パスまたは絶対パス。" }
       }
     },
     "menus": {
       "commandPalette": [
-        {
-          "command": "bobBazaar.openReviewGui"
-        },
-        {
-          "command": "bobBazaar.openResultCaptureGui"
-        },
-        {
-          "command": "bobBazaar.openHumanTriageGui"
-        },
-        {
-          "command": "bobBazaar.collectReviewContext"
-        },
-        {
-          "command": "bobBazaar.loadReviewRules"
-        },
-        {
-          "command": "bobBazaar.captureReviewResult"
-        },
-        {
-          "command": "bobBazaar.saveReviewResultFromClipboard"
-        },
-        {
-          "command": "bobBazaar.configureMcp"
-        },
-        {
-          "command": "bobBazaar.initProjectRules"
-        },
-        {
-          "command": "bobBazaar.reviewRevision"
-        },
-        {
-          "command": "bobBazaar.reviewRange"
-        },
-        {
-          "command": "bobBazaar.reviewRevisionWithProjectRules"
-        },
-        {
-          "command": "bobBazaar.reviewRangeWithProjectRules"
-        },
-        {
-          "command": "bobBazaar.validateReviewResultJson"
-        },
-        {
-          "command": "bobBazaar.records.initCampaign"
-        },
-        {
-          "command": "bobBazaar.records.createRecord"
-        },
-        {
-          "command": "bobBazaar.records.validateRecord"
-        },
-        {
-          "command": "bobBazaar.records.createTriage"
-        },
-        {
-          "command": "bobBazaar.records.validateTriage"
-        },
-        {
-          "command": "bobBazaar.records.generateSummary"
-        }
+        { "command": "bobBazaar.openReviewGui" },
+        { "command": "bobBazaar.openResultCaptureGui" },
+        { "command": "bobBazaar.openHumanTriageGui" },
+        { "command": "bobBazaar.collectReviewContext" },
+        { "command": "bobBazaar.loadReviewRules" },
+        { "command": "bobBazaar.captureReviewResult" },
+        { "command": "bobBazaar.saveReviewResultFromClipboard" },
+        { "command": "bobBazaar.configureMcp" },
+        { "command": "bobBazaar.initProjectRules" },
+        { "command": "bobBazaar.reviewRevision" },
+        { "command": "bobBazaar.reviewRange" },
+        { "command": "bobBazaar.reviewRevisionWithProjectRules" },
+        { "command": "bobBazaar.reviewRangeWithProjectRules" },
+        { "command": "bobBazaar.validateReviewResultJson" },
+        { "command": "bobBazaar.records.initCampaign" },
+        { "command": "bobBazaar.records.createRecord" },
+        { "command": "bobBazaar.records.validateRecord" },
+        { "command": "bobBazaar.records.createTriage" },
+        { "command": "bobBazaar.records.validateTriage" },
+        { "command": "bobBazaar.records.generateSummary" }
       ],
       "scm/title": [
-        {
-          "command": "bobBazaar.openReviewGui",
-          "group": "navigation"
-        }
+        { "command": "bobBazaar.openReviewGui", "group": "navigation" }
       ]
     }
   },
   "scripts": {
-    "architecture:policy": "node ../../scripts/check-import-cycles.js src",
-    "source:policy": "node ../../scripts/check-export-star-policy.js src",
-    "unused:policy": "node ../../scripts/run-unused-policy.js",
-    "unused:report": "node ../../scripts/run-unused-checks.js",
-    "artifact:policy": "node ../../scripts/check-artifact-size-policy.js --max-bytes 12000 templates",
+    "architecture:policy": "node scripts/check-import-cycles.js src",
+    "source:policy": "node scripts/check-export-star-policy.js src",
+    "unused:policy": "node scripts/run-unused-policy.js",
+    "unused:report": "node scripts/run-unused-checks.js",
+    "artifact:policy": "node scripts/check-artifact-size-policy.js --max-bytes 12000 templates",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
-    "clean": "node ../../scripts/clean-extension-output.js out",
     "compile": "tsc -p ./",
     "dependency:policy": "node --test test/dependencyPolicy.test.js",
     "test": "npm run compile && node --test test/*.test.js",
     "watch": "tsc -watch -p ./",
-    "vscode:prepublish": "npm run clean && npm run compile",
+    "vscode:prepublish": "npm run compile",
     "package": "vsce package",
-    "package:policy": "node ../../scripts/check-vsix-policy.js --max-bytes 350000",
-    "package:metrics": "node ../../scripts/report-vsix-metrics.js ."
+    "package:policy": "node scripts/check-vsix-policy.js --max-bytes 350000",
+    "package:metrics": "node scripts/report-vsix-metrics.js ."
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

@@ -57,10 +57,22 @@ const RUN_ID_ACTIONS: readonly OperationHubActionId[] = [
   "openRunControl"
 ]
 
+const RUN_MONITOR_WATCH_PATTERNS = [
+  ".bob/workflows/runs/**/run.json",
+  ".bob/workflows/runs/**/control.json"
+] as const
+
+const RUN_MONITOR_REFRESH_DEBOUNCE_MS = 150
+const ACTION_REFRESH_DELAYS_MS = [300, 1000, 2500, 5000] as const
+
 export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView
   private panel?: vscode.WebviewPanel
   private focusedRunId?: string
+  private watchedRunRootsKey = ""
+  private pendingAutoRefresh?: ReturnType<typeof setTimeout>
+  private readonly actionRefreshTimers = new Set<ReturnType<typeof setTimeout>>()
+  private readonly runWatcherDisposables: vscode.Disposable[] = []
   private readonly disposables: vscode.Disposable[] = []
   private readonly panelDisposables: vscode.Disposable[] = []
 
@@ -116,6 +128,9 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
 
   dispose(): void {
     this.panel?.dispose()
+    this.disposeRunMonitorWatchers()
+    this.clearPendingAutoRefresh()
+    this.clearActionRefreshTimers()
     while (this.panelDisposables.length > 0) this.panelDisposables.pop()?.dispose()
     for (const disposable of this.disposables) disposable.dispose()
   }
@@ -133,20 +148,26 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
       }
       if (message.action === "openOperationHubPanel") {
         await this.openPanel(message.runId ? { runId: message.runId } : undefined)
+        await this.refresh()
         return
       }
       if (message.action === "openArtifact") {
         await this.openArtifact(message.artifactPath)
+        await this.refreshAll()
         return
       }
       const command = ACTION_COMMANDS[message.action]
       if (!command) {
         throw new Error(`Unsupported Operation Hub action: ${message.action}`)
       }
+      this.scheduleActionRefreshes()
       await vscode.commands.executeCommand(command, ...commandArgsForAction(message))
       await this.refreshAll()
     } catch (error) {
       void vscode.window.showErrorMessage(`Bob Operation Hub: ${error instanceof Error ? error.message : String(error)}`)
+      await this.refreshAll().catch((refreshError) => {
+        console.warn("Bob Operation Hub refresh after action failure failed", refreshError)
+      })
     }
   }
 
@@ -175,6 +196,7 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
 
   private async renderIntoWebview(webview: vscode.Webview, layout: "compact" | "panel"): Promise<void> {
     const model = await this.loadModel()
+    this.syncRunMonitorWatchers(model.home.workspaceRoots)
     webview.html = renderOperationHubHtml({
       cspSource: webview.cspSource,
       nonce: nonce(),
@@ -205,6 +227,61 @@ export class OperationHubProvider implements vscode.WebviewViewProvider, vscode.
       runs: runs.flat(),
       focusedRunId: this.focusedRunId
     })
+  }
+
+  private syncRunMonitorWatchers(workspaceRoots: readonly string[]): void {
+    const roots = Array.from(new Set(workspaceRoots.map((root) => path.resolve(root)))).sort()
+    const nextKey = roots.join("\n")
+    if (nextKey === this.watchedRunRootsKey) return
+
+    this.disposeRunMonitorWatchers()
+    this.watchedRunRootsKey = nextKey
+
+    for (const root of roots) {
+      for (const pattern of RUN_MONITOR_WATCH_PATTERNS) {
+        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(root, pattern))
+        watcher.onDidCreate(() => this.scheduleRefreshAll())
+        watcher.onDidChange(() => this.scheduleRefreshAll())
+        watcher.onDidDelete(() => this.scheduleRefreshAll())
+        this.runWatcherDisposables.push(watcher)
+      }
+    }
+  }
+
+  private disposeRunMonitorWatchers(): void {
+    while (this.runWatcherDisposables.length > 0) {
+      this.runWatcherDisposables.pop()?.dispose()
+    }
+    this.watchedRunRootsKey = ""
+  }
+
+  private scheduleRefreshAll(delayMs = RUN_MONITOR_REFRESH_DEBOUNCE_MS): void {
+    this.clearPendingAutoRefresh()
+    this.pendingAutoRefresh = setTimeout(() => {
+      this.pendingAutoRefresh = undefined
+      void this.refreshAll()
+    }, delayMs)
+  }
+
+  private clearPendingAutoRefresh(): void {
+    if (!this.pendingAutoRefresh) return
+    clearTimeout(this.pendingAutoRefresh)
+    this.pendingAutoRefresh = undefined
+  }
+
+  private scheduleActionRefreshes(): void {
+    for (const delayMs of ACTION_REFRESH_DELAYS_MS) {
+      const timer = setTimeout(() => {
+        this.actionRefreshTimers.delete(timer)
+        void this.refreshAll()
+      }, delayMs)
+      this.actionRefreshTimers.add(timer)
+    }
+  }
+
+  private clearActionRefreshTimers(): void {
+    for (const timer of this.actionRefreshTimers) clearTimeout(timer)
+    this.actionRefreshTimers.clear()
   }
 
   private async openArtifact(artifactPath?: string): Promise<void> {

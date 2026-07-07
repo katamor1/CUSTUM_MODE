@@ -1,16 +1,16 @@
 const assert = require("node:assert/strict")
-const { execFileSync } = require("node:child_process")
 const fs = require("node:fs")
 const path = require("node:path")
 const { TextDecoder } = require("node:util")
 const { test } = require("node:test")
-const { repoRoot } = require("./helpers/sourceReader")
+const { extensionRoot } = require("./helpers/sourceReader")
 
-const extensionRoots = [
-  "extensions/workflow-register",
-  "extensions/bob-bazaar-review",
-  "extensions/bob-code-consistency-review"
-]
+const ignoredDirectoryNames = new Set([
+  ".git",
+  ".vscode-test",
+  "node_modules",
+  "out"
+])
 
 const binaryExtensions = new Set([
   ".bmp",
@@ -25,17 +25,26 @@ const binaryExtensions = new Set([
   ".zip"
 ])
 
-function gitTrackedExtensionFiles() {
-  return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", ...extensionRoots], {
-    cwd: repoRoot,
-    encoding: "utf8"
-  }).split(/\r?\n/)
-    .filter(Boolean)
-    .filter((filePath) => fs.existsSync(path.join(repoRoot, filePath)))
+function collectExtensionFiles() {
+  const files = []
+  const pending = [extensionRoot]
+  while (pending.length > 0) {
+    const current = pending.pop()
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const entryPath = path.join(current, entry.name)
+      const relativePath = path.relative(extensionRoot, entryPath).replace(/\\/g, "/")
+      if (entry.isDirectory()) {
+        if (!ignoredDirectoryNames.has(entry.name)) pending.push(entryPath)
+      } else if (entry.isFile()) {
+        files.push(relativePath)
+      }
+    }
+  }
+  return files.sort()
 }
 
 function classifyTextEncoding(filePath) {
-  const bytes = fs.readFileSync(path.join(repoRoot, filePath))
+  const bytes = fs.readFileSync(path.join(extensionRoot, filePath))
   if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     return "utf8-bom"
   }
@@ -56,8 +65,8 @@ function classifyTextEncoding(filePath) {
   }
 }
 
-test("tracked extension text files use UTF-8 without BOM consistently", () => {
-  const mismatches = gitTrackedExtensionFiles()
+test("extension text files use UTF-8 without BOM consistently", () => {
+  const mismatches = collectExtensionFiles()
     .filter((filePath) => !binaryExtensions.has(path.extname(filePath).toLowerCase()))
     .map((filePath) => ({ filePath, encoding: classifyTextEncoding(filePath) }))
     .filter((entry) => entry.encoding !== "utf8")

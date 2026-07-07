@@ -24,6 +24,20 @@ test("all workflow scaffold templates validate", () => {
     const text = createWorkflowMarkdown({ name: template.id, title: template.label, description: `Run ${template.label}.`, template: template.id })
     const result = validateWorkflowText({ sourceId: "workflow-register", filePath: `.bob/workflows/${template.id}/WORKFLOW.md`, text })
     assert.equal(result.ok, true, `${template.id}: ${formatWorkflowDiagnostics(result).join("\n")}`)
+    assert.equal(result.diagnostics.some((diagnostic) => diagnostic.severity === "warning"), false, `${template.id}: ${formatWorkflowDiagnostics(result).join("\n")}`)
+    assert.equal(result.workflow.todoEnabled, false, `${template.id} should not auto-enable legacy Todo mapping`)
+    assert.equal(result.workflow.todoAsSteps, false, `${template.id} should use typed steps directly`)
+    assert.equal(result.workflow.stepExecution.mode, "engineSteps", `${template.id} should expose steps[] as Bob-visible steps`)
+    assert.equal(result.workflow.stepExecution.allowOutOfOrder, false, `${template.id} should keep ordered step execution`)
+    assert.equal(result.workflow.stepReview.enabled, false, `${template.id} should not pause after every generated step by default`)
+    assert.equal(result.workflow.stepReview.requireAcceptBeforeNext, false, `${template.id} should not require review acceptance by default`)
+    assert.equal(result.workflow.stepCompletion, template.id === "manual-checklist" ? "manual" : "auto")
+    for (const step of result.workflow.engineSteps.filter((item) => item.type === "command")) {
+      assert.ok(result.workflow.guardrails.allowedCommands.includes(step.action.provider), `${template.id}:${step.id} provider is allowlisted`)
+      if (step.action.provider === "vscode.executeCommand") {
+        assert.ok(result.workflow.guardrails.allowedCommandIds.includes(step.action.args?.[0]), `${template.id}:${step.id} command id is allowlisted`)
+      }
+    }
   }
 })
 

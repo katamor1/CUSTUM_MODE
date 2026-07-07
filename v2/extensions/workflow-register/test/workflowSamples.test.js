@@ -50,7 +50,13 @@ test("step-back branching approval sample workflow validates", () => {
   })
 
   assert.equal(parsed.ok, true, parsed.diagnostics.join("\n"))
+  assert.equal(parsed.workflow.todoEnabled, false)
+  assert.equal(parsed.workflow.todoAsSteps, false)
   assert.equal(parsed.workflow.stepExecution.mode, "engineSteps")
+  assert.equal(parsed.workflow.stepReview.enabled, false)
+  assert.deepEqual(parsed.workflow.guardrails.allowedCommands, ["vscode.executeCommand"])
+  assert.ok(parsed.workflow.guardrails.allowedCommandIds.includes("example.preapprovalCheck"))
+  assert.ok(parsed.workflow.guardrails.deniedCommands.includes("shell"))
   assert.equal(parsed.workflow.branching.enabled, true)
   assert.equal(parsed.workflow.branching.loops[0].id, "revise-until-approved")
   assert.equal(parsed.workflow.branching.loops[0].maxIterations, 5)

@@ -5,7 +5,7 @@ const path = require("node:path")
 const { spawnSync } = require("node:child_process")
 const { test } = require("node:test")
 
-const { extensionRoot, repoPath } = require("./helpers/sourceReader")
+const { extensionRoot } = require("./helpers/sourceReader")
 
 function writeFile(root, filePath, content) {
   const fullPath = path.join(root, filePath)
@@ -14,7 +14,7 @@ function writeFile(root, filePath, content) {
 }
 
 function runImportCyclePolicy(srcRoot) {
-  return spawnSync(process.execPath, [repoPath("scripts", "check-import-cycles.js"), srcRoot], {
+  return spawnSync(process.execPath, [path.join(extensionRoot, "scripts", "check-import-cycles.js"), srcRoot], {
     cwd: extensionRoot,
     encoding: "utf8"
   })

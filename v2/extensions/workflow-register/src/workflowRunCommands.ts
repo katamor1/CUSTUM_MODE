@@ -1,6 +1,7 @@
 import * as vscode from "vscode"
 import type { ActiveStep } from "./bobWorkflowTypes"
-import type { CoreWorkflowDefinition } from "./core/model"
+import { bobTaskSyncRegistry, type BobTaskSyncReason } from "./bobTaskSync"
+import type { CoreWorkflowDefinition, WorkflowRunState } from "./core/model"
 import { formatBranchingDiagnostics } from "./core/runDiagnostics"
 import { pendingReviewTransitionStepId } from "./core/engine/runState"
 import type { MarkerRootCandidate } from "./core/workspaceRoots"
@@ -134,6 +135,7 @@ export class WorkflowRunCommandService {
         stepId: pendingTransitionStepId,
         allowOutOfOrder: workflow.stepExecution.allowOutOfOrder
       })
+      await this.reconcileBobTask(selection.root, result, workflow, "operation-hub-next")
       await vscode.window.showInformationMessage(`Workflow run ${result.status}: ${result.runId}`)
       return result
     }
@@ -143,6 +145,8 @@ export class WorkflowRunCommandService {
         run.status = "completed"
         run.currentStep = undefined
         run.error = undefined
+        await this.reconcileBobTask(selection.root, run, workflow, "operation-hub-next")
+      } else {
         await runStore.saveRun(run)
       }
       const message = run.status === "completed"
@@ -157,6 +161,7 @@ export class WorkflowRunCommandService {
       stepId: next.id,
       allowOutOfOrder: workflow.stepExecution.allowOutOfOrder
     })
+    await this.reconcileBobTask(selection.root, result, workflow, "operation-hub-next")
     await vscode.window.showInformationMessage(`Workflow run ${result.status}: ${result.runId}`)
     return result
   }
@@ -223,6 +228,7 @@ export class WorkflowRunCommandService {
         `workflow=${run?.workflowId}`,
         `root=${root}`,
         `currentStep=${run?.currentStep ?? "none"}`,
+        `bobTaskSync=${run?.bobTaskSync?.drift?.status ?? "unknown"}`,
         `updatedAt=${run?.updatedAt}`
       ].join("; "))
     await showMarkdownReport("Workflow Runs", `${runsByRoot.length} run(s).`, lines)
@@ -313,8 +319,18 @@ export class WorkflowRunCommandService {
     const result = mode === "resume"
       ? await engine.resumeRun(targetRunId, { workflow, completeHeldStep: true })
       : await engine.retryCurrentStep(targetRunId, workflow)
+    await this.reconcileBobTask(selection.root, result, workflow, mode === "resume" ? "operation-hub-resume" : "operation-hub-retry")
     await vscode.window.showInformationMessage(`Workflow run ${result.status}: ${result.runId}`)
     return result
+  }
+
+  private async reconcileBobTask(root: string, run: WorkflowRunState, workflow: CoreWorkflowDefinition, reason: BobTaskSyncReason): Promise<void> {
+    const sync = bobTaskSyncRegistry.reconcileRun(run, workflow, {
+      reason,
+      task: reviewTaskRegistry.taskForRun(run.runId)
+    })
+    if (sync.status !== "synced") console.warn(sync.message)
+    await this.options.runtimeFactory.createRunStore(root).saveRun(run)
   }
 
   private async ensureWorkflowsLoaded(): Promise<void> {

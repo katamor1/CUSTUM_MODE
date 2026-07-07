@@ -1,7 +1,8 @@
-import type { WorkflowSchemaVersion, WorkflowStepType } from "./modelSchema"
+import type { WorkflowSchemaVersion, WorkflowStepExecutionMode, WorkflowStepType } from "./modelSchema"
 
 export type RunStatus = "running" | "paused" | "checkpoint" | "reviewing" | "held" | "completed" | "failed"
 export type StepRunStatus = "pending" | "running" | "reviewing" | "held" | "completed" | "failed"
+export type BobTaskSyncDriftStatus = "unknown" | "synced" | "repairPending" | "taskUnavailable" | "requiresNewBobTask" | "repairFailed"
 
 export interface RunStepAttempt {
   attempt: number
@@ -63,6 +64,26 @@ export interface WorkflowBranchTransitionRecord {
   conditionSnapshot?: unknown
 }
 
+export interface BobTaskSyncDriftState {
+  status: BobTaskSyncDriftStatus
+  reason?: string
+  detectedAt?: string
+  details?: string
+}
+
+export interface BobTaskSyncState {
+  schemaVersion: "workflow-register/bob-task-sync/v1"
+  projectionVersion: number
+  mode?: WorkflowStepExecutionMode
+  workflowDefinitionHash?: string
+  completedThroughIndex: number
+  completedThroughStepId?: string
+  lastAppliedAt?: string
+  lastCheckedAt?: string
+  liveTaskAvailable?: boolean
+  drift?: BobTaskSyncDriftState
+}
+
 export interface RunStepState {
   id: string
   title: string
@@ -90,6 +111,7 @@ export interface WorkflowRunState {
   inputs: Record<string, unknown>
   state: Record<string, string>
   branching?: WorkflowRunBranchingState
+  bobTaskSync?: BobTaskSyncState
   steps: RunStepState[]
   createdAt: string
   updatedAt: string

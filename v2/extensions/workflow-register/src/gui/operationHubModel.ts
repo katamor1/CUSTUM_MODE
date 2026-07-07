@@ -108,6 +108,8 @@ export interface OperationHubRunSummary {
   status: WorkflowRunState["status"]
   statusLabel: string
   currentStepLabel: string
+  bobTaskSyncLabel: string
+  bobTaskSyncStatus: OperationHubStatus
   completedStepCount: number
   totalStepCount: number
   updatedAt: string
@@ -148,6 +150,7 @@ export function buildOperationHubModel(input: OperationHubModelInput): Operation
 export function summarizeRunForHub(root: string, run: WorkflowRunState, focusedRunId?: string): OperationHubRunSummary {
   const currentStep = run.steps.find((step) => step.id === run.currentStep)
   const completedStepCount = run.steps.filter((step) => step.status === "completed").length
+  const bobTaskSync = summarizeBobTaskSync(run)
   return {
     runId: run.runId,
     workflowId: run.workflowId,
@@ -155,6 +158,8 @@ export function summarizeRunForHub(root: string, run: WorkflowRunState, focusedR
     status: run.status,
     statusLabel: statusLabel(run),
     currentStepLabel: currentStep ? `${currentStep.id}: ${currentStep.title}` : run.currentStep ?? "未選択",
+    bobTaskSyncLabel: bobTaskSync.label,
+    bobTaskSyncStatus: bobTaskSync.status,
     completedStepCount,
     totalStepCount: run.steps.length,
     updatedAt: run.updatedAt,
@@ -315,6 +320,26 @@ function looksLikeArtifactPath(value: string): boolean {
   if (trimmed.length === 0 || trimmed.includes("\n") || trimmed.includes("\0")) return false
   if (trimmed.startsWith("..")) return false
   return /^\.bob[/-]/i.test(trimmed) || /^\.bob-/i.test(trimmed) || /\.(md|json|ya?ml|txt|csv|html)$/i.test(trimmed) || path.isAbsolute(trimmed)
+}
+
+function summarizeBobTaskSync(run: WorkflowRunState): { label: string; status: OperationHubStatus } {
+  const sync = run.bobTaskSync
+  const status = sync?.drift?.status ?? "unknown"
+  const through = sync?.completedThroughStepId ? ` / through ${sync.completedThroughStepId}` : ""
+  switch (status) {
+    case "synced":
+      return { label: `Bob Todo: synced${through}`, status: "ok" }
+    case "taskUnavailable":
+      return { label: "Bob Todo: repair pending; run.json is authoritative", status: "warning" }
+    case "requiresNewBobTask":
+      return { label: "Bob Todo: cannot rewind; start from run.json", status: "error" }
+    case "repairFailed":
+      return { label: "Bob Todo: repair failed; run.json is authoritative", status: "error" }
+    case "repairPending":
+      return { label: "Bob Todo: repair pending", status: "warning" }
+    default:
+      return { label: "Bob Todo: not linked yet", status: "info" }
+  }
 }
 
 function statusLabel(run: WorkflowRunState): string {

@@ -3,10 +3,14 @@ const fs = require("node:fs")
 const path = require("node:path")
 const { test } = require("node:test")
 
-const { extensionRoot, repoPath } = require("./helpers/sourceReader")
+const { extensionRoot } = require("./helpers/sourceReader")
+
+function readDoc(...segments) {
+  return fs.readFileSync(path.join(extensionRoot, "docs", ...segments), "utf8")
+}
 
 test("workflow action contract docs describe workflow-register public API and execution inputs", () => {
-  const contract = fs.readFileSync(repoPath("docs", "workflow-action-contracts-ja.md"), "utf8")
+  const contract = readDoc("workflow-action-contracts-ja.md")
 
   for (const phrase of [
     "registerActionProvider",
@@ -28,7 +32,7 @@ test("workflow action contract docs describe workflow-register public API and ex
 })
 
 test("artifact metadata contract docs define additive cross-extension metadata", () => {
-  const contract = fs.readFileSync(repoPath("docs", "artifact-metadata-contract-ja.md"), "utf8")
+  const contract = readDoc("artifact-metadata-contract-ja.md")
 
   for (const phrase of [
     "artifact_metadata",

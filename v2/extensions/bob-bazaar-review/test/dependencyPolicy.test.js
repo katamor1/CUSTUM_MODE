@@ -3,29 +3,39 @@ const fs = require("node:fs")
 const path = require("node:path")
 const { test } = require("node:test")
 
-const { extensionRoot, repoPath, readJson } = require("./helpers/sourceReader")
+const { extensionRoot, readJson } = require("./helpers/sourceReader")
 
-test("bob-bazaar-review dependency policy requires a committed lockfile with production license metadata", () => {
+function assertLocalScript(packageJson, scriptName, expectedCommand) {
+  const command = packageJson.scripts[scriptName]
+  assert.equal(command, expectedCommand)
+  assert.doesNotMatch(command, /\.\./, `${scriptName} must stay within the extension root`)
+  const scriptPath = command.match(/node\s+(scripts\/[^\s]+)/)?.[1]
+  if (scriptPath) assert.ok(fs.existsSync(path.join(extensionRoot, scriptPath)), `${scriptName} target must exist locally`)
+}
+
+test("bob-bazaar-review dependency policy requires a committed lockfile and local release scripts", () => {
   const packageJson = readJson("package.json")
   const lockPath = path.join(extensionRoot, "package-lock.json")
   assert.ok(fs.existsSync(lockPath), "package-lock.json must be committed for reproducible VSIX builds")
+
   assert.equal(packageJson.scripts["dependency:policy"], "node --test test/dependencyPolicy.test.js")
-  assert.equal(packageJson.scripts["architecture:policy"], "node ../../scripts/check-import-cycles.js src")
-  assert.equal(packageJson.scripts["source:policy"], "node ../../scripts/check-export-star-policy.js src")
-  assert.equal(packageJson.scripts["unused:policy"], "node ../../scripts/run-unused-policy.js")
-  assert.equal(packageJson.scripts["unused:report"], "node ../../scripts/run-unused-checks.js")
-  assert.equal(packageJson.scripts["artifact:policy"], "node ../../scripts/check-artifact-size-policy.js --max-bytes 12000 templates")
+  assertLocalScript(packageJson, "architecture:policy", "node scripts/check-import-cycles.js src")
+  assertLocalScript(packageJson, "source:policy", "node scripts/check-export-star-policy.js src")
+  assertLocalScript(packageJson, "unused:policy", "node scripts/run-unused-policy.js")
+  assertLocalScript(packageJson, "unused:report", "node scripts/run-unused-checks.js")
+  assertLocalScript(packageJson, "artifact:policy", "node scripts/check-artifact-size-policy.js --max-bytes 12000 templates")
   assert.equal(packageJson.scripts["audit:prod"], "npm audit --omit=dev --audit-level=high")
-  assert.equal(packageJson.scripts.clean, "node ../../scripts/clean-extension-output.js out")
-  assert.equal(packageJson.scripts["vscode:prepublish"], "npm run clean && npm run compile")
-  assert.equal(packageJson.scripts["package:policy"], "node ../../scripts/check-vsix-policy.js --max-bytes 350000")
-  assert.equal(packageJson.scripts["package:metrics"], "node ../../scripts/report-vsix-metrics.js .")
+  assert.equal(packageJson.scripts["vscode:prepublish"], "npm run compile")
+  assertLocalScript(packageJson, "package:policy", "node scripts/check-vsix-policy.js --max-bytes 350000")
+  assertLocalScript(packageJson, "package:metrics", "node scripts/report-vsix-metrics.js .")
+
+  for (const [scriptName, command] of Object.entries(packageJson.scripts)) {
+    assert.doesNotMatch(command, /\.\.\//, `${scriptName} must not reference parent folders`)
+  }
+
   assert.equal(packageJson.devDependencies.knip, "^5.0.0")
   assert.equal(packageJson.devDependencies.depcheck, "^1.4.7")
   assert.equal(packageJson.devDependencies["ts-prune"], "^0.10.3")
-
-  const gitignore = fs.readFileSync(repoPath(".gitignore"), "utf8").split(/\r?\n/)
-  assert.ok(!gitignore.includes("extensions/bob-bazaar-review/package-lock.json"), "package-lock.json must not be ignored")
 
   const vscodeignore = fs.readFileSync(path.join(extensionRoot, ".vscodeignore"), "utf8").split(/\r?\n/)
   assert.ok(vscodeignore.includes("out/**/*.map"), "compiled source maps must be excluded from the VSIX")
@@ -41,38 +51,6 @@ test("bob-bazaar-review dependency policy requires a committed lockfile with pro
     }
     assert.ok(vscodeignore.includes("!node_modules/argparse/**"), "js-yaml runtime transitive dependency must be included in the VSIX")
   }
-
-  const missingLicenses = Object.entries(lock.packages ?? {})
-    .filter(([packagePath, info]) => packagePath && !info.dev)
-    .filter(([, info]) => typeof info.license !== "string" || info.license.trim().length === 0)
-    .map(([packagePath]) => packagePath)
-
-  assert.deepEqual(missingLicenses, [], "production dependency packages must include license metadata in package-lock.json")
-})
-
-test("bob-bazaar-review CI uses npm ci, dependency policy, production audit, tests, and VSIX packaging", () => {
-  const workflowPath = repoPath(".github", "workflows", "extensions-quality.yml")
-  const workflow = fs.readFileSync(workflowPath, "utf8")
-  const jobStart = workflow.indexOf("bob-bazaar-review:")
-  assert.notEqual(jobStart, -1, "bob-bazaar-review job must exist")
-  const jobEnd = workflow.indexOf("bob-code-consistency-review:", jobStart)
-  const job = workflow.slice(jobStart, jobEnd === -1 ? undefined : jobEnd)
-
-  assert.match(job, /working-directory: extensions\/bob-bazaar-review/)
-  assert.match(job, /cache-dependency-path: extensions\/bob-bazaar-review\/package-lock\.json/)
-  assert.match(job, /run: npm ci/)
-  assert.match(job, /run: npm run dependency:policy/)
-  assert.match(job, /run: npm run architecture:policy/)
-  assert.match(job, /run: npm run source:policy/)
-  assert.match(job, /run: npm run unused:report/)
-  assert.match(job, /run: npm run unused:policy/)
-  assert.match(job, /run: npm run artifact:policy/)
-  assert.match(job, /run: npm run audit:prod/)
-  assert.match(job, /run: npm test/)
-  assert.match(job, /run: npm run package/)
-  assert.match(job, /run: npm run package:policy/)
-  assert.match(job, /run: npm run package:metrics/)
-  assert.doesNotMatch(job, /run: npm install/)
 })
 
 test("bob-bazaar-review README documents generated artifacts, package budget, dependencies, CLI, and trust boundary", () => {

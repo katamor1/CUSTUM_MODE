@@ -3,7 +3,7 @@ const fs = require("node:fs")
 const path = require("node:path")
 const { test } = require("node:test")
 
-const { repoPath, readJson } = require("./helpers/sourceReader")
+const { extensionRoot, readJson } = require("./helpers/sourceReader")
 
 const expectedCategory = "Bob Workflow"
 
@@ -28,8 +28,8 @@ test("Command Palette display names use English Bob category before the colon", 
   }
 })
 
-test("extensions README documents the Command Palette display-name policy", () => {
-  const readme = fs.readFileSync(path.join(repoPath("extensions"), "README.md"), "utf8")
+test("extension-local docs document the Command Palette display-name policy", () => {
+  const readme = fs.readFileSync(path.join(extensionRoot, "docs", "command-palette-policy-ja.md"), "utf8")
 
   for (const phrase of [
     "Command Palette 表示名ポリシー",
@@ -38,6 +38,6 @@ test("extensions README documents the Command Palette display-name policy", () =
     "`title`",
     "コロンの手前"
   ]) {
-    assert.ok(readme.includes(phrase), `extensions README must document: ${phrase}`)
+    assert.ok(readme.includes(phrase), `local docs must document: ${phrase}`)
   }
 })

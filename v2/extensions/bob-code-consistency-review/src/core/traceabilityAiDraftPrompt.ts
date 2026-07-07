@@ -52,9 +52,15 @@ export function renderTraceabilityPrompt(input: {
     "- 出力は JSON object だけ。Markdown、YAML、説明文、コメントは禁止。",
     "- prefixは REQ / BD / DD / TC / QA / RV のみ。",
     "- ID形式は `<prefix>-<元文書ID>-<領域>-0001`。例: `REQ-RS001-PAY-0001`。",
+    "- sequence は proposed_id 末尾4桁と必ず一致させてください。例: `REQ-RS001-PAY-0001` の sequence は 1。文書全体の出現順ではありません。",
+    "- item.type は requirement / basic_design / detailed_design / test_spec / qa_item / review_finding のみ。",
+    "- prefixとitem.typeの対応: REQ=requirement, BD=basic_design, DD=detailed_design, TC=test_spec, QA=qa_item, RV=review_finding。",
+    "- test_spec文書のcasesやTC prefixのitemでも type は必ず `test_spec`。`test_case`、`test`、`testcase` は使わない。",
     "- statusは必ず `proposed`。人間承認前に `accepted`、`rejected`、`deprecated` を作らない。",
     "- itemは `id` を持ってはいけない。linkは `from` / `to` を持ってはいけない。",
     "- link_typeは `satisfies`, `elaborates`, `verified_by`, `clarifies`, `reviewed_by`, `references` のみ。",
+    "- link direction は gate validator に合わせる: `satisfies` は REQ -> BD、`elaborates` は BD -> DD、`verified_by` は REQ/DD -> TC。逆向きは禁止。",
+    "- テスト仕様が要求と詳細設計の両方を確認する場合は、REQ -> TC と DD -> TC の `verified_by` link を両方出してください。",
     "- `clarifies` は `QA -> REQ/BD/DD/TC/RV`、`reviewed_by` は `REQ/BD/DD/TC/QA -> RV`。",
     "- 不確かな対応は無理にaccepted相当へ補完せず、proposed候補として残す。",
     "",
@@ -79,6 +85,36 @@ export function renderTraceabilityPrompt(input: {
           source_path: "docs/requirements.md",
           status: "proposed",
           text_summary: "要求の要約"
+        },
+        {
+          proposed_id: "BD-BD001-PAY-0001",
+          type: "basic_design",
+          source_document_id: "BD001",
+          domain: "PAY",
+          sequence: 1,
+          source_path: "docs/basic-design.md",
+          status: "proposed",
+          text_summary: "基本設計の要約"
+        },
+        {
+          proposed_id: "DD-DD001-PAY-0001",
+          type: "detailed_design",
+          source_document_id: "DD001",
+          domain: "PAY",
+          sequence: 1,
+          source_path: "docs/detailed-design.md",
+          status: "proposed",
+          text_summary: "詳細設計の要約"
+        },
+        {
+          proposed_id: "TC-TC001-PAY-0001",
+          type: "test_spec",
+          source_document_id: "TC001",
+          domain: "PAY",
+          sequence: 1,
+          source_path: "docs/test-spec.md",
+          status: "proposed",
+          text_summary: "テスト仕様の要約"
         },
         {
           proposed_id: "QA-QA001-PAY-0001",
@@ -106,6 +142,24 @@ export function renderTraceabilityPrompt(input: {
           proposed_from: "REQ-RS001-PAY-0001",
           proposed_to: "BD-BD001-PAY-0001",
           link_type: "satisfies",
+          status: "proposed"
+        },
+        {
+          proposed_from: "BD-BD001-PAY-0001",
+          proposed_to: "DD-DD001-PAY-0001",
+          link_type: "elaborates",
+          status: "proposed"
+        },
+        {
+          proposed_from: "REQ-RS001-PAY-0001",
+          proposed_to: "TC-TC001-PAY-0001",
+          link_type: "verified_by",
+          status: "proposed"
+        },
+        {
+          proposed_from: "DD-DD001-PAY-0001",
+          proposed_to: "TC-TC001-PAY-0001",
+          link_type: "verified_by",
           status: "proposed"
         },
         {

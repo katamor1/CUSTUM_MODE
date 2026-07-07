@@ -73,14 +73,23 @@ function validateCommandStepDraft(step, add) {
 
 function validateResultStepDraft(step, add) {
   const result = step.result || {};
-  const sink = Array.isArray(result.sinks) ? result.sinks[0] : undefined;
   if (result.source === 'state' && !String(result.stateKey || '').trim()) {
     add('error', 'result.source が state の場合は result.stateKey が必須です。');
   }
   if (result.source === 'literal' && !String(result.text || '').trim()) {
     add('error', 'result.source が literal の場合は literal text が必須です。');
   }
-  if (!sink || !String(sink.path || '').trim()) add('error', 'file sink path は必須です。');
+  const sinks = Array.isArray(result.sinks) ? result.sinks : [];
+  if (sinks.length === 0) add('warning', 'result step に sink がありません。');
+  sinks.forEach(function(sink, index) {
+    if (!sink || sink.type === 'file') {
+      if (!sink || !String(sink.path || '').trim()) add('error', 'file sink #' + (index + 1) + ' の path は必須です。');
+      return;
+    }
+    if (sink.type === 'command' && !String(sink.command || '').trim()) {
+      add('error', 'command sink #' + (index + 1) + ' の command は必須です。');
+    }
+  });
   if (result.source === 'state' && step.resultKey && result.stateKey === step.resultKey) {
     add('error', 'result.stateKey が同一 step の resultKey を参照しています。');
   }

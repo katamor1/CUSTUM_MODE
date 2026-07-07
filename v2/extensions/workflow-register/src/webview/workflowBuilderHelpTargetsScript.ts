@@ -13,11 +13,18 @@ function fieldIdForControl(control) {
   if (control.dataset.stepField) return 'step.' + control.dataset.stepField;
   if (control.dataset.userActionField) return 'step.userAction.' + control.dataset.userActionField;
   if (control.dataset.commandField) return 'command.' + control.dataset.commandField;
+  if (control.dataset.resultSinkField) return 'result.sink.' + control.dataset.resultSinkField;
   if (control.dataset.resultField) return 'result.' + control.dataset.resultField;
   if (control.dataset.stateKey) return 'step.includeState';
   if (control.dataset.inputField) return 'input.' + control.dataset.inputField;
   if (control.dataset.requiresField) return 'requires.' + control.dataset.requiresField;
   if (control.dataset.preflightField) return 'preflight.' + control.dataset.preflightField;
+  if (control.dataset.branchingField) return 'branching.' + control.dataset.branchingField;
+  if (control.dataset.branchLoopField) return 'branching.loop.' + control.dataset.branchLoopField;
+  if (control.dataset.manualFormField) return 'manual.form.' + control.dataset.manualFormField;
+  if (control.dataset.manualApprovalField) return 'manual.approval.' + control.dataset.manualApprovalField;
+  if (control.dataset.transitionDefault) return 'transition.default';
+  if (control.dataset.transitionDecisionsJson) return 'transition.decisions';
   if (control.dataset.artifactField) return 'artifact.' + control.dataset.artifactField;
   if (control.dataset.guardrailField) return 'guardrails.' + control.dataset.guardrailField;
   if (control.dataset.approvalField) return 'approval.' + control.dataset.approvalField;
@@ -38,11 +45,16 @@ function labelForControl(control) {
   return undefined;
 }
 function sectionHelpIdForHeading(heading) {
-  const text = String(heading.textContent || '').trim();
+  const text = String(heading.textContent || '').replace('?', '').trim();
   if (text === 'includeState') return 'section.includeState';
   if (text === 'Command') return 'section.command';
   if (text === 'Result') return 'section.result';
+  if (text === 'Result sinks') return 'section.resultSinks';
   if (text === 'User action') return 'section.userAction';
+  if (text === 'Manual Form') return 'section.manualForm';
+  if (text === 'Manual Approval') return 'section.manualApproval';
+  if (text === 'Transition') return 'section.transition';
+  if (text === 'Checkpoint') return 'section.branchCheckpoint';
   return undefined;
 }
 function matchingElements(scope, selector) {

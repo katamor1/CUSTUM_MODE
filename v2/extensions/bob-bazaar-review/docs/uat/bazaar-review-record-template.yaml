@@ -1,0 +1,14 @@
+schema_version: bazaar-review-record/v1
+campaign_id: phase1-bazaar-review-uat-001
+record_id: bzr-r125-single-run-001
+review_id: bazaar-r125-project-rule-review
+inputs:
+  review_packet_path: .bob-review-records/campaigns/example/records/example/review-packet.md
+outputs:
+  review_result_json: .bob/review/results/example.json
+  triage_yaml: .bob-review-records/campaigns/example/records/example/triage.yaml
+quality_gate:
+  schema_valid: true
+metrics:
+  baseline_review_minutes: 45
+  human_triage_minutes: 12

@@ -10,7 +10,7 @@ function stepTypeGuideHtml(type) {
     agent: ['Prompt に Bob へ依頼する分析・生成内容を書く。', '前段結果が必要なら includeState を選ぶ。', '後続で使う出力なら resultKey を設定する。'],
     command: ['action.provider を選ぶ。', 'VS Code command ID / args[0] と extra args を指定する。', '結果を後続で使うなら resultKey と sendResult を設定する。', '成功時に自動で進めるなら completeOnSuccess を有効にする。'],
     manual: ['Prompt に人間へ確認してほしい内容を書く。', 'form か approval を使う場合は resultKey を設定する。', 'reject で戻す場合は Transition に goto と loop を設定する。'],
-    result: ['source を選ぶ。', 'state の場合は stateKey を選ぶ。', 'literal の場合は literal text を入力する。', 'file sink path に保存先を書く。', '必要なら Artifacts タブで producedBy にこの step を指定する。']
+    result: ['source を選ぶ。', 'state の場合は stateKey を選ぶ。', 'literal の場合は literal text を入力する。', 'file / command sink を必要な数だけ設定する。', '必要なら Artifacts タブで producedBy にこの step を指定する。']
   };
   const items = guides[type] || guides.agent;
   return '<div class="card help-inline-guide" data-help-id="step.type"><strong>' + escapeHtml(type) + ' step の設定ガイド</strong><ol>' + items.map(function(item) { return '<li>' + escapeHtml(item) + '</li>'; }).join('') + '</ol></div>';
@@ -23,15 +23,45 @@ function resultKeyOptionLabel(key) {
   if (!step) return key;
   return key + ' — ' + (step.title || step.id) + ' / ' + step.type;
 }
+function ignoredFieldWarningsHtml(step) {
+  const ignored = [];
+  if (step.type === 'agent' && step.maxResultBytes !== undefined) ignored.push('maxResultBytes は agent step では parser に無視されます。');
+  if (step.type === 'manual') {
+    if (step.resultKey) ignored.push('manual step の top-level resultKey は無視されます。form.resultKey または approval.resultKey を使ってください。');
+    if (step.sendResult !== undefined) ignored.push('sendResult は manual step では無視されます。');
+    if (step.completeOnSuccess !== undefined) ignored.push('completeOnSuccess は manual step では無視されます。');
+    if (step.maxResultBytes !== undefined) ignored.push('maxResultBytes は manual step では無視されます。');
+  }
+  if (step.type === 'result') {
+    if (step.resultKey) ignored.push('result step の top-level resultKey は無視されます。');
+    if (step.includeState && step.includeState.length > 0) ignored.push('includeState は result step では無視されます。result.source=state を使ってください。');
+    if (step.maxResultBytes !== undefined) ignored.push('maxResultBytes は result step では無視されます。');
+  }
+  if (ignored.length === 0) return '';
+  return '<div class="card reference-issue"><strong>この type では無視される field があります</strong><ul class="issue-list">' + ignored.map(function(item) { return '<li>' + escapeHtml(item) + '</li>'; }).join('') + '</ul></div>';
+}
+function commonResultSettingsHtml(step) {
+  const resultKeyHtml = (step.type === 'command' || step.type === 'agent')
+    ? '<div><label data-help-label="step.resultKey">resultKey</label><input data-help-id="step.resultKey" data-step-field="resultKey" value="' + escapeHtml(step.resultKey || '') + '" /></div>'
+    : '<div><label data-help-label="step.resultKey">resultKey</label><div class="muted">この step type では top-level resultKey は使いません。</div></div>';
+  const maxResultHtml = step.type === 'command'
+    ? '<div><label data-help-label="step.maxResultBytes">maxResultBytes</label><input data-help-id="step.maxResultBytes" type="number" data-step-field="maxResultBytes" value="' + escapeHtml(step.maxResultBytes || '') + '" /></div>'
+    : '<div><label data-help-label="step.maxResultBytes">maxResultBytes</label><div class="muted">command step の出力上限として使います。</div></div>';
+  return '<div class="row">' + resultKeyHtml + maxResultHtml + '</div>';
+}
+function includeStateHtmlForStep(step, beforeKeys) {
+  if (step.type === 'result') return '<div class="muted">result step では includeState ではなく Result の source=state / stateKey を使います。</div>';
+  const includeState = Array.isArray(step.includeState) ? step.includeState : [];
+  return beforeKeys.length === 0
+    ? '<div class="muted">前段 step の resultKey がまだありません。</div>'
+    : beforeKeys.map(function(key) { return '<label data-help-label="step.includeState"><input type="checkbox" style="width:auto" data-help-id="step.includeState" data-state-key="' + escapeHtml(key) + '" ' + (includeState.includes(key) ? 'checked' : '') + ' /> ' + escapeHtml(resultKeyOptionLabel(key)) + '</label>'; }).join('');
+}
 function renderStepDetail() {
   const content = document.getElementById('content');
   const step = selectedStep();
   if (!step) { content.innerHTML = '<h2>Step detail</h2><p class="muted">左のボタンから step を追加してください。</p>'; return; }
   const beforeKeys = resultKeysBefore(selectedStepIndex);
-  const includeState = Array.isArray(step.includeState) ? step.includeState : [];
-  const includeStateHtml = beforeKeys.length === 0
-    ? '<div class="muted">前段 step の resultKey がまだありません。</div>'
-    : beforeKeys.map(function(key) { return '<label data-help-label="step.includeState"><input type="checkbox" style="width:auto" data-help-id="step.includeState" data-state-key="' + escapeHtml(key) + '" ' + (includeState.includes(key) ? 'checked' : '') + ' /> ' + escapeHtml(resultKeyOptionLabel(key)) + '</label>'; }).join('');
+  const includeStateHtml = includeStateHtmlForStep(step, beforeKeys);
   let typeSpecific = '';
   if (step.type === 'command') typeSpecific = renderCommandStep(step);
   else if (step.type === 'result') typeSpecific = renderResultStep(step, beforeKeys);
@@ -40,11 +70,12 @@ function renderStepDetail() {
   content.innerHTML =
     '<h2>Step detail</h2>' +
     referenceSummaryHtml(selectedStepIndex) +
+    ignoredFieldWarningsHtml(step) +
     stepTypeGuideHtml(step.type) +
     '<div class="row"><div><label data-help-label="step.id">id</label><input data-help-id="step.id" data-step-field="id" value="' + escapeHtml(step.id) + '" /></div><div><label data-help-label="step.type">type</label><select data-help-id="step.type" data-step-field="type">' + stepTypeOptions(step.type) + '</select></div></div>' +
     '<label data-help-label="step.title">title</label><input data-help-id="step.title" data-step-field="title" value="' + escapeHtml(step.title) + '" />' +
     '<div class="row"><label><input type="checkbox" style="width:auto" data-help-id="step.required" data-step-field="required" ' + (step.required ? 'checked' : '') + ' /> required</label><label><input type="checkbox" style="width:auto" data-help-id="step.stateRequired" data-step-field="stateRequired" ' + (step.stateRequired ? 'checked' : '') + ' /> stateRequired</label></div>' +
-    '<div class="row"><div><label data-help-label="step.resultKey">resultKey</label><input data-help-id="step.resultKey" data-step-field="resultKey" value="' + escapeHtml(step.resultKey || '') + '" /></div><div><label data-help-label="step.maxResultBytes">maxResultBytes</label><input data-help-id="step.maxResultBytes" type="number" data-step-field="maxResultBytes" value="' + escapeHtml(step.maxResultBytes || '') + '" /></div></div>' +
+    commonResultSettingsHtml(step) +
     '<h3 data-section-help="section.includeState" data-help-id="section.includeState">includeState</h3>' + includeStateHtml +
     typeSpecific +
     renderUserActionStep(step) +
@@ -85,9 +116,16 @@ function renderTransitionStep(step) {
 function ensureResult(step) { if (!step.result) step.result = { source: 'state', stateKey: '', sinks: [{ type: 'file', path: '.bob/artifacts/result.md' }] }; if (!Array.isArray(step.result.sinks) || step.result.sinks.length === 0) step.result.sinks = [{ type: 'file', path: '.bob/artifacts/result.md' }]; return step.result; }
 function renderResultStep(step, beforeKeys) {
   const result = ensureResult(step);
-  const sink = result.sinks[0] || { type: 'file', path: '' };
   const stateKeyOptions = [''].concat(beforeKeys).map(function(key) { return '<option value="' + escapeHtml(key) + '" ' + (key === result.stateKey ? 'selected' : '') + '>' + escapeHtml(resultKeyOptionLabel(key)) + '</option>'; }).join('');
-  return '<h3 data-section-help="section.result" data-help-id="section.result">Result</h3><label data-help-label="result.source">source</label><select data-help-id="result.source" data-result-field="source"><option value="state" ' + (result.source === 'state' ? 'selected' : '') + '>state — 前段 resultKey を保存</option><option value="literal" ' + (result.source === 'literal' ? 'selected' : '') + '>literal — 固定テキストを保存</option><option value="agent" ' + (result.source === 'agent' ? 'selected' : '') + '>agent — agent 出力を保存</option></select><label data-help-label="result.stateKey">stateKey</label><select data-help-id="result.stateKey" data-result-field="stateKey">' + stateKeyOptions + '</select><label data-help-label="result.text">literal text</label><textarea data-help-id="result.text" data-result-field="text">' + escapeHtml(result.text || '') + '</textarea><label data-help-label="result.path">file sink path</label><input data-help-id="result.path" data-result-field="path" value="' + escapeHtml(sink.path || '') + '" />';
+  return '<h3 data-section-help="section.result" data-help-id="section.result">Result</h3><label data-help-label="result.source">source</label><select data-help-id="result.source" data-result-field="source"><option value="state" ' + (result.source === 'state' ? 'selected' : '') + '>state — 前段 resultKey を保存</option><option value="literal" ' + (result.source === 'literal' ? 'selected' : '') + '>literal — 固定テキストを保存</option><option value="agent" ' + (result.source === 'agent' ? 'selected' : '') + '>agent — agent 出力を保存</option></select><label data-help-label="result.stateKey">stateKey</label><select data-help-id="result.stateKey" data-result-field="stateKey">' + stateKeyOptions + '</select><label data-help-label="result.text">literal text</label><textarea data-help-id="result.text" data-result-field="text">' + escapeHtml(result.text || '') + '</textarea><h3 data-section-help="section.resultSinks" data-help-id="section.resultSinks">Result sinks</h3><button class="secondary" data-action="add-result-sink">+ sink</button>' + result.sinks.map(renderResultSink).join('');
+}
+function renderResultSink(sink, index) {
+  const type = sink.type === 'command' ? 'command' : 'file';
+  const typeSelect = '<label data-help-label="result.sink.type">sink type</label><select data-help-id="result.sink.type" data-result-sink-index="' + index + '" data-result-sink-field="type"><option value="file" ' + (type === 'file' ? 'selected' : '') + '>file</option><option value="command" ' + (type === 'command' ? 'selected' : '') + '>command</option></select>';
+  const body = type === 'command'
+    ? '<label data-help-label="result.sink.command">command</label><input data-help-id="result.sink.command" data-result-sink-index="' + index + '" data-result-sink-field="command" value="' + escapeHtml(sink.command || '') + '" /><label data-help-label="result.sink.args">args JSON array</label><textarea data-help-id="result.sink.args" data-result-sink-index="' + index + '" data-result-sink-field="argsJson">' + escapeHtml(JSON.stringify(sink.args || [], null, 2)) + '</textarea>'
+    : '<label data-help-label="result.sink.path">path</label><input data-help-id="result.sink.path" data-result-sink-index="' + index + '" data-result-sink-field="path" value="' + escapeHtml(sink.path || '') + '" /><label data-help-label="result.sink.encoding">encoding</label><input data-help-id="result.sink.encoding" data-result-sink-index="' + index + '" data-result-sink-field="encoding" value="' + escapeHtml(sink.encoding || '') + '" />';
+  return '<div class="card"><div class="row"><div>' + typeSelect + '</div><div><button class="danger" data-action="delete-result-sink" data-index="' + index + '">削除</button></div></div>' + body + '</div>';
 }
 `
 }

@@ -206,7 +206,10 @@ function validateResultSinks(result: ResultSourceDefinition, diagnostics: StepDr
     diagnostics.push(warning("result.sinks.empty", "result step に sink がありません。結果をファイルや後続処理へ渡す必要があるか確認してください。", "result.sinks"))
   }
   sinks.forEach((sink: ResultSinkDefinition, index) => {
-    if (sink.type !== "file") return
+    if (sink.type === "command") {
+      if (!nonEmpty(sink.command)) diagnostics.push(error("result.commandSink.command.required", `command sink #${index + 1} の command は必須です。`, `result.sinks[${index}].command`))
+      return
+    }
     if (!nonEmpty(sink.path)) diagnostics.push(error("result.fileSink.path.required", `file sink #${index + 1} の path は必須です。`, `result.sinks[${index}].path`))
     if (typeof sink.path === "string" && isWorkspaceEscapePath(sink.path)) diagnostics.push(error("result.fileSink.path.outsideWorkspace", `file sink #${index + 1} は workspace 外へ出ない相対パスを指定してください。`, `result.sinks[${index}].path`))
   })

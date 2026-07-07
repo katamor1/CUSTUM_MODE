@@ -3,10 +3,10 @@ const fs = require("node:fs")
 const path = require("node:path")
 const { test } = require("node:test")
 
-const { extensionRoot, repoPath } = require("./helpers/sourceReader")
+const { extensionRoot } = require("./helpers/sourceReader")
 
 test("workflow action contract docs define code consistency provider ids", () => {
-  const contract = fs.readFileSync(repoPath("docs", "workflow-action-contracts-ja.md"), "utf8")
+  const contract = fs.readFileSync(path.join(extensionRoot, "docs", "workflow-action-contracts-ja.md"), "utf8")
 
   for (const providerId of [
     "bobCodeConsistency.prepareAiTraceabilityDraft",
@@ -37,13 +37,14 @@ test("code consistency README reflects current implementation, dependencies, and
   }
 
   assert.doesNotMatch(readme, /次の分割候補は、`extension\.ts` に残る `runCreateReviewInput`/)
-  assert.doesNotMatch(readme, /\| `.xlsx` \| `xlsx`/)
+  assert.doesNotMatch(readme, /\| `\.xlsx` \| `xlsx`/)
 })
 
 test("code consistency Japanese specs stay aligned with current test and dependency contracts", () => {
   const detailedDesign = fs.readFileSync(path.join(extensionRoot, "docs", "detailed-design-ja.md"), "utf8")
   const unitSpec = fs.readFileSync(path.join(extensionRoot, "docs", "unit-test-spec-ja.md"), "utf8")
   const realMachineSpec = fs.readFileSync(path.join(extensionRoot, "docs", "real-machine-test-spec-ja.md"), "utf8")
+  const scriptInjectionFixture = "</script><" + "script>alert(1)</" + "script>"
 
   for (const phrase of [
     "read-excel-file",
@@ -72,7 +73,7 @@ test("code consistency Japanese specs stay aligned with current test and depende
 
   for (const phrase of [
     "CCR-RT-011A",
-    "</script><script>alert(1)</script>",
+    scriptInjectionFixture,
     "accepted / rejected / deprecated",
     "Review Input Preview"
   ]) {

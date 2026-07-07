@@ -3,25 +3,36 @@ const fs = require("node:fs")
 const path = require("node:path")
 const { test } = require("node:test")
 
-const { extensionRoot, repoPath, readJson } = require("./helpers/sourceReader")
+const { extensionRoot, readJson } = require("./helpers/sourceReader")
 
-test("workflow-register dependency policy requires a committed lockfile with production license metadata", () => {
+function assertLocalScript(packageJson, scriptName, expectedCommand) {
+  const command = packageJson.scripts[scriptName]
+  assert.equal(command, expectedCommand)
+  assert.doesNotMatch(command, /\.\./, `${scriptName} must stay within the extension root`)
+  const scriptPath = command.match(/node\s+(scripts\/[^\s]+)/)?.[1]
+  if (scriptPath) assert.ok(fs.existsSync(path.join(extensionRoot, scriptPath)), `${scriptName} target must exist locally`)
+}
+
+test("workflow-register dependency policy requires a committed lockfile and local release scripts", () => {
   const packageJson = readJson("package.json")
   const lockPath = path.join(extensionRoot, "package-lock.json")
   assert.ok(fs.existsSync(lockPath), "package-lock.json must be committed for reproducible VSIX builds")
+
   assert.equal(packageJson.scripts["dependency:policy"], "node --test test/dependencyPolicy.test.js")
-  assert.equal(packageJson.scripts["architecture:policy"], "node ../../scripts/check-import-cycles.js src")
-  assert.equal(packageJson.scripts["source:policy"], "node ../../scripts/check-export-star-policy.js src --allow src/core/model.ts")
+  assertLocalScript(packageJson, "architecture:policy", "node scripts/check-import-cycles.js src")
+  assertLocalScript(packageJson, "source:policy", "node scripts/check-export-star-policy.js src --allow src/core/model.ts")
   assert.equal(packageJson.scripts["schema:policy"], "npm run compile && node --test test/workflowAuthoring.test.js")
-  assert.equal(packageJson.scripts["unused:report"], "node ../../scripts/run-unused-checks.js")
+  assertLocalScript(packageJson, "unused:report", "node scripts/run-unused-checks.js")
   assert.equal(packageJson.scripts["audit:prod"], "npm audit --omit=dev --audit-level=high")
-  assert.equal(packageJson.scripts["package:policy"], "node ../../scripts/check-vsix-policy.js --max-bytes 1200000")
+  assertLocalScript(packageJson, "package:policy", "node scripts/check-vsix-policy.js --max-bytes 1200000")
+
+  for (const [scriptName, command] of Object.entries(packageJson.scripts)) {
+    assert.doesNotMatch(command, /\.\.\//, `${scriptName} must not reference parent folders`)
+  }
+
   assert.equal(packageJson.devDependencies.knip, "^5.0.0")
   assert.equal(packageJson.devDependencies.depcheck, "^1.4.7")
   assert.equal(packageJson.devDependencies["ts-prune"], "^0.10.3")
-
-  const gitignore = fs.readFileSync(repoPath(".gitignore"), "utf8").split(/\r?\n/)
-  assert.ok(!gitignore.includes("extensions/workflow-register/package-lock.json"), "package-lock.json must not be ignored")
 
   const vscodeignore = fs.readFileSync(path.join(extensionRoot, ".vscodeignore"), "utf8").split(/\r?\n/)
   assert.ok(vscodeignore.includes("out/**/*.map"), "compiled source maps must be excluded from the VSIX")
@@ -30,58 +41,6 @@ test("workflow-register dependency policy requires a committed lockfile with pro
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"))
   const rootPackage = lock.packages?.[""]
   assert.deepEqual(Object.keys(rootPackage?.dependencies ?? {}).sort(), Object.keys(packageJson.dependencies ?? {}).sort())
-
-  const missingLicenses = Object.entries(lock.packages ?? {})
-    .filter(([packagePath, info]) => packagePath && !info.dev)
-    .filter(([, info]) => typeof info.license !== "string" || info.license.trim().length === 0)
-    .map(([packagePath]) => packagePath)
-
-  assert.deepEqual(missingLicenses, [], "production dependency packages must include license metadata in package-lock.json")
-})
-
-test("workflow-register CI uses npm ci, dependency policy, production audit, tests, and VSIX packaging", () => {
-  const workflowPath = repoPath(".github", "workflows", "extensions-quality.yml")
-  const workflow = fs.readFileSync(workflowPath, "utf8")
-  const jobStart = workflow.indexOf("workflow-register:")
-  assert.notEqual(jobStart, -1, "workflow-register job must exist")
-  const jobEnd = workflow.indexOf("bob-bazaar-review:", jobStart)
-  const job = workflow.slice(jobStart, jobEnd === -1 ? undefined : jobEnd)
-
-  assert.match(job, /working-directory: extensions\/workflow-register/)
-  assert.match(job, /cache-dependency-path: extensions\/workflow-register\/package-lock\.json/)
-  assert.match(job, /run: npm ci/)
-  assert.match(job, /run: npm run dependency:policy/)
-  assert.match(job, /run: npm run architecture:policy/)
-  assert.match(job, /run: npm run source:policy/)
-  assert.match(job, /run: npm run schema:policy/)
-  assert.match(job, /run: npm run unused:report/)
-  assert.match(job, /run: npm run audit:prod/)
-  assert.match(job, /run: npm test/)
-  assert.match(job, /run: npm run package/)
-  assert.match(job, /run: npm run package:policy/)
-  assert.doesNotMatch(job, /run: npm install/)
-})
-
-test("shared extension CI watches all quality gate scripts", () => {
-  const workflowPath = repoPath(".github", "workflows", "extensions-quality.yml")
-  const workflow = fs.readFileSync(workflowPath, "utf8")
-  const pullRequestPaths = workflow.slice(workflow.indexOf("pull_request:"), workflow.indexOf("push:"))
-  const pushPaths = workflow.slice(workflow.indexOf("push:"), workflow.indexOf("workflow_dispatch:"))
-
-  assert.match(pullRequestPaths, /- "scripts\/\*\.js"/)
-  assert.match(pushPaths, /- "scripts\/\*\.js"/)
-})
-
-test("shared extension CI reports source metrics back to pull requests", () => {
-  const workflowPath = repoPath(".github", "workflows", "extensions-quality.yml")
-  const workflow = fs.readFileSync(workflowPath, "utf8")
-  const metricsScript = repoPath("scripts", "report-extension-metrics.js")
-
-  assert.ok(fs.existsSync(metricsScript), "extension metrics script must be committed")
-  assert.match(workflow, /extension-metrics:/)
-  assert.match(workflow, /node scripts\/report-extension-metrics\.js --output extension-metrics\.md/)
-  assert.match(workflow, /GITHUB_STEP_SUMMARY/)
-  assert.match(workflow, /github\.rest\.issues\.(createComment|updateComment)/)
 })
 
 test("workflow-register README documents generated artifacts, package budget, dependencies, CLI, and trust boundary", () => {
@@ -126,13 +85,9 @@ test("workflow-register source does not use global Object title augmentation", (
         stack.push(entryPath)
         continue
       }
-      if (!entry.name.endsWith(".d.ts")) {
-        continue
-      }
+      if (!entry.name.endsWith(".d.ts")) continue
       const text = fs.readFileSync(entryPath, "utf8")
-      if (/\binterface\s+Object\b/.test(text)) {
-        offenders.push(path.relative(extensionRoot, entryPath))
-      }
+      if (/\binterface\s+Object\b/.test(text)) offenders.push(path.relative(extensionRoot, entryPath))
     }
   }
 

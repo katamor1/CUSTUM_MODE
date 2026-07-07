@@ -169,6 +169,9 @@ function mutateStepDraftFromEvent(target, value) {
   if (target.dataset.resultField && (step.type === 'result' || step.type === 'agent')) {
     return mutateResultField(step, target.dataset.resultField, value);
   }
+  if (target.dataset.resultSinkIndex && (step.type === 'result' || step.type === 'agent')) {
+    return mutateResultSinkField(step, Number(target.dataset.resultSinkIndex), target.dataset.resultSinkField, value);
+  }
   if (target.dataset.stateKey) return mutateStateKey(step, target);
   return false;
 }
@@ -222,7 +225,30 @@ function mutateResultField(step, field, value) {
   }
   if (field === 'stateKey' && result.source === 'state') result.stateKey = value;
   if (field === 'text' && result.source === 'literal') result.text = value;
-  if (field === 'path') result.sinks[0] = { type: 'file', path: value };
+  return true;
+}
+
+function mutateResultSinkField(step, index, field, value) {
+  const result = ensureResult(step);
+  const sink = result.sinks[index];
+  if (!sink) return false;
+  if (field === 'type') {
+    result.sinks[index] = value === 'command'
+      ? { type: 'command', command: '', args: [] }
+      : { type: 'file', path: '' };
+    return true;
+  }
+  if (field === 'argsJson') {
+    try {
+      const args = JSON.parse(value || '[]');
+      sink.args = Array.isArray(args) ? args : [args];
+      clearEditorDiagnostic('resultSinkArgs:' + step.id + ':' + index);
+    } catch (error) {
+      setEditorDiagnostic('resultSinkArgs:' + step.id + ':' + index, "Result sink args JSON parse error for step '" + step.id + "': " + error.message);
+    }
+    return true;
+  }
+  sink[field] = value || undefined;
   return true;
 }
 
@@ -258,6 +284,29 @@ document.addEventListener('click', function(event) {
   const target = event.target.closest('[data-action], .tab');
   if (!target) return;
   const action = target.dataset.action;
+  if (action === 'add-result-sink') {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const step = ensureStepDraft();
+    if (!step) return;
+    const result = ensureResult(step);
+    result.sinks.push({ type: 'file', path: '' });
+    latestStepDraftHostValidation = undefined;
+    renderTabs();
+    return;
+  }
+  if (action === 'delete-result-sink') {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const step = ensureStepDraft();
+    if (!step) return;
+    const result = ensureResult(step);
+    result.sinks.splice(Number(target.dataset.index), 1);
+    if (result.sinks.length === 0) result.sinks.push({ type: 'file', path: '' });
+    latestStepDraftHostValidation = undefined;
+    renderTabs();
+    return;
+  }
   const leaving = Boolean(target.dataset.tab && target.dataset.tab !== 'step')
     || [
       'select-step',

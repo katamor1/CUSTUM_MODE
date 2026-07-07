@@ -1,6 +1,7 @@
 import * as path from "path"
 import * as vscode from "vscode"
 import { editWorkflowInBuilder } from "./editWorkflowInBuilder"
+import { bobTaskSyncRegistry } from "../bobTaskSync"
 import { FileRunStateStore } from "../core/runStateStore"
 import { RunStepState, WorkflowRunState } from "../core/model"
 import { pendingReviewTransitionStepId } from "../core/engine/runState"
@@ -67,8 +68,12 @@ async function acceptReviewedStep(runId?: string): Promise<AcceptedStepResult | 
   if (!run) return `Workflow run not found: ${selection.runId}`
   const acceptedStepId = run.currentStep
   const accepted = acceptReviewingStep(run)
+  const sync = bobTaskSyncRegistry.reconcileRun(accepted, undefined, {
+    reason: "review-accepted",
+    task: reviewTaskRegistry.taskForStep(accepted.runId, acceptedStepId) ?? reviewTaskRegistry.taskForRun(accepted.runId)
+  })
   await runStore.saveRun(accepted)
-  const completedViaBobTask = reviewTaskRegistry.complete(accepted.runId, acceptedStepId)
+  const completedViaBobTask = sync.status === "synced" && sync.taskAvailable
   const message = pendingReviewTransitionStepId(accepted)
     ? `Accepted step; pending transition will run from ${accepted.currentStep}: ${accepted.runId}`
     : accepted.status === "completed"
@@ -107,6 +112,7 @@ export async function inspectCurrentStep(options: StepReviewCommandOptions, runI
   const run = selection.run
   const index = run.currentStep ? run.steps.findIndex((step) => step.id === run.currentStep) : -1
   const current = index >= 0 ? run.steps[index] : undefined
+  linesForRun(run)
   const lines = [
     `- runId: ${run.runId}`,
     `- workflow: ${run.workflowId}`,
@@ -115,7 +121,8 @@ export async function inspectCurrentStep(options: StepReviewCommandOptions, runI
     `- root: ${selection.root}`,
     `- workflowFile: ${run.workflowFile ?? "none"}`,
     `- workflowDefinitionHash: ${run.workflowDefinitionHash ?? "none"}`,
-    `- workflowDefinitionMismatch: ${run.state["workflow.definitionMismatch"] ?? "none"}`
+    `- workflowDefinitionMismatch: ${run.state["workflow.definitionMismatch"] ?? "none"}`,
+    `- bobTaskSync: ${run.bobTaskSync?.drift?.status ?? "unknown"}; completedThrough=${run.bobTaskSync?.completedThroughStepId ?? "none"}`
   ]
   if (current) {
     lines.push(
@@ -232,4 +239,8 @@ async function workflowRootCandidates(): Promise<MarkerRootCandidate[]> {
   if (folders.length === 0) return []
   const markerRoots = await findWorkflowRootCandidates(folders)
   return markerRoots.length > 0 ? markerRoots : fallbackWorkspaceRootCandidates(folders)
+}
+
+function linesForRun(_run: WorkflowRunState): void {
+  // Reserved for future run diagnostics injected by this command.
 }

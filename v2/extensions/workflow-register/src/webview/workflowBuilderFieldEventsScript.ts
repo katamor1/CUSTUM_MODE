@@ -133,7 +133,15 @@ function handleFieldEvent(event) {
     if (!input) return;
     const field = target.dataset.inputField;
     if (field === 'options') input.options = linesFromText(value);
-    else input[field] = value;
+    else if (field === 'required' || field === 'prompt') input[field] = value;
+    else if (field === 'defaultJson') {
+      if (!String(value || '').trim()) { delete input.default; clearEditorDiagnostic('inputDefault:' + input.id); }
+      else {
+        try { input.default = JSON.parse(value); clearEditorDiagnostic('inputDefault:' + input.id); }
+        catch (error) { setEditorDiagnostic('inputDefault:' + input.id, "Input default JSON parse error for input '" + input.id + "': " + error.message); }
+      }
+    }
+    else input[field] = value || undefined;
     requestPreview(); return;
   }
   if (target.dataset.requiresField) {

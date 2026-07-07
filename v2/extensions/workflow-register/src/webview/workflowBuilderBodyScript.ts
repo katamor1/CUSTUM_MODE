@@ -14,8 +14,14 @@ function defaultMarkdownBody() {
 function currentMarkdownBody() {
   return typeof model.body === 'string' && model.body.length > 0 ? model.body : defaultMarkdownBody();
 }
+function preservedTopLevelPrompt() {
+  return model.unknownFrontMatter && typeof model.unknownFrontMatter.prompt === 'string' && model.unknownFrontMatter.prompt.trim();
+}
 function renderMarkdownBody() {
-  document.getElementById('content').innerHTML = '<h2>Markdown Body</h2><div class="card"><label>WORKFLOW.md body</label><textarea data-body-field="body" style="min-height:360px">' + escapeHtml(currentMarkdownBody()) + '</textarea><p class="muted">YAML front matter の後ろに出力される Markdown 本文です。既存 workflow では元の本文を保持し、新規 workflow では空欄の場合に title / description から自動生成します。</p></div>';
+  const promptWarning = preservedTopLevelPrompt()
+    ? '<div class="card reference-issue"><strong>注意: top-level prompt が保持されています</strong><p>この WORKFLOW.md には GUI 管理外の <code>prompt</code> front matter があるため、実行時 prompt は Markdown body より <code>prompt</code> が優先されます。本文を実行内容として使いたい場合は Preview で YAML を確認し、手動で <code>prompt</code> を削除してください。</p></div>'
+    : '';
+  document.getElementById('content').innerHTML = '<h2>Markdown Body</h2>' + promptWarning + '<div class="card"><label>WORKFLOW.md body</label><textarea data-body-field="body" style="min-height:360px">' + escapeHtml(currentMarkdownBody()) + '</textarea><p class="muted">YAML front matter の後ろに出力される Markdown 本文です。既存 workflow では元の本文を保持し、新規 workflow では空欄の場合に title / description から自動生成します。</p></div>';
 }
 // body editor は大きな generated client script から隔離する。override は body tab だけに限定し、
 // 他の tab は元の renderer へ委譲して Webview 側の副作用範囲を広げない。

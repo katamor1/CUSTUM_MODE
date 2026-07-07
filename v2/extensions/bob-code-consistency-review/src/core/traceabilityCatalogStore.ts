@@ -1,5 +1,5 @@
 import { pathExists, readTextFile, resolveWorkspacePathForKind, writeJsonFile, writeTextFile } from "./fileSystem"
-import { renderTraceabilityGateReport, validateTraceabilityCatalog, type TraceabilityCatalog, type TraceabilityValidationReport } from "./traceabilityCatalog"
+import { renderTraceabilityGateReport, validateTraceabilityCatalog, type TraceabilityCatalog, type TraceabilityItem, type TraceabilityValidationReport } from "./traceabilityCatalog"
 
 export const DEFAULT_TRACEABILITY_CATALOG_PATH = ".bob-trace/traceability-catalog.json"
 export const DEFAULT_TRACEABILITY_GATE_REPORT_PATH = ".bob-trace/gate-report.md"
@@ -27,7 +27,7 @@ export async function readTraceabilityCatalog(input: {
   }
 
   try {
-    const parsed = JSON.parse(await readTextFile(catalogPath, input.textEncoding ?? "utf8")) as TraceabilityCatalog
+    const parsed = JSON.parse(await readTextFile(catalogPath, input.textEncoding ?? "utf8")) as unknown
     return { status: "ok", catalog: normalizeCatalog(parsed), catalogPath, created: false }
   } catch (error) {
     return {
@@ -103,15 +103,35 @@ export function resolveCatalogPath(workspaceRoot: string, catalogPath = DEFAULT_
   return resolveWorkspacePathForKind(workspaceRoot, catalogPath, "traceability-catalog")
 }
 
-function normalizeCatalog(catalog: TraceabilityCatalog): TraceabilityCatalog {
+function normalizeCatalog(value: unknown): TraceabilityCatalog {
+  const record = isRecord(value) ? value : {}
+  const maybeWrapped = isRecord(record.catalog) ? record.catalog : record
+  const catalog = maybeWrapped as Partial<TraceabilityCatalog>
   return {
     schema_version: 1,
     documents: Array.isArray(catalog.documents) ? catalog.documents : [],
     domains: Array.isArray(catalog.domains) ? catalog.domains : [],
-    items: Array.isArray(catalog.items) ? catalog.items : [],
+    items: Array.isArray(catalog.items) ? catalog.items.map(normalizeCatalogItem) : [],
     links: Array.isArray(catalog.links) ? catalog.links : [],
     decisions: Array.isArray(catalog.decisions) ? catalog.decisions : []
   }
+}
+
+function normalizeCatalogItem(item: TraceabilityItem): TraceabilityItem {
+  const sequence = sequenceFromTraceabilityId(item.id ?? item.proposed_id)
+  return sequence === undefined ? item : { ...item, sequence }
+}
+
+function sequenceFromTraceabilityId(id: string | null | undefined): number | undefined {
+  if (!id) return undefined
+  const match = id.match(/-(\d{4})$/)
+  if (!match) return undefined
+  const sequence = Number(match[1])
+  return Number.isInteger(sequence) && sequence > 0 ? sequence : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function timestampForFileName(date: Date): string {

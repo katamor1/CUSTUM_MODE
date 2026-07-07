@@ -3,11 +3,11 @@ const fs = require("node:fs")
 const path = require("node:path")
 const { test } = require("node:test")
 
-const { extensionRoot, repoPath } = require("./helpers/sourceReader")
+const { extensionRoot } = require("./helpers/sourceReader")
 
 test("workflow action contract docs define Bazaar provider ids and sidecar metadata", () => {
-  const actionContract = fs.readFileSync(repoPath("docs", "workflow-action-contracts-ja.md"), "utf8")
-  const metadataContract = fs.readFileSync(repoPath("docs", "artifact-metadata-contract-ja.md"), "utf8")
+  const actionContract = fs.readFileSync(path.join(extensionRoot, "docs", "workflow-action-contracts-ja.md"), "utf8")
+  const metadataContract = fs.readFileSync(path.join(extensionRoot, "docs", "artifact-metadata-contract-ja.md"), "utf8")
 
   for (const providerId of [
     "bobBazaar.openReviewGui",

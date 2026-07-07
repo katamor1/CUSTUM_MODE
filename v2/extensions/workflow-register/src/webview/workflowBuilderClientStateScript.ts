@@ -12,6 +12,7 @@ let editorDiagnostics = [];
 function escapeHtml(value) { return String(value === undefined || value === null ? '' : value).replace(/[&<>"]/g, function(ch) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]; }); }
 function linesFromText(value) { return String(value || '').split(/\r?\n/).map(function(x) { return x.trim(); }).filter(Boolean); }
 function textFromLines(value) { return Array.isArray(value) ? value.join('\n') : ''; }
+function jsonForEditor(value) { if (value === undefined) return ''; try { return JSON.stringify(value, null, 2); } catch (error) { return String(value); } }
 function selectedStep() { return model.steps[selectedStepIndex]; }
 function usedStepIds() { return model.steps.map(function(step) { return step.id; }); }
 function usedBranchLoopIds() { ensureArrays(); return model.branching.loops.map(function(loop) { return loop.id; }); }

@@ -19,6 +19,7 @@ import type {
   TraceabilityDecision,
   TraceabilityDomain,
   TraceabilityItem,
+  TraceabilityItemType,
   TraceabilityLink,
   TraceabilityStatus
 } from "./traceabilityCatalog"
@@ -176,12 +177,14 @@ export function parseAiTraceabilityDraft(text: string): TraceabilityCatalog {
   // AI 出力は候補作成までで、人が承認済みの id/status/endpoint を直接作らせない。
   const violations = aiAcceptedStateViolations(typedCatalog)
   if (violations.length > 0) throw new Error(`AI draft must not create accepted state: ${violations.join("; ")}`)
+  const itemTypes = itemTypesById(typedCatalog.items)
+  const normalizedLinks = (typedCatalog.links ?? []).map((link) => normalizeLink(link, itemTypes))
   return {
     schema_version: 1,
     documents: typedCatalog.documents,
     domains: typedCatalog.domains.map((domain) => normalizeDomain(domain)),
     items: typedCatalog.items.map((item) => normalizeItem(item)),
-    links: (typedCatalog.links ?? []).map((link) => normalizeLink(link)),
+    links: addInferredVerifiedByLinks(normalizedLinks, typedCatalog.items),
     decisions: (typedCatalog.decisions ?? []).map((decision) => normalizeDecision(decision))
   }
 }
@@ -229,12 +232,97 @@ function normalizeItem(item: TraceabilityItem): TraceabilityItem {
   return { ...item, id: undefined, status: "proposed" }
 }
 
-function normalizeLink(link: TraceabilityLink): TraceabilityLink {
-  return { ...link, from: undefined, to: undefined, status: "proposed" }
+function normalizeLink(link: TraceabilityLink, itemTypes: Map<string, TraceabilityItemType>): TraceabilityLink {
+  const canonical = canonicalizeLinkDirection(link, itemTypes)
+  return { ...canonical, from: undefined, to: undefined, status: "proposed" }
 }
 
 function normalizeDecision(decision: TraceabilityDecision): TraceabilityDecision {
   return { ...decision, status: "proposed" }
+}
+
+function canonicalizeLinkDirection(link: TraceabilityLink, itemTypes: Map<string, TraceabilityItemType>): TraceabilityLink {
+  const from = link.proposed_from ?? link.from
+  const to = link.proposed_to ?? link.to
+  if (!from || !to) return link
+  const fromType = itemTypes.get(from)
+  const toType = itemTypes.get(to)
+  if (!fromType || !toType || !shouldSwapLinkDirection(link.link_type, fromType, toType)) return link
+  return { ...link, proposed_from: to, proposed_to: from, from: undefined, to: undefined }
+}
+
+function shouldSwapLinkDirection(
+  linkType: TraceabilityLink["link_type"],
+  fromType: TraceabilityItemType,
+  toType: TraceabilityItemType
+): boolean {
+  if (linkType === "satisfies") return fromType === "basic_design" && toType === "requirement"
+  if (linkType === "elaborates") return fromType === "detailed_design" && toType === "basic_design"
+  if (linkType === "verified_by") return fromType === "test_spec" && (toType === "requirement" || toType === "detailed_design")
+  if (linkType === "clarifies") {
+    return fromType !== "qa_item" && toType === "qa_item" && ["requirement", "basic_design", "detailed_design", "test_spec", "review_finding"].includes(fromType)
+  }
+  if (linkType === "reviewed_by") {
+    return fromType === "review_finding" && ["requirement", "basic_design", "detailed_design", "test_spec", "qa_item"].includes(toType)
+  }
+  return false
+}
+
+function addInferredVerifiedByLinks(links: TraceabilityLink[], items: TraceabilityItem[]): TraceabilityLink[] {
+  const itemTypes = itemTypesById(items)
+  const itemsById = traceabilityItemsById(items)
+  const detailedDesigns = items.filter((item) => item.type === "detailed_design")
+  const result = [...links]
+  const linkKeys = new Set(result.map(linkKey))
+
+  for (const link of links) {
+    if (link.link_type !== "verified_by") continue
+    const from = link.proposed_from ?? link.from
+    const to = link.proposed_to ?? link.to
+    if (!from || !to || itemTypes.get(from) !== "requirement" || itemTypes.get(to) !== "test_spec") continue
+    const requirement = itemsById.get(from)
+    if (!requirement) continue
+    for (const detailedDesign of detailedDesigns.filter((item) => item.domain === requirement.domain)) {
+      const detailedDesignId = traceabilityItemIdentifier(detailedDesign)
+      if (!detailedDesignId) continue
+      const inferred: TraceabilityLink = {
+        proposed_from: detailedDesignId,
+        proposed_to: to,
+        link_type: "verified_by",
+        status: "proposed"
+      }
+      const key = linkKey(inferred)
+      if (linkKeys.has(key)) continue
+      result.push(inferred)
+      linkKeys.add(key)
+    }
+  }
+
+  return result
+}
+
+function itemTypesById(items: TraceabilityItem[]): Map<string, TraceabilityItemType> {
+  const result = new Map<string, TraceabilityItemType>()
+  for (const item of items) {
+    const id = traceabilityItemIdentifier(item)
+    if (id) result.set(id, item.type)
+    if (item.id) result.set(item.id, item.type)
+  }
+  return result
+}
+
+function traceabilityItemsById(items: TraceabilityItem[]): Map<string, TraceabilityItem> {
+  const result = new Map<string, TraceabilityItem>()
+  for (const item of items) {
+    const id = traceabilityItemIdentifier(item)
+    if (id) result.set(id, item)
+    if (item.id) result.set(item.id, item)
+  }
+  return result
+}
+
+function traceabilityItemIdentifier(item: TraceabilityItem): string | undefined {
+  return item.proposed_id ?? item.id ?? undefined
 }
 
 function aiAcceptedStateViolations(catalog: TraceabilityCatalog): string[] {
