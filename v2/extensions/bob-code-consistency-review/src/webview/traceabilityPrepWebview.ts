@@ -29,6 +29,7 @@ type TraceabilityPrepWebviewMessage =
   | { type: "ready" }
   | { type: "action"; action: TraceabilityPrepAction }
   | { type: "save" }
+  | { type: "rollbackOriginal" }
 
 export async function openTraceabilityPrepWebview(
   options: OpenTraceabilityPrepWebviewOptions
@@ -40,7 +41,8 @@ export async function openTraceabilityPrepWebview(
   })
   if (read.status === "error") return read
 
-  let catalog: TraceabilityCatalog = read.catalog
+  const originalCatalog = cloneCatalog(read.catalog)
+  let catalog: TraceabilityCatalog = cloneCatalog(read.catalog)
   const panel = vscode.window.createWebviewPanel(
     "bobCodeConsistencyTraceabilityPrep",
     "Traceability Prep",
@@ -62,7 +64,16 @@ export async function openTraceabilityPrepWebview(
       return
     }
     if (message.type === "action") {
-      catalog = await handleTraceabilityPrepAction(panel, catalog, message.action)
+      catalog = await handleTraceabilityPrepAction(panel, catalog, message.action, originalCatalog)
+      return
+    }
+    if (message.type === "rollbackOriginal") {
+      catalog = cloneCatalog(originalCatalog)
+      await postTraceabilityPrepModel(panel, catalog)
+      await panel.webview.postMessage({
+        type: "info",
+        message: "Rolled back to the catalog state from when Traceability Prep was opened. Save to write this rollback to disk."
+      })
       return
     }
     if (message.type === "save") {
@@ -86,9 +97,10 @@ async function postTraceabilityPrepModel(
 async function handleTraceabilityPrepAction(
   panel: vscode.WebviewPanel,
   catalog: TraceabilityCatalog,
-  action: TraceabilityPrepAction
+  action: TraceabilityPrepAction,
+  originalCatalog: TraceabilityCatalog
 ): Promise<TraceabilityCatalog> {
-  const result = applyTraceabilityPrepAction(catalog, action)
+  const result = applyTraceabilityPrepAction(catalog, action, originalCatalog)
   await panel.webview.postMessage({ type: "model", model: result.model })
   if (result.status === "error") {
     await panel.webview.postMessage({ type: "error", message: result.message })
@@ -147,7 +159,10 @@ ${renderTraceabilityPrepStyles()}
     <h1>Traceability Prep</h1>
     <div class="meta">sidecar catalog approval</div>
   </div>
-  <button id="save">Save</button>
+  <div class="headerActions">
+    <button id="rollback-original" class="secondary">Rollback to Original</button>
+    <button id="save">Save</button>
+  </div>
 </header>
 <div class="summary" id="summary"></div>
 <div class="tabs">
@@ -165,6 +180,10 @@ ${renderTraceabilityPrepClientScript(initialJson)}
 </script>
 </body>
 </html>`
+}
+
+function cloneCatalog(catalog: TraceabilityCatalog): TraceabilityCatalog {
+  return JSON.parse(JSON.stringify(catalog)) as TraceabilityCatalog
 }
 
 function getNonce(): string {
