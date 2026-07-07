@@ -19,6 +19,12 @@ h1 {
   font-size: 20px;
   margin: 0;
 }
+.headerActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .summary {
   display: flex;
   gap: 8px;
@@ -112,13 +118,28 @@ export function renderTraceabilityPrepClientScript(initialJson: string): string 
   return String.raw`
 const vscode = acquireVsCodeApi();
 let model = ` + initialJson + String.raw`;
+let originalModel = cloneModel(model);
 let activeTab = 'domains';
 let typeFilter = 'all';
 const content = document.getElementById('content');
 const status = document.getElementById('status');
 
+function setStatus(message, className) {
+  status.textContent = message;
+  status.className = className || 'meta';
+}
+
 document.getElementById('save').onclick = function() {
   vscode.postMessage({ type: 'save' });
+};
+
+document.getElementById('rollback-original').onclick = function() {
+  if (!hasCatalogChanges()) {
+    setStatus('No changes to roll back.');
+    return;
+  }
+  if (!confirm('Roll back all Traceability Prep changes to the catalog state from when this panel was opened?')) return;
+  vscode.postMessage({ type: 'rollbackOriginal' });
 };
 
 document.querySelectorAll('.tab').forEach(function(tab) {
@@ -152,14 +173,15 @@ window.addEventListener('message', function(event) {
     model = message.model;
     render();
   } else if (message.type === 'saved') {
-    status.textContent = [
+    setStatus([
       'Saved: ' + message.catalogPath,
       message.backupPath ? ' / backup: ' + message.backupPath : '',
       message.reportPath ? ' / report: ' + message.reportPath : ''
-    ].join('');
+    ].join(''));
+  } else if (message.type === 'info') {
+    setStatus(message.message);
   } else if (message.type === 'error') {
-    status.textContent = message.message;
-    status.className = 'error';
+    setStatus(message.message, 'error');
   }
 });
 
@@ -171,12 +193,16 @@ function invokeAction(action, args) {
   if (action === 'approveItem') approveItem(args[0]);
   else if (action === 'rejectItem') rejectItem(args[0]);
   else if (action === 'deprecateItem') deprecateItem(args[0]);
+  else if (action === 'restoreItem') restoreItem(args[0]);
   else if (action === 'approveLink') approveLink(args[0], args[1], args[2]);
   else if (action === 'rejectLink') rejectLink(args[0], args[1], args[2]);
+  else if (action === 'restoreLink') restoreLink(args[0], args[1], args[2]);
   else if (action === 'approveDecision') approveDecision(args[0], args[1]);
   else if (action === 'rejectDecision') rejectDecision(args[0], args[1]);
+  else if (action === 'restoreDecision') restoreDecision(args[0], args[1]);
   else if (action === 'approveDomain') approveDomain(args[0]);
   else if (action === 'rejectDomain') rejectDomain(args[0]);
+  else if (action === 'restoreDomain') restoreDomain(args[0]);
 }
 
 function readActionArgs(button) {
@@ -199,12 +225,20 @@ function deprecateItem(id) {
   send({ type: 'deprecateItem', id: id });
 }
 
+function restoreItem(id) {
+  send({ type: 'restoreItem', id: id });
+}
+
 function approveLink(from, to, linkType) {
   send({ type: 'approveLink', proposed_from: from, proposed_to: to, link_type: linkType });
 }
 
 function rejectLink(from, to, linkType) {
   send({ type: 'rejectLink', proposed_from: from, proposed_to: to, link_type: linkType });
+}
+
+function restoreLink(from, to, linkType) {
+  send({ type: 'restoreLink', from: from, to: to, link_type: linkType });
 }
 
 function approveDecision(subject, gate) {
@@ -215,12 +249,20 @@ function rejectDecision(subject, gate) {
   send({ type: 'rejectDecision', subject: subject, gate: gate });
 }
 
+function restoreDecision(subject, gate) {
+  send({ type: 'restoreDecision', subject: subject, gate: gate });
+}
+
 function approveDomain(code) {
   send({ type: 'approveDomain', code: code });
 }
 
 function rejectDomain(code) {
   send({ type: 'rejectDomain', code: code });
+}
+
+function restoreDomain(code) {
+  send({ type: 'restoreDomain', code: code });
 }
 
 function render() {
@@ -238,7 +280,8 @@ function renderSummary() {
     'status: ' + model.report.status,
     'errors: ' + model.report.errors.length,
     'warnings: ' + model.report.warnings.length,
-    'proposed items: ' + model.counts.proposedItems
+    'proposed items: ' + model.counts.proposedItems,
+    'changed rows: ' + countChangedRows()
   ];
   document.getElementById('summary').innerHTML = items.map(function(item) {
     return '<span class="pill">' + escapeHtml(item) + '</span>';
@@ -247,10 +290,12 @@ function renderSummary() {
 
 function renderDomains() {
   content.innerHTML = '<div class="table">' + model.catalog.domains.map(function(domain) {
-    const actions = domain.status === 'proposed'
+    const original = findOriginalDomain(domain.code);
+    let actions = domain.status === 'proposed'
       ? actionButton('approveDomain', [domain.code], 'Approve')
         + actionButton('rejectDomain', [domain.code], 'Reject', true)
       : '';
+    actions += restoreButtonIfChanged(domain, original, 'restoreDomain', [domain.code]);
     return row(domain.code, domain.status, escapeHtml(domain.label || ''), actions);
   }).join('') + '</div>';
 }
@@ -273,6 +318,7 @@ function renderItems() {
 
 function renderItemRow(item) {
   const id = item.id || item.proposed_id || '';
+  const original = findOriginalItem(id);
   let actions = '';
   if (item.status === 'proposed') {
     actions = actionButton('approveItem', [item.proposed_id], 'Approve')
@@ -280,6 +326,7 @@ function renderItemRow(item) {
   } else if (item.status === 'accepted') {
     actions = actionButton('deprecateItem', [item.id], 'Deprecate', true);
   }
+  actions += restoreButtonIfChanged(item, original, 'restoreItem', [id]);
   const body = [
     item.type,
     item.source_document_id,
@@ -293,20 +340,24 @@ function renderLinks() {
   content.innerHTML = '<div class="table">' + (model.catalog.links || []).map(function(link) {
     const from = link.from || link.proposed_from || '';
     const to = link.to || link.proposed_to || '';
-    const actions = link.status === 'proposed'
+    const original = findOriginalLink(from, to, link.link_type);
+    let actions = link.status === 'proposed'
       ? actionButton('approveLink', [link.proposed_from, link.proposed_to, link.link_type], 'Approve')
         + actionButton('rejectLink', [link.proposed_from, link.proposed_to, link.link_type], 'Reject', true)
       : '';
+    actions += restoreButtonIfChanged(link, original, 'restoreLink', [from, to, link.link_type]);
     return row(from + ' -> ' + to, link.status, escapeHtml(link.link_type), actions);
   }).join('') + '</div>';
 }
 
 function renderDecisions() {
   content.innerHTML = '<div class="table">' + (model.catalog.decisions || []).map(function(decision) {
-    const actions = decision.status === 'proposed'
+    const original = findOriginalDecision(decision.subject, decision.gate);
+    let actions = decision.status === 'proposed'
       ? actionButton('approveDecision', [decision.subject, decision.gate], 'Approve')
         + actionButton('rejectDecision', [decision.subject, decision.gate], 'Reject', true)
       : '';
+    actions += restoreButtonIfChanged(decision, original, 'restoreDecision', [decision.subject, decision.gate]);
     return row(decision.subject, decision.status, escapeHtml(decision.gate + ' / ' + (decision.reason || '')), actions);
   }).join('') + '</div>';
 }
@@ -369,9 +420,74 @@ function row(title, state, body, actions) {
   ].join('');
 }
 
+function restoreButtonIfChanged(current, original, action, args) {
+  if (!original || !isChangedFromOriginal(current, original)) return '';
+  return actionButton(action, args, 'Restore Original', true);
+}
+
 function actionButton(action, args, label, secondary) {
   const classAttr = secondary ? ' class="secondary"' : '';
   return '<button' + classAttr + ' data-action="' + escapeHtml(action) + '" data-args="' + escapeHtml(JSON.stringify(args)) + '">' + escapeHtml(label) + '</button>';
+}
+
+function countChangedRows() {
+  return model.catalog.domains.filter(function(domain) {
+    return isChangedFromOriginal(domain, findOriginalDomain(domain.code));
+  }).length + model.catalog.items.filter(function(item) {
+    return isChangedFromOriginal(item, findOriginalItem(itemKey(item)));
+  }).length + (model.catalog.links || []).filter(function(link) {
+    return isChangedFromOriginal(link, findOriginalLink(linkFrom(link), linkTo(link), link.link_type));
+  }).length + (model.catalog.decisions || []).filter(function(decision) {
+    return isChangedFromOriginal(decision, findOriginalDecision(decision.subject, decision.gate));
+  }).length;
+}
+
+function hasCatalogChanges() {
+  return countChangedRows() > 0;
+}
+
+function findOriginalDomain(code) {
+  return originalModel.catalog.domains.find(function(domain) {
+    return domain.code === code;
+  });
+}
+
+function findOriginalItem(id) {
+  return originalModel.catalog.items.find(function(item) {
+    return itemKey(item) === id;
+  });
+}
+
+function findOriginalLink(from, to, linkType) {
+  return (originalModel.catalog.links || []).find(function(link) {
+    return linkFrom(link) === from && linkTo(link) === to && link.link_type === linkType;
+  });
+}
+
+function findOriginalDecision(subject, gate) {
+  return (originalModel.catalog.decisions || []).find(function(decision) {
+    return decision.subject === subject && decision.gate === gate;
+  });
+}
+
+function isChangedFromOriginal(current, original) {
+  return !!original && JSON.stringify(current) !== JSON.stringify(original);
+}
+
+function itemKey(item) {
+  return item.id || item.proposed_id || '';
+}
+
+function linkFrom(link) {
+  return link.from || link.proposed_from || '';
+}
+
+function linkTo(link) {
+  return link.to || link.proposed_to || '';
+}
+
+function cloneModel(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function escapeHtml(value) {
