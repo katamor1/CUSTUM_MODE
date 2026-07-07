@@ -26,6 +26,55 @@ test("applyTraceabilityPrepAction approves proposed items and links into accepte
   assert.equal(linkResult.catalog.links[0].to, "BD-BD001-PAY-0001")
 })
 
+test("applyTraceabilityPrepAction restores item status and generated fields from the original catalog", () => {
+  const originalCatalog = proposedCatalog()
+
+  const approved = applyTraceabilityPrepAction(originalCatalog, {
+    type: "approveItem",
+    proposed_id: "REQ-RS001-PAY-0001"
+  })
+  const restoredApproved = applyTraceabilityPrepAction(approved.catalog, {
+    type: "restoreItem",
+    id: "REQ-RS001-PAY-0001"
+  }, originalCatalog)
+  assert.equal(restoredApproved.status, "ok")
+  assert.equal(restoredApproved.catalog.items[0].status, "proposed")
+  assert.equal(restoredApproved.catalog.items[0].id, undefined)
+
+  const deprecated = applyTraceabilityPrepAction(originalCatalog, {
+    type: "deprecateItem",
+    id: "BD-BD001-PAY-0001"
+  })
+  const restoredDeprecated = applyTraceabilityPrepAction(deprecated.catalog, {
+    type: "restoreItem",
+    id: "BD-BD001-PAY-0001"
+  }, originalCatalog)
+  assert.equal(restoredDeprecated.status, "ok")
+  assert.equal(restoredDeprecated.catalog.items[1].status, "accepted")
+})
+
+test("applyTraceabilityPrepAction restores link endpoints from the original catalog", () => {
+  const originalCatalog = proposedCatalog()
+  const approved = applyTraceabilityPrepAction(originalCatalog, {
+    type: "approveLink",
+    proposed_from: "REQ-RS001-PAY-0001",
+    proposed_to: "BD-BD001-PAY-0001",
+    link_type: "satisfies"
+  })
+
+  const restored = applyTraceabilityPrepAction(approved.catalog, {
+    type: "restoreLink",
+    from: "REQ-RS001-PAY-0001",
+    to: "BD-BD001-PAY-0001",
+    link_type: "satisfies"
+  }, originalCatalog)
+
+  assert.equal(restored.status, "ok")
+  assert.equal(restored.catalog.links[0].status, "proposed")
+  assert.equal(restored.catalog.links[0].from, undefined)
+  assert.equal(restored.catalog.links[0].to, undefined)
+})
+
 test("applyTraceabilityPrepAction rejects n/a approval without a reason", () => {
   const catalog = proposedCatalog()
   catalog.decisions.push({ subject: "REQ-RS001-PAY-0001", gate: "basic_design", decision: "n/a", status: "proposed" })
