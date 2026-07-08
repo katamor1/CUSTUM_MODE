@@ -35,6 +35,7 @@ const ACTION_COMMANDS: Partial<Record<OperationHubActionId, string>> = {
   openBazaarReview: "bobBazaar.openReviewGui",
   openConsistencyWizard: "bobCodeConsistency.openReviewWizard",
   runWorkflow: "workflowRegister.runWorkflow",
+  startFromArtifacts: "workflowRegister.startFromStepWithArtifacts",
   resumeRun: "workflowRegister.resumePausedRun",
   retryCurrentStep: "workflowRegister.retryCurrentStep",
   acceptCurrentStep: "workflowRegister.acceptCurrentStep",
@@ -59,7 +60,8 @@ const RUN_ID_ACTIONS: readonly OperationHubActionId[] = [
 
 const RUN_MONITOR_WATCH_PATTERNS = [
   ".bob/workflows/runs/**/run.json",
-  ".bob/workflows/runs/**/control.json"
+  ".bob/workflows/runs/**/control.json",
+  ".bob/workflows/runs/**/artifacts/manifest.json"
 ] as const
 
 const RUN_MONITOR_REFRESH_DEBOUNCE_MS = 150
@@ -317,6 +319,9 @@ export function parseOperationHubMessage(message: unknown): OperationHubMessage 
 
 function commandArgsForAction(message: OperationHubMessage): unknown[] {
   if (message.action === "runWorkflow") return message.workflowId ? [message.workflowId] : []
+  if (message.action === "startFromArtifacts") {
+    return message.workflowId ? [message.workflowId, undefined, message.runId] : []
+  }
   if (RUN_ID_ACTIONS.includes(message.action)) {
     return message.runId ? [message.runId] : []
   }
@@ -361,9 +366,9 @@ async function setupState(roots: readonly MarkerRootCandidate[]): Promise<Operat
   }
 }
 
-async function exists(filePath: string): Promise<boolean> {
+async function exists(file: string): Promise<boolean> {
   try {
-    await fs.stat(filePath)
+    await fs.access(file)
     return true
   } catch {
     return false
@@ -379,13 +384,10 @@ function isContainedPath(root: string, target: string): boolean {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
-function nonce(): string {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-  let value = ""
-  for (let i = 0; i < 24; i += 1) value += alphabet[Math.floor(Math.random() * alphabet.length)]
-  return value
+function refreshTimestamp(): string {
+  return new Date().toLocaleTimeString()
 }
 
-function refreshTimestamp(): string {
-  return new Date().toLocaleTimeString("ja-JP", { hour12: false })
+function nonce(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }

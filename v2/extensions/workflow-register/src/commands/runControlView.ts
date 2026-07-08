@@ -1,4 +1,5 @@
 import * as vscode from "vscode"
+import { ARTIFACT_MANIFEST_STATE_KEY, ARTIFACT_REUSE_STATE_KEY } from "../core/artifacts"
 import { FileRunStateStore } from "../core/runStateStore"
 import { fallbackWorkspaceRootCandidates, findWorkflowRootCandidates, MarkerRootCandidate } from "../core/workspaceRoots"
 import { WorkflowRunState } from "../core/model"
@@ -37,17 +38,23 @@ export class WorkflowRunControlView implements vscode.Disposable, vscode.TreeDat
   }
 
   getTreeItem(item: RunViewItem): vscode.TreeItem {
+    const artifactStatus = artifactStatusForRun(item.run)
     const treeItem = new vscode.TreeItem(item.run.runId, vscode.TreeItemCollapsibleState.None)
-    treeItem.description = `${item.run.status}${item.run.currentStep ? ` / ${item.run.currentStep}` : ""}`
+    treeItem.description = [
+      item.run.status,
+      item.run.currentStep,
+      artifactStatus.description
+    ].filter(Boolean).join(" / ")
     treeItem.tooltip = [
       `runId: ${item.run.runId}`,
       `workflow: ${item.run.workflowId}`,
       `status: ${item.run.status}`,
       `currentStep: ${item.run.currentStep ?? "none"}`,
+      artifactStatus.tooltip,
       `root: ${item.root}`,
       `updatedAt: ${item.run.updatedAt}`
-    ].join("\n")
-    treeItem.iconPath = new vscode.ThemeIcon(iconForStatus(item.run.status))
+    ].filter(Boolean).join("\n")
+    treeItem.iconPath = new vscode.ThemeIcon(iconForRun(item.run))
     treeItem.contextValue = `workflowRun.${item.run.status}`
     treeItem.command = {
       command: "workflowRegister.inspectRunControl",
@@ -84,13 +91,39 @@ export class WorkflowRunControlView implements vscode.Disposable, vscode.TreeDat
     const paused = active.filter((item) => item.run.status === "paused").length
     const reviewing = active.filter((item) => item.run.status === "reviewing").length
     const held = active.filter((item) => item.run.status === "held").length
+    const reused = this.latestItems.filter((item) => Boolean(item.run.state[ARTIFACT_REUSE_STATE_KEY])).length
     this.statusBar.text = active.length === 0
-      ? "$(check) Bob Workflow"
-      : `$(debug-pause) Bob Workflow ${running}r/${paused}p/${reviewing}v/${held}h`
+      ? reused > 0 ? `$(check) Bob Workflow / ${reused} reused` : "$(check) Bob Workflow"
+      : `$(debug-pause) Bob Workflow ${running}r/${paused}p/${reviewing}v/${held}h${reused > 0 ? `/${reused}u` : ""}`
     this.statusBar.tooltip = active.length === 0
-      ? "No active Bob workflow runs"
-      : `Active Bob workflow runs: ${running} running, ${paused} paused, ${reviewing} reviewing, ${held} held`
+      ? reused > 0 ? `No active Bob workflow runs; ${reused} run(s) reused artifacts` : "No active Bob workflow runs"
+      : `Active Bob workflow runs: ${running} running, ${paused} paused, ${reviewing} reviewing, ${held} held${reused > 0 ? `; ${reused} reused artifact run(s)` : ""}`
   }
+}
+
+function artifactStatusForRun(run: WorkflowRunState): { description?: string; tooltip?: string } {
+  const reuse = parseReuse(run.state[ARTIFACT_REUSE_STATE_KEY])
+  if (reuse) {
+    const reusedStepCount = Array.isArray(reuse.reusedStepIds) ? reuse.reusedStepIds.length : 0
+    const hydratedKeyCount = Array.isArray(reuse.hydratedKeys) ? reuse.hydratedKeys.length : 0
+    return {
+      description: `reused ${reusedStepCount}`,
+      tooltip: `artifact reuse: ${reusedStepCount} step(s), ${hydratedKeyCount} state key(s), source=${reuse.sourceRunId ?? "unknown"}, start=${reuse.startStepId ?? "unknown"}`
+    }
+  }
+  if (typeof run.state[ARTIFACT_MANIFEST_STATE_KEY] === "string") {
+    return {
+      description: "artifacts",
+      tooltip: "artifact manifest is available for skip resume"
+    }
+  }
+  return {}
+}
+
+function iconForRun(run: WorkflowRunState): string {
+  if (run.state[ARTIFACT_REUSE_STATE_KEY]) return "references"
+  if (run.state[ARTIFACT_MANIFEST_STATE_KEY]) return "archive"
+  return iconForStatus(run.status)
 }
 
 function iconForStatus(status: WorkflowRunState["status"]): string {
@@ -102,6 +135,16 @@ function iconForStatus(status: WorkflowRunState["status"]): string {
     case "failed": return "error"
     case "completed": return "check"
     default: return "circle-outline"
+  }
+}
+
+function parseReuse(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "string") return undefined
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined
+  } catch {
+    return undefined
   }
 }
 

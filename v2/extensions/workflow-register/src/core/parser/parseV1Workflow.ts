@@ -30,6 +30,10 @@ import { arrayField, asRecord, listField, optionalBoolean, optionalString, requi
 const ajv = new Ajv({ allErrors: true, strict: false })
 const validateV1 = ajv.compile(workflowV1Schema as object)
 
+interface SkipResumeDefinition {
+  fileBound: boolean
+}
+
 export function parseV1Workflow(request: ParseWorkflowRequest, fields: Record<string, unknown>, body: string, fullText: string): ParseWorkflowResult {
   const valid = validateV1(fields)
   const diagnostics = valid ? [] : formatValidationErrors(request.filePath)
@@ -88,6 +92,8 @@ export function parseV1Workflow(request: ParseWorkflowRequest, fields: Record<st
     branching: normalizeBranching(fields.branching),
     engineSteps
   }
+  const skipResume = skipResumeFromExtensionFields(fields)
+  if (skipResume) Object.assign(workflow, { skipResume })
   return { ok: true, workflow, diagnostics: [...warnings, `- ok: ${request.filePath}: ${workflow.id}; schemaVersion=workflow-register/v1; steps=${workflow.engineSteps.length}`] }
 }
 
@@ -120,6 +126,14 @@ function workflowTodos(fields: Record<string, unknown>, body: string, steps: Eng
   if (yamlTodos.length > 0) return yamlTodos
   if (hasTypedSteps) return steps.map((step) => ({ id: step.id, title: step.title, raw: `${step.id}: ${step.title}` }))
   return legacyTodosFromMarkdown(body)
+}
+
+function skipResumeFromExtensionFields(fields: Record<string, unknown>): SkipResumeDefinition | undefined {
+  const record = asRecord(fields["x-skipResume"])
+  if (Object.keys(record).length === 0) return undefined
+  return {
+    fileBound: optionalBoolean(record, "fileBound") ?? false
+  }
 }
 
 function formatValidationErrors(filePath: string): string[] {

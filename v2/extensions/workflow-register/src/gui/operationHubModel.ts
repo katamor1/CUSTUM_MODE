@@ -1,4 +1,10 @@
 import * as path from "path"
+import {
+  ARTIFACT_MANIFEST_STATE_KEY,
+  ARTIFACT_REUSE_STATE_KEY,
+  parseWorkflowArtifactManifest,
+  type WorkflowArtifactManifest
+} from "../core/artifacts"
 import type { CoreWorkflowDefinition, WorkflowRunState } from "../core/model"
 
 export const OPERATION_HUB_ALLOWED_ACTIONS = [
@@ -10,6 +16,7 @@ export const OPERATION_HUB_ALLOWED_ACTIONS = [
   "openBazaarReview",
   "openConsistencyWizard",
   "runWorkflow",
+  "startFromArtifacts",
   "resumeRun",
   "retryCurrentStep",
   "acceptCurrentStep",
@@ -110,6 +117,10 @@ export interface OperationHubRunSummary {
   currentStepLabel: string
   bobTaskSyncLabel: string
   bobTaskSyncStatus: OperationHubStatus
+  artifactManifestLabel?: string
+  artifactManifestStatus?: OperationHubStatus
+  artifactReuseLabel?: string
+  artifactReuseStatus?: OperationHubStatus
   completedStepCount: number
   totalStepCount: number
   updatedAt: string
@@ -124,6 +135,13 @@ export interface OperationHubModel {
   setupChecklist: OperationHubSetupItem[]
   workflowCatalog: OperationHubWorkflowSummary[]
   runMonitor: OperationHubRunSummary[]
+}
+
+interface ArtifactReuseState {
+  sourceRunId?: string
+  startStepId?: string
+  reusedStepIds?: unknown[]
+  hydratedKeys?: unknown[]
 }
 
 export function buildOperationHubModel(input: OperationHubModelInput): OperationHubModel {
@@ -151,6 +169,8 @@ export function summarizeRunForHub(root: string, run: WorkflowRunState, focusedR
   const currentStep = run.steps.find((step) => step.id === run.currentStep)
   const completedStepCount = run.steps.filter((step) => step.status === "completed").length
   const bobTaskSync = summarizeBobTaskSync(run)
+  const manifest = artifactManifestForRun(run)
+  const artifactReuse = summarizeArtifactReuse(run)
   return {
     runId: run.runId,
     workflowId: run.workflowId,
@@ -160,13 +180,17 @@ export function summarizeRunForHub(root: string, run: WorkflowRunState, focusedR
     currentStepLabel: currentStep ? `${currentStep.id}: ${currentStep.title}` : run.currentStep ?? "未選択",
     bobTaskSyncLabel: bobTaskSync.label,
     bobTaskSyncStatus: bobTaskSync.status,
+    artifactManifestLabel: manifest ? `Reusable artifacts: ${manifest.artifacts.length}` : undefined,
+    artifactManifestStatus: manifest ? "ok" : undefined,
+    artifactReuseLabel: artifactReuse?.label,
+    artifactReuseStatus: artifactReuse?.status,
     completedStepCount,
     totalStepCount: run.steps.length,
     updatedAt: run.updatedAt,
     root,
     focused: run.runId === focusedRunId,
-    primaryActions: actionsForRun(run),
-    artifacts: artifactsForRun(root, run)
+    primaryActions: actionsForRun(run, Boolean(manifest?.artifacts.length)),
+    artifacts: artifactsForRun(root, run, manifest)
   }
 }
 
@@ -251,68 +275,92 @@ function buildWorkflowCatalog(workflows: OperationHubWorkflowInput[]): Operation
     .sort((a, b) => `${a.category}:${a.label}`.localeCompare(`${b.category}:${b.label}`, "ja"))
 }
 
-function actionsForRun(run: WorkflowRunState): OperationHubAction[] {
+function actionsForRun(run: WorkflowRunState, hasReusableArtifacts: boolean): OperationHubAction[] {
   const inspect = { id: "inspectRunControl", label: "詳細", commandId: "workflowRegister.inspectRunControl", runId: run.runId } as const
+  const startFromArtifacts = hasReusableArtifacts
+    ? {
+      id: "startFromArtifacts",
+      label: "成果物から開始",
+      commandId: "workflowRegister.startFromStepWithArtifacts",
+      workflowId: run.workflowId,
+      runId: run.runId,
+      variant: run.status === "completed" ? "primary" : "secondary"
+    } satisfies OperationHubAction
+    : undefined
+  const withReuse = (actions: OperationHubAction[]) => startFromArtifacts ? [startFromArtifacts, ...actions] : actions
   const current = run.currentStep ? run.steps.find((step) => step.id === run.currentStep) : undefined
   switch (run.status) {
     case "reviewing":
-      return [
+      return withReuse([
         { id: "acceptAndRunNextStep", label: "承認して次へ", commandId: "workflowRegister.acceptAndRunNextStep", runId: run.runId, variant: "primary" },
         { id: "retryCurrentStep", label: "再試行", commandId: "workflowRegister.retryCurrentStep", runId: run.runId },
         inspect
-      ]
+      ])
     case "held":
-      return [
+      return withReuse([
         { id: "openManualStepPanel", label: "手順を開く", commandId: "workflowRegister.openManualStepPanel", runId: run.runId, variant: "primary" },
         { id: "runNextStep", label: "次へ", commandId: "workflowRegister.runNextStep", runId: run.runId },
         inspect
-      ]
+      ])
     case "paused":
-      return [
+      return withReuse([
         { id: "resumeRun", label: "再開", commandId: "workflowRegister.resumePausedRun", runId: run.runId, variant: "primary" },
         inspect
-      ]
+      ])
     case "failed":
-      return [
+      return withReuse([
         { id: "retryCurrentStep", label: "再試行", commandId: "workflowRegister.retryCurrentStep", runId: run.runId, variant: "primary" },
         inspect
-      ]
+      ])
     case "running":
       if (current?.status === "pending") {
-        return [
+        return withReuse([
           { id: "runNextStep", label: "次へ", commandId: "workflowRegister.runNextStep", runId: run.runId, variant: "primary" },
           inspect
-        ]
+        ])
       }
-      return [
+      return withReuse([
         { id: "pauseCurrentRun", label: "一時停止", commandId: "workflowRegister.pauseCurrentRun", runId: run.runId },
         inspect
-      ]
+      ])
     default:
-      return [inspect]
+      return withReuse([inspect])
   }
 }
 
-function artifactsForRun(root: string, run: WorkflowRunState): OperationHubArtifactSummary[] {
-  return Object.entries(run.state)
+function artifactsForRun(root: string, run: WorkflowRunState, manifest?: WorkflowArtifactManifest): OperationHubArtifactSummary[] {
+  const manifestArtifacts = (manifest?.artifacts ?? []).map((artifact) => artifactSummary(root, artifact.stateKey || artifact.id, artifact.path))
+  const stateArtifacts = Object.entries(run.state)
     .filter(([, value]) => typeof value === "string")
     .map(([key, rawValue]) => ({ key, rawValue: String(rawValue) }))
-    .filter((item) => looksLikeArtifactPath(item.rawValue))
-    .map((item) => {
-      const workspacePath = path.isAbsolute(item.rawValue) ? path.resolve(item.rawValue) : path.resolve(root, item.rawValue)
-      return {
-        label: item.key,
-        displayPath: path.relative(root, workspacePath).replace(/\\/g, "/") || item.rawValue,
-        workspacePath,
-        action: {
-          id: "openArtifact",
-          label: "成果物を開く",
-          commandId: "vscode.open",
-          artifactPath: workspacePath
-        } satisfies OperationHubAction
-      }
-    })
-    .slice(0, 8)
+    .filter((item) => item.key !== ARTIFACT_MANIFEST_STATE_KEY && looksLikeArtifactPath(item.rawValue))
+    .map((item) => artifactSummary(root, item.key, item.rawValue))
+  return uniqueArtifacts([...manifestArtifacts, ...stateArtifacts]).slice(0, 8)
+}
+
+function artifactSummary(root: string, label: string, rawPath: string): OperationHubArtifactSummary {
+  const workspacePath = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(root, rawPath)
+  return {
+    label,
+    displayPath: path.relative(root, workspacePath).replace(/\\/g, "/") || rawPath,
+    workspacePath,
+    action: {
+      id: "openArtifact",
+      label: "成果物を開く",
+      commandId: "vscode.open",
+      artifactPath: workspacePath
+    } satisfies OperationHubAction
+  }
+}
+
+function uniqueArtifacts(values: OperationHubArtifactSummary[]): OperationHubArtifactSummary[] {
+  const seen = new Set<string>()
+  return values.filter((value) => {
+    const key = value.workspacePath
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function looksLikeArtifactPath(value: string): boolean {
@@ -339,6 +387,31 @@ function summarizeBobTaskSync(run: WorkflowRunState): { label: string; status: O
       return { label: "Bob Todo: repair pending", status: "warning" }
     default:
       return { label: "Bob Todo: not linked yet", status: "info" }
+  }
+}
+
+function summarizeArtifactReuse(run: WorkflowRunState): { label: string; status: OperationHubStatus } | undefined {
+  const value = run.state[ARTIFACT_REUSE_STATE_KEY]
+  if (typeof value !== "string") return undefined
+  const parsed = parseJsonObject(value) as ArtifactReuseState | undefined
+  if (!parsed) return undefined
+  const reused = Array.isArray(parsed.reusedStepIds) ? parsed.reusedStepIds.length : 0
+  const hydrated = Array.isArray(parsed.hydratedKeys) ? parsed.hydratedKeys.length : 0
+  const source = parsed.sourceRunId ? ` from ${parsed.sourceRunId}` : ""
+  const start = parsed.startStepId ? ` / start ${parsed.startStepId}` : ""
+  return { label: `Artifacts reused: ${reused} step(s), ${hydrated} state key(s)${source}${start}`, status: "ok" }
+}
+
+function artifactManifestForRun(run: WorkflowRunState): WorkflowArtifactManifest | undefined {
+  return parseWorkflowArtifactManifest(run.state[ARTIFACT_MANIFEST_STATE_KEY])
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined
+  } catch {
+    return undefined
   }
 }
 

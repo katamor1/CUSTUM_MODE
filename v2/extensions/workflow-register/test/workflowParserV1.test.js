@@ -161,3 +161,71 @@ steps:
   assert.match(parsed.diagnostics.join("\n"), /description/)
   assert.match(parsed.diagnostics.join("\n"), /action/)
 })
+
+test("file-bound skip resume metadata is opt-in and strict-clean when artifacts match result keys", () => {
+  const text = `---
+schemaVersion: workflow-register/v1
+name: skip-ready
+description: Skip-ready workflow.
+x-skipResume:
+  fileBound: true
+artifacts:
+  - id: draft
+    producedBy: draft
+    path: ".bob/workflows/runs/{{run.id}}/artifacts/draft.md"
+    schema: text/markdown
+steps:
+  - id: draft
+    title: Draft
+    type: agent
+    prompt: Draft the reusable result.
+    resultKey: draft
+---
+# Skip Ready
+`
+
+  const validation = validateWorkflowText({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/skip-ready/WORKFLOW.md",
+    text,
+    strict: true
+  })
+
+  assert.equal(validation.ok, true, validation.diagnostics.map((item) => item.message).join("\n"))
+  assert.equal(validation.workflow.skipResume.fileBound, true)
+})
+
+test("file-bound skip resume flags reusable result keys without matching artifacts", () => {
+  const text = `---
+schemaVersion: workflow-register/v1
+name: skip-missing-artifact
+description: Skip workflow missing artifacts.
+x-skipResume:
+  fileBound: true
+steps:
+  - id: draft
+    title: Draft
+    type: agent
+    prompt: Draft the reusable result.
+    resultKey: draft
+---
+# Skip Missing Artifact
+`
+
+  const relaxed = validateWorkflowText({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/skip-missing-artifact/WORKFLOW.md",
+    text
+  })
+  const strict = validateWorkflowText({
+    sourceId: "workflow-register",
+    filePath: "C:/repo/.bob/workflows/skip-missing-artifact/WORKFLOW.md",
+    text,
+    strict: true
+  })
+
+  assert.equal(relaxed.ok, true, relaxed.diagnostics.map((item) => item.message).join("\n"))
+  assert.match(relaxed.diagnostics.map((item) => item.message).join("\n"), /File-bound skip resume/)
+  assert.equal(strict.ok, false)
+  assert.match(strict.diagnostics.map((item) => `${item.severity}: ${item.message}`).join("\n"), /error: File-bound skip resume/)
+})

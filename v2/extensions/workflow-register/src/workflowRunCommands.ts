@@ -1,9 +1,22 @@
+import * as fs from "fs/promises"
+import * as path from "path"
 import * as vscode from "vscode"
 import type { ActiveStep } from "./bobWorkflowTypes"
 import { bobTaskSyncRegistry, type BobTaskSyncReason } from "./bobTaskSync"
+import {
+  hydrateWorkflowStateFromArtifacts,
+  importArtifactsFromTaskSnapshots as importTaskSnapshotArtifacts,
+  parseWorkflowArtifactManifest,
+  seedWorkflowRunFromArtifacts,
+  stateKeysProducedBeforeStep,
+  validateWorkflowArtifactManifest,
+  type TaskSnapshotArtifactImportIssue,
+  type WorkflowArtifactManifest
+} from "./core/artifacts"
 import type { CoreWorkflowDefinition, WorkflowRunState } from "./core/model"
 import { formatBranchingDiagnostics } from "./core/runDiagnostics"
 import { pendingReviewTransitionStepId } from "./core/engine/runState"
+import { FileTaskSnapshotStore } from "./core/taskSnapshots"
 import type { MarkerRootCandidate } from "./core/workspaceRoots"
 import { showMarkdownReport } from "./reports"
 import type { ManualStepPanelInput } from "./webview/manualStepViewModel"
@@ -18,6 +31,12 @@ import { WorkflowRuntimeFactory } from "./workflowRuntimeFactory"
 import { reviewTaskRegistry } from "./reviewTaskRegistry"
 
 export type RunCommandArg = string | { runId?: string; run?: { runId?: string } } | undefined
+
+interface ArtifactSourceRunSelection {
+  root: string
+  run: WorkflowRunState
+  manifest: WorkflowArtifactManifest
+}
 
 export interface WorkflowRunCommandServiceOptions {
   coreWorkflows: Map<string, CoreWorkflowDefinition>
@@ -89,6 +108,109 @@ export class WorkflowRunCommandService {
     })
     await vscode.window.showInformationMessage(`Workflow run ${run.status}: ${run.runId}`)
     return run
+  }
+
+  async startFromStepWithArtifacts(
+    workflowId?: string,
+    stepId?: string,
+    sourceRunId?: string,
+    inputs: Record<string, unknown> = {}
+  ): Promise<unknown> {
+    const trustError = await requireTrustedWorkspace("start workflow from artifacts")
+    if (trustError) return trustError
+    await this.ensureWorkflowsLoaded()
+    const workflow = workflowId
+      ? this.options.coreWorkflows.get(workflowId)
+      : await this.pickCoreWorkflow()
+    if (!workflow) return "No workflow selected."
+    const step = stepId
+      ? workflow.engineSteps.find((candidate) => candidate.id === stepId)
+      : await this.pickWorkflowStep(workflow)
+    if (!step) return stepId ? `Workflow step not found: ${stepId}` : "No workflow step selected."
+    const root = workflow.workflowRoot ?? await this.pickWorkflowRoot("Select workflow workspace")
+    if (!root) {
+      const message = "No workspace folder is open."
+      await vscode.window.showErrorMessage(message)
+      return message
+    }
+    const resolvedInputs = await collectCoreWorkflowInputs(workflow, inputs)
+    if (!resolvedInputs) return "Workflow input was cancelled."
+
+    const source = await this.pickArtifactSourceRun(root, workflow, resolvedInputs, sourceRunId)
+    if (!source) {
+      const message = sourceRunId
+        ? `Workflow artifact source run not found or not compatible: ${sourceRunId}`
+        : "No compatible workflow artifact source run selected."
+      await vscode.window.showWarningMessage(message)
+      return message
+    }
+
+    const runStore = this.options.runtimeFactory.createRunStore(root)
+    const seeded = await runStore.createRun(workflow, resolvedInputs)
+    seeded.currentStep = step.id
+    const stateKeys = stateKeysProducedBeforeStep(workflow, step.id)
+    const hydration = await hydrateWorkflowStateFromArtifacts({
+      workflow,
+      run: seeded,
+      manifest: source.manifest,
+      stateKeys,
+      readFile: (relativePath) => fs.readFile(path.join(root, relativePath), "utf8")
+    })
+    if (!hydration.ok) {
+      const message = `Workflow artifact hydration failed: ${hydration.issues.map((issue) => issue.message).join("; ")}`
+      await vscode.window.showErrorMessage(message)
+      return message
+    }
+
+    const seededRun = seedWorkflowRunFromArtifacts({
+      workflow,
+      run: seeded,
+      manifest: source.manifest,
+      startStepId: step.id,
+      hydratedKeys: hydration.hydratedKeys
+    })
+    if (!seededRun.ok) {
+      const message = seededRun.error ?? "Workflow artifact run seeding failed."
+      await vscode.window.showErrorMessage(message)
+      return message
+    }
+    await runStore.saveRun(seeded)
+    const engine = this.options.runtimeFactory.createEngine(root)
+    const result = await engine.resumeRun(seeded.runId, { workflow })
+    await vscode.window.showInformationMessage(`Workflow run ${result.status}: ${result.runId}; reused ${seededRun.reusedStepIds.length} step(s) from ${source.run.runId}`)
+    return result
+  }
+
+  async importArtifactsFromTaskSnapshots(runId?: string): Promise<unknown> {
+    const trustError = await requireTrustedWorkspace("import artifacts from task snapshots")
+    if (trustError) return trustError
+    await this.ensureWorkflowsLoaded()
+    const selection = await this.selectRun(runId)
+    if (!selection) return runId ? `Workflow run not found: ${runId}` : "No workflow run selected."
+    const runStore = this.options.runtimeFactory.createRunStore(selection.root)
+    const run = selection.run ?? await runStore.loadRun(selection.runId)
+    if (!run) throw new Error(`Workflow run not found: ${selection.runId}`)
+    const workflow = this.options.coreWorkflows.get(run.workflowId)
+    if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
+
+    const result = await importTaskSnapshotArtifacts({
+      workflow,
+      run,
+      snapshotStore: new FileTaskSnapshotStore({ workspaceRoot: selection.root }),
+      writeFile: (relativePath, text) => writeWorkspaceFile(selection.root, relativePath, text)
+    })
+    if (result.importedCount > 0) await runStore.saveRun(run)
+    const lines = [
+      `- runId: ${run.runId}`,
+      `- workflow: ${workflow.id}`,
+      `- imported: ${result.importedCount}`,
+      `- manifest: ${result.manifest ? "updated" : "not updated"}`,
+      "",
+      "Issues:",
+      ...formatSnapshotImportIssues(result.issues)
+    ]
+    await showMarkdownReport("Task Snapshot Artifact Import", result.ok ? "Imported artifacts from task snapshots." : "No artifacts were imported from task snapshots.", lines)
+    return result
   }
 
   async runNextStep(runId?: string): Promise<unknown> {
@@ -324,8 +446,37 @@ export class WorkflowRunCommandService {
     return result
   }
 
+  private async pickArtifactSourceRun(
+    root: string,
+    workflow: CoreWorkflowDefinition,
+    inputs: Record<string, unknown>,
+    sourceRunId?: string
+  ): Promise<ArtifactSourceRunSelection | undefined> {
+    const runStore = this.options.runtimeFactory.createRunStore(root)
+    const runs = await runStore.listRuns()
+    const candidates: ArtifactSourceRunSelection[] = []
+    for (const run of runs) {
+      if (sourceRunId && run.runId !== sourceRunId) continue
+      const manifest = await loadArtifactManifest(root, run)
+      if (!manifest) continue
+      const issues = validateWorkflowArtifactManifest({ manifest, workflow, inputs })
+      if (issues.some((issue) => issue.severity === "error")) continue
+      candidates.push({ root, run, manifest })
+    }
+    if (sourceRunId) return candidates[0]
+    if (candidates.length === 0) return undefined
+    if (candidates.length === 1) return candidates[0]
+    const picked = await vscode.window.showQuickPick(candidates.map((candidate) => ({
+      label: candidate.run.runId,
+      description: candidate.run.status,
+      detail: `${candidate.manifest.artifacts.length} artifact(s); updated=${candidate.run.updatedAt}`,
+      candidate
+    })), { title: `Artifact source run: ${workflow.label}` })
+    return picked?.candidate
+  }
+
   private async reconcileBobTask(root: string, run: WorkflowRunState, workflow: CoreWorkflowDefinition, reason: BobTaskSyncReason): Promise<void> {
-    const sync = bobTaskSyncRegistry.reconcileRun(run, workflow, {
+    const sync = await bobTaskSyncRegistry.reconcileRun(run, workflow, {
       reason,
       task: reviewTaskRegistry.taskForRun(run.runId)
     })
@@ -389,6 +540,35 @@ export class WorkflowRunCommandService {
     await vscode.window.showWarningMessage(message)
     return message
   }
+}
+
+async function loadArtifactManifest(root: string, run: WorkflowRunState): Promise<WorkflowArtifactManifest | undefined> {
+  const fromState = parseWorkflowArtifactManifest(run.state["workflow.artifactManifest"])
+  if (fromState) return fromState
+  try {
+    const file = path.join(root, ".bob", "workflows", "runs", run.runId, "artifacts", "manifest.json")
+    return parseWorkflowArtifactManifest(await fs.readFile(file, "utf8"))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    throw error
+  }
+}
+
+async function writeWorkspaceFile(root: string, relativePath: string, text: string): Promise<void> {
+  const resolved = path.resolve(root, relativePath)
+  if (!isContainedPath(root, resolved)) throw new Error(`Artifact path escapes workspace root: ${relativePath}`)
+  await fs.mkdir(path.dirname(resolved), { recursive: true })
+  await fs.writeFile(resolved, text, "utf8")
+}
+
+function isContainedPath(root: string, target: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(target))
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+}
+
+function formatSnapshotImportIssues(issues: TaskSnapshotArtifactImportIssue[]): string[] {
+  if (issues.length === 0) return ["- ok: No task snapshot import issues."]
+  return issues.map((issue) => `- ${issue.severity}: ${issue.artifactId ? `${issue.artifactId}: ` : ""}${issue.message}`)
 }
 
 function resolveRunId(value: RunCommandArg): string | undefined {

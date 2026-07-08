@@ -54,9 +54,6 @@ export async function acceptAndRunNextStep(options: StepReviewCommandOptions, ru
     await vscode.window.showInformationMessage(message)
     return accepted.run
   }
-  if (accepted.completedViaBobTask) {
-    return accepted.run
-  }
   return vscode.commands.executeCommand("workflowRegister.runNextStep", accepted.run.runId)
 }
 
@@ -68,12 +65,12 @@ async function acceptReviewedStep(runId?: string): Promise<AcceptedStepResult | 
   if (!run) return `Workflow run not found: ${selection.runId}`
   const acceptedStepId = run.currentStep
   const accepted = acceptReviewingStep(run)
-  const sync = bobTaskSyncRegistry.reconcileRun(accepted, undefined, {
+  const sync = await bobTaskSyncRegistry.reconcileRun(accepted, undefined, {
     reason: "review-accepted",
     task: reviewTaskRegistry.taskForStep(accepted.runId, acceptedStepId) ?? reviewTaskRegistry.taskForRun(accepted.runId)
   })
   await runStore.saveRun(accepted)
-  const completedViaBobTask = sync.status === "synced" && sync.taskAvailable
+  const completedViaBobTask = sync.status === "synced" && sync.appliedStepCount > 0
   const message = pendingReviewTransitionStepId(accepted)
     ? `Accepted step; pending transition will run from ${accepted.currentStep}: ${accepted.runId}`
     : accepted.status === "completed"

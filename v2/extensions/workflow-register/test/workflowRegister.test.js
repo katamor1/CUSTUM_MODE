@@ -62,6 +62,7 @@ test("package contributes standalone workflow launcher commands without a hard B
   for (const command of [
     "workflowRegister.runWorkflow",
     "workflowRegister.runWorkflowStep",
+    "workflowRegister.startFromStepWithArtifacts",
     "workflowRegister.runNextStep",
     "workflowRegister.inspectRuns",
     "workflowRegister.resumeRun",
@@ -74,10 +75,13 @@ test("package contributes standalone workflow launcher commands without a hard B
   }
   assert.match(source, /new WorkflowRegisterService\(String\(context\.extension\.packageJSON\.version \?\? "unknown"\)\)/)
   assert.match(source, /registerCommand\([\s\S]*"workflowRegister\.runWorkflowStep"[\s\S]*service\.runWorkflowStep\(workflowId, stepId, inputs\)/)
+  assert.match(source, /registerCommand\([\s\S]*"workflowRegister\.startFromStepWithArtifacts"[\s\S]*service\.startFromStepWithArtifacts\(workflowId, stepId, sourceRunId, inputs\)/)
   assert.match(source, /registerCommand\("workflowRegister\.runNextStep", \(runId\?: string\) => service\.runNextStep\(runId\)\)/)
   assert.match(source, /registerCommand\("workflowRegister\.approveBranchCheckpoint", \(runId\?: string\) => service\.approveBranchCheckpoint\(runId\)\)/)
   assert.match(source, /registerCommand\("workflowRegister\.abortBranchCheckpoint", \(runId\?: string\) => service\.abortBranchCheckpoint\(runId\)\)/)
   assert.match(source, /registerCommand\("workflowRegister\.inspectBranching", \(runId\?: string\) => service\.inspectBranching\(runId\)\)/)
+  assert.match(source, /startFromStepWithArtifacts: \(workflowId\?: string, stepId\?: string, sourceRunId\?: string, inputs\?: Record<string, unknown>\) => Promise<unknown>/)
+  assert.match(source, /startFromStepWithArtifacts: \(workflowId, stepId, sourceRunId, inputs\) => service\.startFromStepWithArtifacts\(workflowId, stepId, sourceRunId, inputs\)/)
   assert.match(source, /approveBranchCheckpoint: \(runId\?: string\) => Promise<unknown>/)
   assert.match(source, /abortBranchCheckpoint: \(runId\?: string\) => Promise<unknown>/)
   assert.match(source, /inspectBranching: \(runId\?: string\) => Promise<unknown>/)

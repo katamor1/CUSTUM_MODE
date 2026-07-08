@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unit_test_runner.dossier.dossier_models import FunctionDossier
 
+from .japanese import ja_label, md_cell, md_label_cell
+
 
 def render_function_dossier_markdown(dossier: FunctionDossier) -> str:
     payload = dossier.to_dict()
@@ -10,7 +12,7 @@ def render_function_dossier_markdown(dossier: FunctionDossier) -> str:
         "",
         "## サマリ",
         f"- ソース: {payload['function'].get('source_path') or ''}",
-        f"- 状態: {dossier.status}",
+        f"- 状態: {ja_label(dossier.status)}",
         f"- MVPレベル: {dossier.readiness.mvp_level}",
         f"- レビュー可能: {'はい' if dossier.readiness.ready_for_review else 'いいえ'}",
         "",
@@ -29,19 +31,28 @@ def render_function_dossier_markdown(dossier: FunctionDossier) -> str:
         f"- テストケース: {dossier.summaries.get('coverage_summary', {}).get('test_case_design_count', 0)}",
         "",
         "## ビルドと実行",
-        f"- ビルドプローブ: {dossier.summaries.get('build_summary', {}).get('build_probe_status', 'unknown')}",
-        f"- テスト実行: {dossier.summaries.get('execution_summary', {}).get('status', 'unknown')}",
+        f"- ビルドプローブ: {ja_label(dossier.summaries.get('build_summary', {}).get('build_probe_status', 'unknown'))}",
+        f"- テスト実行: {ja_label(dossier.summaries.get('execution_summary', {}).get('status', 'unknown'))}",
         "",
         "## トレーサビリティ",
         "`traceability_matrix.csv` を参照してください。",
         "",
         "## 未解決項目",
-        "| 項目 | 影響 | 推奨アクション |",
-        "|---|---|---|",
+        "| ID | 項目 | 影響 | 推奨アクション |",
+        "|---|---|---|---|",
     ]
     for item in dossier.unresolved_items:
-        lines.append(f"| {item.item_kind} | {item.impact} | {item.suggested_action} |")
-    lines.extend(["", "## 次のアクション", "| 優先度 | アクション | 担当ロール |", "|---|---|---|"])
+        lines.append(f"| {_markdown_cell(item.item_id)} | {_markdown_cell(item.item_kind)} | {_markdown_cell(item.impact)} | {_markdown_cell(item.suggested_action)} |")
+    lines.extend(["", "## 次のアクション", "操作・参照ファイルへのリンク付き一覧は [next_actions.md](next_actions.md) を参照してください。", "", "| ID | 優先度 | アクション | 対応対象・理由 | 担当ロール |", "|---|---|---|---|---|"])
     for action in dossier.next_actions:
-        lines.append(f"| {action.priority} | {action.title} | {action.owner_role} |")
+        related = ", ".join(action.related_unresolved_items) if action.related_unresolved_items else "-"
+        detail = action.description or related
+        if related != "-" and related not in detail:
+            detail = f"{related}: {detail}"
+        lines.append(f"| {_markdown_cell(action.action_id)} | {_markdown_cell(action.priority)} | {_markdown_cell(action.title)} | {_markdown_cell(detail)} | {_markdown_cell(action.owner_role)} |")
     return "\n".join(lines) + "\n"
+
+
+def _markdown_cell(value: str) -> str:
+    text = str(value or "-").replace("\n", "<br>")
+    return text.replace("|", "\\|")

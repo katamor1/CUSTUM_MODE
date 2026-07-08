@@ -250,7 +250,7 @@ export class BobWorkflowEngineRunner {
     }
     const reconcileBobTodo = async (workflow: CoreWorkflowDefinition, run: WorkflowRunState, step: EngineStep | undefined, alreadyApplied: boolean) => {
       if (!step) return
-      const sync = bobTaskSyncRegistry.reconcileRun(run, workflow, {
+      const sync = await bobTaskSyncRegistry.reconcileRun(run, workflow, {
         reason: alreadyApplied ? "manual-completed" : "bob-runner-step-completed",
         task,
         alreadyApplied

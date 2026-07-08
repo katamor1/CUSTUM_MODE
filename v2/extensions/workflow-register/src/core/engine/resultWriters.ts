@@ -4,6 +4,12 @@ import type {
   ResultSourceDefinition,
   WorkflowRunState
 } from "../model"
+import {
+  ARTIFACT_MANIFEST_PATH,
+  createWorkflowArtifactManifestEntry,
+  updateWorkflowArtifactManifest,
+  type WorkflowArtifactManifestEntry
+} from "../artifacts/artifactManifest"
 import type { ResultSinkRegistry } from "../resultSinkRegistry"
 import type { WorkflowEngineEventInput, WorkflowEngineOptions } from "../engineTypes"
 import { assertUserWritableStateKey } from "../stateKeys"
@@ -72,6 +78,7 @@ export async function writeProducedArtifacts(input: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { workflow, run, step, resultSinks } = input
   const artifacts = workflow.artifacts ?? []
+  const manifestEntries: WorkflowArtifactManifestEntry[] = []
   for (const artifact of artifacts.filter((item) => item.producedBy === step.id)) {
     const value = run.state[artifact.id]
     if (value === undefined) continue
@@ -91,6 +98,23 @@ export async function writeProducedArtifacts(input: {
       text: value
     })
     if (!write.ok) return { ok: false, error: write.error ?? `Failed to write artifact: ${artifact.id}` }
+    manifestEntries.push(createWorkflowArtifactManifestEntry({ artifact, step, path, text: value }))
+  }
+  if (manifestEntries.length > 0) {
+    const manifest = updateWorkflowArtifactManifest({ workflow, run, entries: manifestEntries })
+    const manifestWrite = await resultSinks.write({ type: "file", path: ARTIFACT_MANIFEST_PATH }, {
+      workflowId: workflow.id,
+      logicalWorkflowId: workflow.logicalWorkflowId,
+      workflowRoot: workflow.workflowRoot,
+      workflowFile: workflow.workflowFile,
+      workflowFolderName: workflow.workflowFolderName,
+      runId: run.runId,
+      stepId: step.id,
+      inputs: run.inputs,
+      state: run.state,
+      text: `${JSON.stringify(manifest, null, 2)}\n`
+    })
+    if (!manifestWrite.ok) return { ok: false, error: manifestWrite.error ?? "Failed to write artifact manifest." }
   }
   return { ok: true }
 }

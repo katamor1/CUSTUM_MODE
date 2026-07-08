@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 from unit_test_runner.harness.c90_writer import sha256_file, write_c_file
+from unit_test_runner.reports.japanese import ja_label, md_cell, md_label_cell
+from unit_test_runner.vc6.debug_workspace_writer import write_vc6_debug_project
 
-from .build_models import BuildProbeReport, BuildWorkspaceReport, WorkspaceFile
+from .build_models import BuildDiagnostic, BuildProbeReport, BuildWorkspaceReport, WorkspaceFile
 
 
 def write_build_reports(output_root: Path, workspace: BuildWorkspaceReport, probe: BuildProbeReport) -> dict[str, Path]:
@@ -15,6 +17,7 @@ def write_build_reports(output_root: Path, workspace: BuildWorkspaceReport, prob
     workspace_md = reports_dir / "build_workspace_report.md"
     probe_json = reports_dir / "build_probe_report.json"
     probe_md = reports_dir / "build_probe_report.md"
+    _write_debug_dsp(output_root, workspace)
     workspace_json.write_text(json.dumps(workspace.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     workspace_md.write_text(render_workspace_markdown(workspace), encoding="utf-8")
     probe_json.write_text(json.dumps(probe.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -35,7 +38,7 @@ def render_workspace_markdown(report: BuildWorkspaceReport) -> str:
         "",
         "## 対象",
         f"- 関数: {report.function_name}",
-        f"- 状態: {report.status}",
+        f"- 状態: {ja_label(report.status)}",
         f"- 出力ルート: {report.output_root.as_posix()}",
         "",
         "## コンパイル単位",
@@ -46,11 +49,11 @@ def render_workspace_markdown(report: BuildWorkspaceReport) -> str:
         lines.append(f"| {unit.source_file.as_posix()} | {unit.object_file.as_posix()} | {'はい' if unit.required else 'いいえ'} |")
     lines.extend(["", "## includeディレクトリ", "| パス | 根拠 | 存在 |", "|---|---|---|"])
     for item in report.include_dirs:
-        lines.append(f"| {item.raw} | {item.source} | {'はい' if item.exists else 'いいえ'} |")
+        lines.append(f"| {item.raw} | {md_label_cell(item.source)} | {'はい' if item.exists else 'いいえ'} |")
     lines.extend(["", "## 診断"])
     if report.diagnostics:
         for diagnostic in report.diagnostics:
-            lines.append(f"- {diagnostic.code}: {diagnostic.message}")
+            lines.append(f"- {md_label_cell(diagnostic.code)}: {md_cell(diagnostic.message)}")
     else:
         lines.append("- なし")
     return "\n".join(lines) + "\n"
@@ -62,7 +65,7 @@ def render_probe_markdown(report: BuildProbeReport) -> str:
         "",
         "## 状態",
         f"- 実行済み: {'はい' if report.executed else 'いいえ'}",
-        f"- 状態: {report.status}",
+        f"- 状態: {ja_label(report.status)}",
         f"- 終了コード: {report.exit_code if report.exit_code is not None else ''}",
         "",
         "## 不足include",
@@ -70,7 +73,7 @@ def render_probe_markdown(report: BuildProbeReport) -> str:
     if report.missing_includes:
         lines.extend(["| include | 診断 |", "|---|---|"])
         for item in report.missing_includes:
-            lines.append(f"| {item.include_name} | {item.diagnostic_raw} |")
+            lines.append(f"| {item.include_name} | {md_cell(item.diagnostic_raw)} |")
     else:
         lines.append("- なし")
     lines.extend(["", "## 未解決シンボル"])
@@ -81,16 +84,25 @@ def render_probe_markdown(report: BuildProbeReport) -> str:
     else:
         lines.append("- なし")
     lines.extend(["", "## PCH課題"])
-    lines.extend([f"- {item.issue_kind}: {item.diagnostic_raw}" for item in report.pch_issues] or ["- なし"])
+    lines.extend([f"- {md_label_cell(item.issue_kind)}: {md_cell(item.diagnostic_raw)}" for item in report.pch_issues] or ["- なし"])
     lines.extend(["", "## VC6互換性課題"])
-    lines.extend([f"- {item.issue_kind}: {item.diagnostic_raw}" for item in report.vc6_compatibility_issues] or ["- なし"])
+    lines.extend([f"- {md_label_cell(item.issue_kind)}: {md_cell(item.diagnostic_raw)}" for item in report.vc6_compatibility_issues] or ["- なし"])
     lines.extend(["", "## 診断"])
     if report.diagnostics:
         for diagnostic in report.diagnostics:
-            lines.append(f"- {diagnostic.code}: {diagnostic.message}")
+            lines.append(f"- {md_label_cell(diagnostic.code)}: {md_cell(diagnostic.message)}")
     else:
         lines.append("- なし")
     return "\n".join(lines) + "\n"
+
+
+def _write_debug_dsp(output_root: Path, report: BuildWorkspaceReport) -> None:
+    try:
+        dsp_path = write_vc6_debug_project(output_root, report)
+    except Exception as exc:  # pragma: no cover - defensive report generation path
+        report.diagnostics.append(BuildDiagnostic("vc6_debug_dsp_generation_failed", "warning", f"VC6 debug DSP generation failed: {exc}", None, None, None))
+        return
+    _record_build_file(output_root, report, dsp_path, "vc6_debug_dsp")
 
 
 def _record_build_file(output_root: Path, report: BuildWorkspaceReport, path: Path, kind: str) -> None:

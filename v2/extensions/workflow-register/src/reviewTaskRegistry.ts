@@ -35,6 +35,16 @@ export interface BobTaskSyncReconcileResult {
   message: string
 }
 
+interface BobTaskProjection {
+  completedThroughIndex: number
+  total: number
+  source: string
+  details: string
+  confidence: number
+}
+
+type TodoCompletionState = "completed" | "notCompleted"
+
 export class ReviewTaskRegistry {
   private readonly tasksByStep = new Map<string, BobWorkflowTask>()
   private readonly tasksByRun = new Map<string, BobWorkflowTask>()
@@ -79,11 +89,11 @@ export class ReviewTaskRegistry {
     }
   }
 
-  reconcileRun(
+  async reconcileRun(
     run: WorkflowRunState,
     workflow: CoreWorkflowDefinition | undefined,
     options: BobTaskSyncReconcileOptions
-  ): BobTaskSyncReconcileResult {
+  ): Promise<BobTaskSyncReconcileResult> {
     const task = options.task ?? this.taskForRun(run.runId)
     return reconcileBobTaskSync(run, workflow, { ...options, task })
   }
@@ -120,11 +130,11 @@ export class ReviewTaskRegistry {
 export const reviewTaskRegistry = new ReviewTaskRegistry()
 export const bobTaskSyncRegistry = reviewTaskRegistry
 
-export function reconcileBobTaskSync(
+export async function reconcileBobTaskSync(
   run: WorkflowRunState,
   workflow: CoreWorkflowDefinition | undefined,
   options: BobTaskSyncReconcileOptions
-): BobTaskSyncReconcileResult {
+): Promise<BobTaskSyncReconcileResult> {
   const now = options.now?.() ?? new Date().toISOString()
   const targetCompletedThroughIndex = completedPrefixIndex(run)
   const sync: BobTaskSyncState = run.bobTaskSync ?? {
@@ -138,9 +148,22 @@ export function reconcileBobTaskSync(
   sync.mode = workflow?.stepExecution?.mode ?? sync.mode
   sync.lastCheckedAt = now
 
-  const previousCompletedThroughIndex = normalizeCompletedIndex(sync.completedThroughIndex)
+  const storedCompletedThroughIndex = normalizeCompletedIndex(sync.completedThroughIndex)
+  const observedBefore = readBobTaskProjection(options.task, run)
+  const previousCompletedThroughIndex = observedBefore?.completedThroughIndex ?? storedCompletedThroughIndex
   const taskAvailable = typeof options.task?.setStepComplete === "function"
   sync.liveTaskAvailable = taskAvailable
+
+  if (observedBefore && observedBefore.completedThroughIndex !== storedCompletedThroughIndex) {
+    sync.completedThroughIndex = observedBefore.completedThroughIndex
+    sync.completedThroughStepId = stepIdAt(run, observedBefore.completedThroughIndex)
+    sync.drift = {
+      status: "repairPending",
+      reason: options.reason,
+      detectedAt: now,
+      details: `Bob task export projection ${observedBefore.details} differs from stored projection ${storedCompletedThroughIndex + 1}.`
+    }
+  }
 
   if (previousCompletedThroughIndex > targetCompletedThroughIndex) {
     sync.completedThroughIndex = previousCompletedThroughIndex
@@ -184,10 +207,22 @@ export function reconcileBobTaskSync(
   let appliedStepCount = 0
   for (let index = previousCompletedThroughIndex + 1; index <= targetCompletedThroughIndex; index += 1) {
     try {
-      options.task.setStepComplete()
+      await applyBobStepComplete(options.task)
+      const observedAfter = readBobTaskProjection(options.task, run)
+      if (observedAfter && observedAfter.completedThroughIndex < index) {
+        sync.completedThroughIndex = observedAfter.completedThroughIndex
+        sync.completedThroughStepId = stepIdAt(run, observedAfter.completedThroughIndex) ?? sync.completedThroughStepId
+        sync.drift = {
+          status: "repairFailed",
+          reason: options.reason,
+          detectedAt: now,
+          details: `Bob task export still reports ${observedAfter.details} after setStepComplete for target step ${index + 1}.`
+        }
+        return syncResult("repairFailed", targetCompletedThroughIndex, sync.completedThroughIndex, appliedStepCount, taskAvailable)
+      }
       appliedStepCount += 1
-      sync.completedThroughIndex = index
-      sync.completedThroughStepId = stepIdAt(run, index)
+      sync.completedThroughIndex = observedAfter?.completedThroughIndex ?? index
+      sync.completedThroughStepId = stepIdAt(run, sync.completedThroughIndex)
       sync.lastAppliedAt = now
     } catch (error) {
       sync.drift = {
@@ -198,6 +233,19 @@ export function reconcileBobTaskSync(
       }
       return syncResult("repairFailed", targetCompletedThroughIndex, sync.completedThroughIndex, appliedStepCount, taskAvailable)
     }
+  }
+
+  const finalProjection = readBobTaskProjection(options.task, run)
+  if (finalProjection && finalProjection.completedThroughIndex < targetCompletedThroughIndex) {
+    sync.completedThroughIndex = finalProjection.completedThroughIndex
+    sync.completedThroughStepId = stepIdAt(run, finalProjection.completedThroughIndex) ?? sync.completedThroughStepId
+    sync.drift = {
+      status: "repairPending",
+      reason: options.reason,
+      detectedAt: now,
+      details: `Bob task export remains behind run.json: ${finalProjection.details}; target=${targetCompletedThroughIndex + 1}.`
+    }
+    return syncResult("repairPending", targetCompletedThroughIndex, sync.completedThroughIndex, appliedStepCount, taskAvailable)
   }
 
   sync.drift = { status: "synced", reason: options.reason, detectedAt: now }
@@ -211,6 +259,114 @@ export function completedPrefixIndex(run: WorkflowRunState): number {
     completedThrough = index
   }
   return completedThrough
+}
+
+function readBobTaskProjection(task: BobWorkflowTask | undefined, run: WorkflowRunState): BobTaskProjection | undefined {
+  if (!task) return undefined
+  const candidates: BobTaskProjection[] = []
+  const exported = safeRead(() => task.toSerializable?.())
+  const metadata = safeRead(() => task.getAllMetadata?.())
+  collectTaskProjection(exported, run, "taskExport", "taskExport", candidates)
+  collectTaskProjection(metadata, run, "taskMetadata", "taskMetadata", candidates)
+  return candidates.sort((left, right) => right.confidence - left.confidence)[0]
+}
+
+function collectTaskProjection(
+  value: unknown,
+  run: WorkflowRunState,
+  source: string,
+  path: string,
+  output: BobTaskProjection[],
+  depth = 0,
+  seen = new Set<unknown>()
+): void {
+  if (!value || depth > 8) return
+  if (typeof value !== "object") return
+  if (seen.has(value)) return
+  seen.add(value)
+  if (Array.isArray(value)) {
+    const projection = projectionFromTodoArray(value, run, source, path)
+    if (projection) output.push(projection)
+    value.forEach((item, index) => collectTaskProjection(item, run, source, `${path}[${index}]`, output, depth + 1, seen))
+    return
+  }
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    collectTaskProjection(item, run, source, `${path}.${key}`, output, depth + 1, seen)
+  }
+}
+
+function projectionFromTodoArray(value: unknown[], run: WorkflowRunState, source: string, path: string): BobTaskProjection | undefined {
+  if (run.steps.length === 0 || value.length < Math.min(2, run.steps.length)) return undefined
+  const relevantLength = Math.min(value.length, run.steps.length)
+  const statuses = value.slice(0, relevantLength).map(todoCompletionState)
+  const knownStatusCount = statuses.filter(Boolean).length
+  if (knownStatusCount === 0) return undefined
+  const matchingStepCount = value.slice(0, relevantLength).filter((item, index) => todoItemMatchesStep(item, run.steps[index])).length
+  const pathLooksRelevant = /todo|task|step|item|checklist/i.test(path)
+  if (!pathLooksRelevant && matchingStepCount < 2 && value.length !== run.steps.length) return undefined
+  let completedThroughIndex = -1
+  for (const status of statuses) {
+    if (status !== "completed") break
+    completedThroughIndex += 1
+  }
+  completedThroughIndex = Math.min(completedThroughIndex, run.steps.length - 1)
+  const confidence = knownStatusCount + (matchingStepCount * 3) + (pathLooksRelevant ? 5 : 0) + (value.length === run.steps.length ? 2 : 0)
+  return {
+    completedThroughIndex,
+    total: value.length,
+    source,
+    details: `${source}:${path}; completed=${completedThroughIndex + 1}/${value.length}; known=${knownStatusCount}; matched=${matchingStepCount}`,
+    confidence
+  }
+}
+
+function todoCompletionState(value: unknown): TodoCompletionState | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  for (const key of ["completed", "complete", "done", "checked", "finished", "isComplete", "isCompleted"]) {
+    const candidate = record[key]
+    if (typeof candidate === "boolean") return candidate ? "completed" : "notCompleted"
+  }
+  for (const key of ["status", "state", "phase", "kind", "result"]) {
+    const candidate = record[key]
+    if (typeof candidate !== "string") continue
+    const normalized = candidate.trim().toLowerCase()
+    if (/^(completed|complete|done|finished|success|succeeded|accepted|approved|passed|checked)$/.test(normalized)) return "completed"
+    if (/^(pending|todo|open|active|current|running|reviewing|held|waiting|blocked|failed|error|in[-_ ]?progress)$/.test(normalized)) return "notCompleted"
+  }
+  return undefined
+}
+
+function todoItemMatchesStep(value: unknown, step: { id: string; title?: string }): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  const candidates = [record.id, record.key, record.stepId, record.title, record.text, record.label, record.name]
+    .filter((item): item is string => typeof item === "string")
+    .map(normalizeMatchText)
+  const stepValues = [step.id, step.title].filter((item): item is string => typeof item === "string").map(normalizeMatchText)
+  return candidates.some((candidate) => stepValues.some((stepValue) => candidate === stepValue || candidate.includes(stepValue) || stepValue.includes(candidate)))
+}
+
+function normalizeMatchText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+function safeRead(read: () => unknown): unknown {
+  try {
+    return read()
+  } catch {
+    return undefined
+  }
+}
+
+async function applyBobStepComplete(task: BobWorkflowTask): Promise<void> {
+  if (typeof task.setStepComplete !== "function") throw new Error("Bob task does not support setStepComplete.")
+  await Promise.resolve(task.setStepComplete())
+  await waitForBobTodoProjectionTick()
+}
+
+function waitForBobTodoProjectionTick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 function normalizeCompletedIndex(value: number | undefined): number {

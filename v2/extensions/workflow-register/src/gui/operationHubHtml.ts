@@ -56,7 +56,7 @@ export function renderOperationHubHtml(input: RenderOperationHubHtmlInput): stri
     .card.focused-run { border-color: var(--vscode-focusBorder); box-shadow: inset 3px 0 0 var(--vscode-focusBorder); }
     .card-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .card-title h3 { overflow-wrap: anywhere; }
-    .title-badges { display: flex; align-items: center; gap: 4px; }
+    .title-badges, .run-badges { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
     .badge { border-radius: 3px; border: 1px solid var(--vscode-panel-border); padding: 1px 5px; font-size: 11px; white-space: nowrap; }
     .ok { color: var(--vscode-testing-iconPassed); }
     .warning { color: var(--vscode-editorWarning-foreground); }
@@ -112,6 +112,7 @@ export function renderOperationHubHtml(input: RenderOperationHubHtmlInput): stri
       if (action === 'refresh') return '更新中…';
       if (action === 'openArtifact') return '開いています…';
       if (action === 'openOperationHubPanel') return '開いています…';
+      if (action === 'startFromArtifacts') return '再利用準備中…';
       return '反映中…';
     }
   </script>
@@ -206,10 +207,16 @@ function renderRun(run: OperationHubRunSummary): string {
   const statusKind = run.status === "failed" ? "error" : "info"
   const statusBadge = `<span class="badge ${statusKind}">${escapeHtml(run.statusLabel)}</span>`
   const syncBadge = `<span class="badge ${escapeHtml(run.bobTaskSyncStatus)}">${escapeHtml(run.bobTaskSyncLabel)}</span>`
+  const manifestBadge = run.artifactManifestLabel && run.artifactManifestStatus
+    ? `<span class="badge ${escapeHtml(run.artifactManifestStatus)}">${escapeHtml(run.artifactManifestLabel)}</span>`
+    : ""
+  const reuseBadge = run.artifactReuseLabel && run.artifactReuseStatus
+    ? `<span class="badge ${escapeHtml(run.artifactReuseStatus)}">${escapeHtml(run.artifactReuseLabel)}</span>`
+    : ""
   return `<article class="${cardClass}">
     <div class="card-title"><h3>${escapeHtml(run.workflowName)}</h3><span class="title-badges">${focusBadge}${statusBadge}</span></div>
     <div class="muted"><code>${escapeHtml(run.runId)}</code> / ${escapeHtml(run.currentStepLabel)}</div>
-    <div class="muted">${syncBadge}</div>
+    <div class="muted"><span class="run-badges">${syncBadge}${manifestBadge}${reuseBadge}</span></div>
     <div class="progress" aria-label="progress"><span style="width:${percent}%"></span></div>
     <div class="muted">${run.completedStepCount}/${run.totalStepCount} step / updated ${escapeHtml(run.updatedAt)}</div>
     <div class="actions">${run.primaryActions.map(renderActionButton).join("")}</div>
@@ -241,18 +248,16 @@ function renderActionButton(action: OperationHubAction): string {
 function statusText(status: OperationHubSetupItem["status"]): string {
   switch (status) {
     case "ok": return "OK"
-    case "warning": return "確認"
-    case "error": return "エラー"
-    case "info": return "情報"
-    default: return status
+    case "warning": return "注意"
+    case "error": return "要対応"
+    default: return "情報"
   }
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? "")
+function escapeHtml(value: string): string {
+  return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
 }

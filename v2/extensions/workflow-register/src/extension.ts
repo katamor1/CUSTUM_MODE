@@ -58,6 +58,23 @@ export interface WorkflowRegisterApi {
    */
   runWorkflowStep: (workflowId?: string, stepId?: string, inputs?: Record<string, unknown>) => Promise<unknown>
   /**
+   * artifact manifest から前段 state を復元し、指定 step から新しい run を開始する。
+   *
+   * @param workflowId workflow identifier。省略時はユーザー選択になる場合がある。
+   * @param stepId 開始 step identifier。省略時はユーザー選択になる場合がある。
+   * @param sourceRunId artifact manifest を持つ reuse 元 run identifier。
+   * @param inputs input id を key にした workflow input values。
+   * @returns runtime が返す workflow execution result。
+   */
+  startFromStepWithArtifacts: (workflowId?: string, stepId?: string, sourceRunId?: string, inputs?: Record<string, unknown>) => Promise<unknown>
+  /**
+   * task snapshot の assistant output / task export を artifact file と manifest に取り込む。
+   *
+   * @param runId import 対象 run identifier。省略時はユーザー選択。
+   * @returns import 結果。
+   */
+  importArtifactsFromTaskSnapshots: (runId?: string) => Promise<unknown>
+  /**
    * workflow run の次に実行可能な step を実行して run を進める。
    *
    * @param runId run identifier。省略時は active または選択可能な run を使う。
@@ -104,6 +121,8 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     listWorkflows: () => service.listCoreWorkflows(),
     runWorkflow: (workflowId, inputs) => service.runWorkflow(workflowId, inputs),
     runWorkflowStep: (workflowId, stepId, inputs) => service.runWorkflowStep(workflowId, stepId, inputs),
+    startFromStepWithArtifacts: (workflowId, stepId, sourceRunId, inputs) => service.startFromStepWithArtifacts(workflowId, stepId, sourceRunId, inputs),
+    importArtifactsFromTaskSnapshots: (runId) => service.importArtifactsFromTaskSnapshots(runId),
     runNextStep: (runId) => service.runNextStep(runId),
     approveBranchCheckpoint: (runId) => service.approveBranchCheckpoint(runId),
     abortBranchCheckpoint: (runId) => service.abortBranchCheckpoint(runId),
@@ -132,6 +151,11 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
         return service.runWorkflowStep(workflowId, stepId, inputs)
       }
     ),
+    vscode.commands.registerCommand(
+      "workflowRegister.startFromStepWithArtifacts",
+      (workflowId?: string, stepId?: string, sourceRunId?: string, inputs?: Record<string, unknown>) => service.startFromStepWithArtifacts(workflowId, stepId, sourceRunId, inputs)
+    ),
+    vscode.commands.registerCommand("workflowRegister.importArtifactsFromTaskSnapshots", (runId?: string) => service.importArtifactsFromTaskSnapshots(runId)),
     vscode.commands.registerCommand("workflowRegister.runNextStep", (runId?: string) => service.runNextStep(runId)),
     vscode.commands.registerCommand("workflowRegister.openManualStepPanel", (runArg?: unknown) => service.openManualStepPanel(runArg as Parameters<WorkflowRegisterService["openManualStepPanel"]>[0])),
     vscode.commands.registerCommand("workflowRegister.inspectRuns", () => service.inspectRuns()),

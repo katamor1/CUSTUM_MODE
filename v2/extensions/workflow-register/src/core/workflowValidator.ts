@@ -38,6 +38,12 @@ interface ResultKeyProducer {
   index: number
 }
 
+interface SkipResumeWorkflowMetadata {
+  skipResume?: {
+    fileBound?: boolean
+  }
+}
+
 export function validateWorkflowText(options: ValidateWorkflowTextOptions): ValidateWorkflowResult {
   const parsed = parseWorkflowMarkdown({ sourceId: options.sourceId, filePath: options.filePath, text: options.text })
   const diagnostics = parsed.diagnostics.map((line) => diagnosticFromParserLine(line, options.filePath))
@@ -92,6 +98,7 @@ export function validateCoreWorkflow(
   validateStateReferences(workflow.engineSteps, resultKeys, diagnostics, filePath)
   validateBranching(workflow, stepIndexes, resultKeyProducers, diagnostics, filePath)
   validateArtifacts(workflow, stepIds, diagnostics, filePath)
+  validateSkipResumeFileBound(workflow, resultKeyProducers, diagnostics, filePath)
   validateInputs(workflow, diagnostics, filePath)
   validatePreflight(workflow, options, diagnostics, filePath)
   validateGuardrails(workflow, diagnostics, filePath)
@@ -337,6 +344,64 @@ function validateArtifacts(workflow: CoreWorkflowDefinition, stepIds: Set<string
   }
 }
 
+function validateSkipResumeFileBound(
+  workflow: CoreWorkflowDefinition,
+  resultKeyProducers: Map<string, ResultKeyProducer[]>,
+  diagnostics: WorkflowDiagnostic[],
+  filePath: string
+): void {
+  const skipResume = (workflow as CoreWorkflowDefinition & SkipResumeWorkflowMetadata).skipResume
+  if (skipResume?.fileBound !== true) return
+
+  const artifactsByProducerAndId = new Set(
+    workflow.artifacts
+      .filter((artifact) => artifact.producedBy)
+      .map((artifact) => artifactKey(artifact.producedBy as string, artifact.id))
+  )
+  const producerKeys = new Set<string>()
+  for (const [resultKey, producers] of resultKeyProducers) {
+    for (const producer of producers) {
+      producerKeys.add(artifactKey(producer.stepId, resultKey))
+      if (!artifactsByProducerAndId.has(artifactKey(producer.stepId, resultKey))) {
+        diagnostics.push(warning(
+          filePath,
+          `File-bound skip resume is enabled but step '${producer.stepId}' ${producer.source} '${resultKey}' has no matching artifact id produced by the same step.`
+        ))
+      }
+    }
+  }
+
+  for (const step of workflow.engineSteps) {
+    if (step.type === "agent" && !step.resultKey) {
+      diagnostics.push(warning(filePath, `File-bound skip resume is enabled but agent step '${step.id}' has no resultKey to persist as an artifact.`))
+    }
+    if (step.type === "result" && !step.result.sinks.some((sink) => sink.type === "file")) {
+      diagnostics.push(warning(filePath, `File-bound skip resume is enabled but result step '${step.id}' has no file sink.`))
+    }
+  }
+
+  for (const artifact of workflow.artifacts) {
+    if (!artifact.producedBy) {
+      diagnostics.push(warning(filePath, `File-bound skip resume artifact '${artifact.id}' should declare producedBy.`))
+      continue
+    }
+    if (!producerKeys.has(artifactKey(artifact.producedBy, artifact.id))) {
+      diagnostics.push(warning(filePath, `File-bound skip resume artifact '${artifact.id}' does not match a resultKey produced by step '${artifact.producedBy}'.`))
+    }
+    if (!isRunScopedArtifactPath(artifact.path)) {
+      diagnostics.push(warning(filePath, `File-bound skip resume artifact '${artifact.id}' path should include '{{run.id}}' or '{{runId}}'.`))
+    }
+  }
+}
+
+function artifactKey(stepId: string, artifactId: string): string {
+  return `${stepId}\u0000${artifactId}`
+}
+
+function isRunScopedArtifactPath(path: string): boolean {
+  return /\{\{\s*(?:run\.id|runId)\s*\}\}/.test(path)
+}
+
 function validateInputs(workflow: CoreWorkflowDefinition, diagnostics: WorkflowDiagnostic[], filePath: string): void {
   for (const [key, input] of Object.entries(workflow.inputs)) {
     if (input.type === "select" && (!input.options || input.options.length === 0)) {
@@ -438,6 +503,7 @@ function diagnosticHint(message: string): string | undefined {
   if (message.includes("includeState references unknown resultKey")) {
     return "Add resultKey to an earlier command or agent step, or remove the includeState entry."
   }
+  if (message.includes("File-bound skip resume")) return "For skip-resumable workflows, give each reusable resultKey a same-id artifact with producedBy set to the producing step and a run-scoped path."
   if (message.includes("result references unknown stateKey")) return "Use a stateKey produced by an earlier resultKey."
   if (message.includes("Duplicate step id")) return "Each step id must be unique within one WORKFLOW.md."
   if (message.includes("select but has no options")) return "Add an options list to the select input."

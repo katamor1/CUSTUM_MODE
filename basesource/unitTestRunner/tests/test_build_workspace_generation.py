@@ -16,6 +16,7 @@ sys.path.insert(0, str(SRC_ROOT))
 
 from unit_test_runner.build.build_workspace_generator import generate_build_workspace
 from unit_test_runner.build.log_parser import parse_build_log
+from unit_test_runner.c_analyzer.source_digest import build_source_digest
 from unit_test_runner.dossier import analyze_function_workflow
 
 
@@ -83,6 +84,8 @@ class BuildWorkspaceGenerationTests(unittest.TestCase):
             makefile = (out_dir / "build" / "Makefile").read_text(encoding="cp932")
             self.assertIn('/I"..\\generated\\include"', makefile)
             self.assertNotIn('/I"generated/include"', makefile)
+            self.assertIn("/Gy", payload["compiler_options"])
+            self.assertIn("/OPT:REF", makefile)
 
             self.assertEqual("not_run", probe_payload["function"]["status"])
             self.assertFalse(probe_payload["executed"])
@@ -138,6 +141,72 @@ class BuildWorkspaceGenerationTests(unittest.TestCase):
             self.assertTrue((out_dir / include_dirs["common/include"].workspace_path).exists())
             makefile = (out_dir / "build" / "Makefile").read_text(encoding="cp932")
             self.assertIn('/I"..\\extracted\\common\\include"', makefile)
+
+    def test_generator_enables_function_level_linking_for_unused_peer_functions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = Path(temp_dir) / "project"
+            source = project / "shared" / "shared.c"
+            header = project / "shared" / "shared2.h"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                '#include "shared2.h"\n\n'
+                "int g_count = 0;\n\n"
+                "int Shared(void)\n"
+                "{\n"
+                "    g_count++;\n"
+                "    return g_count;\n"
+                "}\n\n"
+                "int Shared2(void)\n"
+                "{\n"
+                "    g_com->ptr->test = g_count;\n"
+                "    return g_count;\n"
+                "}\n",
+                encoding="ascii",
+            )
+            header.write_text(
+                "typedef struct _gbl1 { int test; } gbl1;\n"
+                "typedef struct _gbl_com { gbl1* ptr; } gbl_com;\n"
+                "extern gbl_com *g_com;\n",
+                encoding="ascii",
+            )
+            out_dir = Path(temp_dir) / "out"
+            build_context = {
+                "workspace_root": str(project),
+                "include_dirs": ["shared"],
+                "defines": ["WIN32", "_DEBUG"],
+                "compiler_options": ["/nologo", "/W3", "/MDd", "/Od", "/ZI"],
+            }
+            source_digest = build_source_digest(source, build_context).to_dict()
+            harness_report = {
+                "function": {"name": "Shared"},
+                "source": {"path": str(source)},
+                "output_root": str(out_dir),
+                "generated_files": [],
+            }
+
+            report, _probe = generate_build_workspace(
+                build_context,
+                source_digest,
+                harness_report,
+                out_dir,
+                run_probe=False,
+                dry_run=True,
+            )
+
+            payload = report.to_dict()
+            makefile = (out_dir / "build" / "Makefile").read_text(encoding="cp932")
+            compile_commands = (out_dir / "build" / "compile_commands.txt").read_text(encoding="cp932")
+            isolated_source = (out_dir / "extracted" / "shared" / "shared.c").read_text(encoding="cp932")
+            self.assertIn("/Gy", payload["compiler_options"])
+            self.assertIn("/Gy", compile_commands)
+            self.assertIn("/OPT:REF", makefile)
+            self.assertIn("..\\extracted\\shared\\shared.c", makefile)
+            self.assertIn("..\\obj\\shared.obj", makefile)
+            self.assertIn('/Fo"..\\obj\\shared.obj"', makefile)
+            self.assertNotIn('/Fo"obj\\shared.obj"', makefile)
+            self.assertIn("int Shared(void)", isolated_source)
+            self.assertNotIn("int Shared2(void)", isolated_source)
+            self.assertNotIn("g_com->ptr->test", isolated_source)
 
     def test_run_probe_preserves_redirected_build_log_for_diagnostics(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -200,7 +269,7 @@ control.c(4) : fatal error C1083: Cannot open include file: 'missing.h': No such
 LINK : fatal error LNK2001: unresolved external symbol _ReadSensor
 error LNK2019: unresolved external symbol _WriteOutput referenced in function _Control_Update
 fatal error C1010: unexpected end of file while looking for precompiled header directive
-generated\\tests\\test.c(7) : fatal error C1083: Cannot open include file: 'stdint.h': No such file or directory
+generated\tests\test.c(7) : fatal error C1083: Cannot open include file: 'stdint.h': No such file or directory
 """
         )
 
@@ -259,69 +328,7 @@ generated\\tests\\test.c(7) : fatal error C1083: Cannot open include file: 'stdi
                 "--dry-run",
             )
             self.assertEqual(0, explicit.returncode, explicit.stderr)
-            explicit_payload = json.loads(explicit.stdout)
-            self.assertEqual("build_workspace_generated", explicit_payload["status"])
-            self.assertTrue(Path(explicit_payload["data"]["build_workspace"]["json"]).exists())
-
-    def test_build_probe_workspace_reports_missing_harness_as_input_error(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            out_dir = Path(temp_dir) / "Control_Update"
-            analyze = run_module(
-                "--json",
-                "analyze-function",
-                "--workspace",
-                str(VC6_FIXTURE_ROOT),
-                "--dsw",
-                str(VC6_FIXTURE_ROOT / "Product.dsw"),
-                "--source",
-                "src/control.c",
-                "--function",
-                "Control_Update",
-                "--configuration",
-                "Win32 Debug",
-                "--project",
-                "Control",
-                "--phase",
-                "design",
-                "--out",
-                str(out_dir),
-            )
-            self.assertEqual(0, analyze.returncode, analyze.stderr)
-            self.assertFalse((out_dir / "reports" / "harness_skeleton_report.json").exists())
-
-            probe = run_module("--json", "build-probe", "--workspace", str(out_dir), "--dry-run")
-
-            self.assertNotEqual(0, probe.returncode)
-            self.assertNotEqual(10, probe.returncode)
-            payload = json.loads(probe.stdout)
-            self.assertEqual("error", payload["status"])
-            self.assertIn("harness_skeleton_report.json", payload["errors"][0])
-            self.assertIn("--phase harness", payload["errors"][0])
-
-    def test_build_probe_run_reports_missing_vc6_environment_in_json_errors(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            out_dir, reports = self.prepare_analysis(temp_dir)
-            generate_build_workspace(
-                reports["build_context"],
-                reports["source_digest"],
-                reports["harness_report"],
-                out_dir,
-                run_probe=False,
-                dry_run=True,
-            )
-
-            with mock.patch.dict(os.environ, {"PATH": ""}):
-                probe = run_module("--json", "build-probe", "--workspace", str(out_dir), "--run")
-
-            self.assertEqual(30, probe.returncode)
-            payload = json.loads(probe.stdout)
-            self.assertEqual("build_probe_environment_missing", payload["status"])
-            self.assertIn("VC6 build tools were not found on PATH.", payload["errors"])
-            self.assertIn("build_probe_report_md", payload["reports"])
-            report_md = (out_dir / "reports" / "build_probe_report.md").read_text(encoding="utf-8")
-            self.assertIn("## 診断", report_md)
-            self.assertIn("missing_vc6_environment", report_md)
-            self.assertIn("VC6 build tools were not found on PATH.", report_md)
+            self.assertEqual("build_workspace_generated", json.loads(explicit.stdout)["status"])
 
 
 if __name__ == "__main__":

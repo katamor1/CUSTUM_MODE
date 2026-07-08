@@ -16,6 +16,28 @@ Visual C++ 6.0 / C90 の既存Cプロジェクトで、指定関数の単体テ�
    - `既定プロジェクト`: ソースが複数プロジェクトに属する場合だけ指定します。
 4. 設定はWorkspace設定へ保存されます。User設定には書きません。
 
+## Quick Check
+
+機能設計中に関数単位の動作確認を軽く反復したい場合は、エディタ右クリックまたはコマンドパレットから `UnitTestRunner: Quick Check Current Function` / `UnitTestRunner: Quick Check Selected Function` を実行します。
+
+Quick Check は `analyze-function` を軽量 profile で呼び出し、`--finalize-dossier` を付けません。既定では `design` profile を使い、解析結果とテスト設計までを生成します。結果は `<outputRoot>/_quick/<source>_<function>_<hash>/reports/quick_summary.md` に整理されます。
+
+`quick_summary.md` には、関数のグローバル read/write 数、外部呼び出し候補、分岐候補、カバレッジ観点、スタブ候補、diagnostics、主要レポートへのパスが短くまとまります。
+
+レビュー前の正式確認へ進む場合は `UnitTestRunner: Full Gate for Current Function` を実行します。このコマンドは通常の出力workspaceで `--finalize-dossier` 付き解析を実行し、現行の dossier / review workflow をファイナルゲートとして使います。
+
+Quick Check 用の主な設定:
+
+```json
+{
+  "unitTestRunner.quickProfile": "design",
+  "unitTestRunner.quickOutputRoot": "",
+  "unitTestRunner.quickAutoOpenSummary": true
+}
+```
+
+`quickProfile` は `design`、`harness`、`build-dry-run` から選べます。`build-dry-run` は build workspace / build probe dry-run までで、生成テストの実行は行いません。
+
 ## 関数解析
 
 1. 対象の `.c` または `.cpp` ファイルを開きます。
@@ -59,9 +81,11 @@ Visual C++ 6.0 / C90 の既存Cプロジェクトで、指定関数の単体テ�
 |---|---|
 | Workflowパネルが表示されない | Activity Bar の `Unit Test Runner` を開き、拡張が有効か確認します。 |
 | ビューのデータ提供者が未登録と表示される | VSIX更新直後の再読み込み不足の可能性があります。`Developer: Reload Window` またはVS Code再起動を行います。 |
+| Quick Check summary が開かない | `UnitTestRunner: Open Quick Summary` を実行し、直近workspaceの `reports/quick_summary.md` が生成されているか確認します。 |
+| Quick Check summary が開かない | `UnitTestRunner: Open Quick Summary` を実行し、直近workspaceの `reports/quick_summary.md` が生成されているか確認します。 |
 | 設定確認から進まない | `.dsw` と `outputRoot` が未設定でないか確認します。 |
-| 生成物が本番ツリー内に出る | `outputRoot` を `sourceRoot` の外側へ変更します。 |
-| 関数名が解決されない | 関数名を選択して `Analyze Selected Function` を実行します。 |
+| 生成物が本番ツリー内に出る | `outputRoot` / `quickOutputRoot` を `sourceRoot` の外側へ変更します。 |
+| 関数名が解決されない | 関数名を選択して `Analyze Selected Function` または `Quick Check Selected Function` を実行します。 |
 | CLIが見つからない | CLI同梱VSIXを使うか、外部CLIの絶対パスを `cliPath` に設定します。 |
 
 詳細な利用手順はリポジトリの `docs/vscode_usage_guide.md` を参照してください。
