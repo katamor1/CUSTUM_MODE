@@ -32,7 +32,20 @@ UTR SUMMARY total=2 passed=1 failed=1 skipped=0 inconclusive=0
         self.assertEqual("passed", cases["TC_Shared3_001"].status)
         self.assertEqual("failed", cases["TC_Shared3_002"].status)
 
-    def test_enhanced_runner_emits_flush_ok_failed_and_summary(self):
+    def test_parser_marks_run_without_completion_as_crashed_on_nonzero_exit(self):
+        parsed = parse_runner_output("UTR RUN TC_Shared3_001\n", exit_code=3221225477)
+
+        self.assertEqual(1, parsed.summary.total)
+        self.assertEqual(0, parsed.summary.passed)
+        self.assertEqual(1, parsed.summary.crashed)
+        self.assertEqual(1, parsed.summary.started)
+        self.assertEqual(0, parsed.summary.completed)
+        self.assertEqual("low", parsed.summary.parser_confidence)
+        self.assertEqual("crashed", parsed.case_results[0].status)
+        self.assertTrue(parsed.case_results[0].exit_related)
+        self.assertIn("exit_code=3221225477", parsed.case_results[0].evidence)
+
+    def test_enhanced_runner_emits_flush_ok_failed_summary_and_case_mode(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             (workspace / "generated" / "harness").mkdir(parents=True)
@@ -60,6 +73,8 @@ UTR SUMMARY total=2 passed=1 failed=1 skipped=0 inconclusive=0
             self.assertIn('printf("UTR SUMMARY total=%d passed=%d failed=%d skipped=%d inconclusive=%d\\n"', text)
             self.assertIn("fflush(stdout);", text)
             self.assertIn("static int utr_test_count = 1;", text)
+            self.assertIn("int Utr_RunNamedTest", text)
+            self.assertIn('strcmp(argv[1], "--case")', text)
 
 
 if __name__ == "__main__":
