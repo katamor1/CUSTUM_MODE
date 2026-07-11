@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from unit_test_runner.c_analyzer.object_definition_finder import find_file_scope_object_definitions
 from unit_test_runner.encoding import decode_bytes_auto
 from unit_test_runner.harness.c90_writer import sha256_file
+from unit_test_runner.process_control import run_process_tree
 
 from .build_models import (
     BuildCommand,
@@ -23,6 +25,7 @@ from .build_models import (
     WorkspaceFile,
 )
 from .build_report_writer import write_build_reports, write_build_text
+from .dependency_rewriter import rewrite_dependency_calls
 from .log_parser import parse_build_log
 from .verification_toolchain import render_verification_build_info, run_verification_build
 
@@ -52,22 +55,40 @@ def generate_build_workspace(
     function_name = harness_report.get("function", {}).get("name") or "unknown_function"
     diagnostics: list[BuildDiagnostic] = []
     copied_files = _copy_target_and_headers(output_root, source_path, source_digest, build_context, function_name, diagnostics)
+    _copy_dependency_sources(output_root, build_context, harness_report, copied_files, diagnostics)
     generated_files = _copy_or_verify_generated_files(output_root, harness_report, diagnostics)
+    dependency_rewrite_blocked = _rewrite_target_dependency_calls(
+        output_root,
+        copied_files,
+        harness_report,
+        diagnostics,
+    )
     generated_files.extend(_generate_extern_global_definitions(output_root, copied_files, diagnostics))
     include_dirs = _include_dirs(output_root, build_context)
     defines = _defines(build_context)
     compiler_options = _compiler_options(build_context)
     compile_units = _compile_units(output_root, copied_files, generated_files, include_dirs, defines, compiler_options)
     build_commands = _write_build_files(output_root, compile_units, include_dirs, defines, compiler_options, vcvars, dry_run, toolchain, cc)
-    status = "partial" if any(item.severity == "error" for item in diagnostics) else "generated"
+    if dependency_rewrite_blocked:
+        status = "blocked"
+    else:
+        status = "partial" if any(item.severity == "error" for item in diagnostics) else "generated"
     workspace_report = BuildWorkspaceReport(source_path, function_name, status, output_root, copied_files, [], [], compile_units, [unit.object_file for unit in compile_units], include_dirs, defines, compiler_options, build_commands, diagnostics)
-    probe_report = _build_probe_report(output_root, source_path, function_name, build_commands, compile_units, include_dirs, defines, compiler_options, harness_report, run_probe, dry_run, timeout_seconds, vcvars, toolchain, cc)
+    if dependency_rewrite_blocked:
+        probe_report = _blocked_dependency_rewrite_probe(
+            output_root,
+            source_path,
+            function_name,
+            diagnostics,
+        )
+    else:
+        probe_report = _build_probe_report(output_root, source_path, function_name, build_commands, compile_units, include_dirs, defines, compiler_options, harness_report, run_probe, dry_run, timeout_seconds, vcvars, toolchain, cc)
     write_build_reports(output_root, workspace_report, probe_report)
     return workspace_report, probe_report
 
 
 def _ensure_layout(output_root: Path) -> None:
-    for relative in ["build", "obj", "bin", "logs", "extracted", "generated", "reports"]:
+    for relative in ["build", "obj", "bin", "logs", "extracted", "generated", "generated/dependencies", "reports"]:
         (output_root / relative).mkdir(parents=True, exist_ok=True)
 
 
@@ -435,8 +456,11 @@ def _extern_variable_declarations(text: str) -> list[tuple[str, str, str]]:
 
 
 def _target_source_defines_name(name: str, target_source_texts: list[str]) -> bool:
-    pattern = re.compile(rf"(?m)^\s*(?!extern\b)[^;\n()]*\b{re.escape(name)}\b\s*(?:\[[^\]]*\])?\s*(?:=|;)")
-    return any(pattern.search(text) for text in target_source_texts)
+    return any(
+        definition.name == name
+        for text in target_source_texts
+        for definition in find_file_scope_object_definitions(text)
+    )
 
 
 def _extern_definition_line(prefix: str, name: str, array: str) -> str:
@@ -450,10 +474,130 @@ def _relative_include_from_generated_stubs(header_workspace_path: Path) -> str:
     return (Path("../..") / header_workspace_path).as_posix()
 
 
+
+def _copy_dependency_sources(
+    output_root: Path,
+    build_context: dict[str, Any],
+    harness_report: dict[str, Any],
+    copied_files: list[WorkspaceFile],
+    diagnostics: list[BuildDiagnostic],
+) -> None:
+    """Copy real dependency C files required by generated dispatchers.
+
+    Header-reference builds replace this hook with a version that also records the
+    original header directories. The base implementation intentionally copies only
+    C implementation files.
+    """
+    workspace_root = Path(build_context.get("workspace_root") or "")
+    target_sources = {
+        item.source_path.resolve()
+        for item in copied_files
+        if item.file_kind == "target_source" and item.source_path is not None and item.source_path.exists()
+    }
+    seen: set[Path] = set()
+    for dispatch in harness_report.get("dependency_dispatches", []):
+        if not dispatch.get("real_available") or not dispatch.get("implementation_source"):
+            continue
+        source = Path(str(dispatch["implementation_source"]))
+        if not source.is_absolute():
+            source = workspace_root / source
+        try:
+            source = source.resolve()
+        except OSError:
+            pass
+        if source in target_sources or source in seen:
+            continue
+        seen.add(source)
+        if not source.is_file():
+            diagnostics.append(
+                BuildDiagnostic(
+                    "missing_dependency_source",
+                    "error",
+                    f"Real dependency source is missing: {source}",
+                    source,
+                    None,
+                    None,
+                )
+            )
+            continue
+        relative = _relative_or_name(source, workspace_root) if workspace_root.as_posix() else Path(source.name)
+        workspace_path = Path("extracted/dependencies") / relative
+        _copy_file(source, output_root / workspace_path, copied_files, workspace_path, "dependency_source", diagnostics)
+
+
+def _rewrite_target_dependency_calls(
+    output_root: Path,
+    copied_files: list[WorkspaceFile],
+    harness_report: dict[str, Any],
+    diagnostics: list[BuildDiagnostic],
+) -> bool:
+    dispatches = list(harness_report.get("dependency_dispatches", []))
+    if not dispatches:
+        return False
+    blocked = False
+    for item in copied_files:
+        if item.file_kind != "target_source" or not item.exists:
+            continue
+        path = output_root / item.workspace_path
+        try:
+            original = decode_bytes_auto(path.read_bytes())
+        except OSError as exc:
+            diagnostics.append(BuildDiagnostic("dependency_call_rewrite_failed", "error", f"Could not read extracted target source: {exc}", item.workspace_path, None, None))
+            blocked = True
+            continue
+        rewritten, issues = rewrite_dependency_calls(original, dispatches)
+        for issue in issues:
+            diagnostics.append(
+                BuildDiagnostic(
+                    "dependency_call_rewrite_failed",
+                    "error",
+                    f"{issue.code}: {issue.message}",
+                    item.workspace_path,
+                    None,
+                    None,
+                )
+            )
+            blocked = True
+        if rewritten == original:
+            continue
+        path.write_text(rewritten, encoding="cp932", errors="replace")
+        item.sha256 = sha256_file(path)
+    return blocked
+
+
+def _blocked_dependency_rewrite_probe(
+    output_root: Path,
+    source_path: Path,
+    function_name: str,
+    diagnostics: list[BuildDiagnostic],
+) -> BuildProbeReport:
+    rewrite_diagnostics = [
+        item for item in diagnostics if item.code == "dependency_call_rewrite_failed"
+    ]
+    log_path = output_root / "logs" / "build.log"
+    lines = ["BUILD BLOCKED", "Dependency call rewriting failed; no compiler was started."]
+    lines.extend(item.message for item in rewrite_diagnostics)
+    log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return BuildProbeReport(
+        source_path,
+        function_name,
+        "blocked",
+        False,
+        None,
+        [],
+        rewrite_diagnostics,
+        [],
+        [],
+        [],
+        [],
+        [Path("logs/build.log")],
+    )
+
+
 def _copy_or_verify_generated_files(output_root: Path, harness_report: dict[str, Any], diagnostics: list[BuildDiagnostic]) -> list[WorkspaceFile]:
     files: list[WorkspaceFile] = []
     harness_root = Path(harness_report.get("output_root") or output_root)
-    allowed = {"assert_header", "assert_source", "runner_header", "runner_source", "stub_header", "stub_source", "test_header", "test_source", "target_invocation_header", "target_invocation_source"}
+    allowed = {"assert_header", "assert_source", "runner_header", "runner_source", "stub_header", "stub_source", "test_header", "test_source", "target_invocation_header", "target_invocation_source", "dependency_control_header", "dependency_dispatch_header", "dependency_dispatch_source"}
     for item in harness_report.get("generated_files", []):
         relative = Path(item.get("path", ""))
         kind = item.get("file_kind", "generated")
@@ -515,8 +659,8 @@ def _compiler_options(build_context: dict[str, Any]) -> list[str]:
 
 
 def _compile_units(output_root: Path, copied_files: list[WorkspaceFile], generated_files: list[WorkspaceFile], include_dirs: list[BuildPathEntry], defines: list[str], compiler_options: list[str]) -> list[CompileUnit]:
-    source_files = [item.workspace_path for item in copied_files if item.file_kind == "target_source" and item.exists]
-    source_files.extend(item.workspace_path for item in generated_files if item.exists and item.file_kind in {"assert_source", "runner_source", "stub_source", "test_source", "target_invocation_source", "extern_global_source"})
+    source_files = [item.workspace_path for item in copied_files if item.file_kind in {"target_source", "dependency_source", "external_object_source"} and item.exists]
+    source_files.extend(item.workspace_path for item in generated_files if item.exists and item.file_kind in {"assert_source", "runner_source", "stub_source", "test_source", "target_invocation_source", "extern_global_source", "dependency_dispatch_source"})
     units: list[CompileUnit] = []
     used_objects: set[str] = set()
     for index, source in enumerate(source_files):
@@ -557,7 +701,13 @@ def _build_probe_report(output_root: Path, source_path: Path, function_name: str
         return BuildProbeReport(source_path, function_name, "environment_missing", False, None, [], [diagnostic], [], [], [], [], [])
     started = datetime.now(timezone.utc)
     start_tick = time.monotonic()
-    completed = subprocess.run([_cmd_exe(), "/c", "build.bat"], cwd=output_root / "build", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout_seconds, check=False)
+    completed = run_process_tree(
+        [_cmd_exe(), "/c", "build.bat"],
+        cwd=output_root / "build",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout_seconds=timeout_seconds,
+    )
     duration_ms = int((time.monotonic() - start_tick) * 1000)
     finished = datetime.now(timezone.utc)
     log_path = output_root / "logs" / "build.log"
@@ -565,9 +715,15 @@ def _build_probe_report(output_root: Path, source_path: Path, function_name: str
         log_text = decode_bytes_auto(log_path.read_bytes())
     else:
         log_text = _decode_process_output(completed.stdout)
-        log_path.write_text(log_text, encoding="utf-8")
+    if completed.timed_out:
+        log_text += f"\nCommand timed out after {timeout_seconds} seconds. Process tree terminated.\n"
+    log_path.write_text(log_text, encoding="utf-8")
     parsed = parse_build_log(log_text, stub_candidates)
-    status = "succeeded" if completed.returncode == 0 else "failed"
+    diagnostics = list(parsed.diagnostics)
+    if completed.timed_out:
+        diagnostics.append(BuildDiagnostic("build_probe_timeout", "error", f"Build probe timed out after {timeout_seconds} seconds; the process tree was terminated.", None, None, None))
+    exit_code = 124 if completed.timed_out else (completed.returncode if completed.returncode is not None else 1)
+    status = "succeeded" if exit_code == 0 else "failed"
     return BuildProbeReport(
         source_path=source_path,
         function_name=function_name,

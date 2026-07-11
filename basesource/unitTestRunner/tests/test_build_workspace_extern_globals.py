@@ -77,11 +77,14 @@ class BuildWorkspaceExternGlobalsTests(unittest.TestCase):
             placeholder = out_dir / "generated" / "stubs" / "utr_extern_globals.c"
             self.assertTrue(placeholder.exists())
             text = placeholder.read_text(encoding="cp932")
-            self.assertIn('#include "../../extracted/shared/shared2.h"', text)
+            self.assertIn('#include "shared2.h"', text)
+            self.assertNotIn("../../extracted/shared/shared2.h", text)
+            self.assertFalse((out_dir / "extracted" / "shared" / "shared2.h").exists())
             self.assertIn("gbl_com * g_com = {0};", text)
             compile_sources = {unit.source_file.as_posix() for unit in report.compile_units}
             self.assertIn("generated/stubs/utr_extern_globals.c", compile_sources)
             makefile = (out_dir / "build" / "Makefile").read_text(encoding="cp932")
+            self.assertIn(str(shared.resolve()).replace("/", "\\"), makefile)
             self.assertIn("..\\generated\\stubs\\utr_extern_globals.c", makefile)
             self.assertIn("..\\obj\\utr_extern_globals.obj", makefile)
 
@@ -105,6 +108,62 @@ class BuildWorkspaceExternGlobalsTests(unittest.TestCase):
 
             self.assertFalse((out_dir / "generated" / "stubs" / "utr_extern_globals.c").exists())
             self.assertNotIn("generated/stubs/utr_extern_globals.c", {unit.source_file.as_posix() for unit in report.compile_units})
+
+    def test_target_assignment_is_not_mistaken_for_an_object_definition(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = Path(temp_dir) / "project"
+            source = project / "src" / "control.c"
+            header = project / "src" / "control.h"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                '#include "control.h"\n'
+                "int Control(int value)\n"
+                "{\n"
+                "    g_error_code = value;\n"
+                "    return g_error_code;\n"
+                "}\n",
+                encoding="ascii",
+            )
+            header.write_text("extern int g_error_code;\n", encoding="ascii")
+            out_dir = Path(temp_dir) / "out"
+            build_context = {
+                "workspace_root": str(project),
+                "include_dirs": ["src"],
+                "defines": [],
+                "compiler_options": [],
+            }
+            source_digest = {
+                "source": {"path": str(source)},
+                "preprocessor": {
+                    "includes": [{"name": "control.h", "resolved_candidates": [str(header)]}]
+                },
+            }
+            harness_report = {
+                "function": {"name": "Control"},
+                "source": {"path": str(source)},
+                "output_root": str(out_dir),
+                "generated_files": [],
+            }
+
+            report, _probe = generate_build_workspace(
+                build_context,
+                source_digest,
+                harness_report,
+                out_dir,
+                run_probe=False,
+                dry_run=True,
+            )
+
+            placeholder = out_dir / "generated" / "stubs" / "utr_extern_globals.c"
+            self.assertTrue(placeholder.exists())
+            self.assertEqual(
+                1,
+                placeholder.read_text(encoding="cp932").count("int g_error_code = {0};"),
+            )
+            self.assertIn(
+                "generated/stubs/utr_extern_globals.c",
+                {unit.source_file.as_posix() for unit in report.compile_units},
+            )
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from unit_test_runner.build.build_workspace_generator import generate_build_work
 from unit_test_runner.build.log_parser import parse_build_log
 from unit_test_runner.c_analyzer.source_digest import build_source_digest
 from unit_test_runner.dossier import analyze_function_workflow
+from unit_test_runner.process_control import ProcessTreeRunResult
 
 
 def run_module(*args):
@@ -92,7 +93,7 @@ class BuildWorkspaceGenerationTests(unittest.TestCase):
             self.assertTrue((out_dir / "reports" / "build_workspace_report.json").exists())
             self.assertTrue((out_dir / "reports" / "build_probe_report.json").exists())
 
-    def test_generator_mirrors_declared_include_dirs_into_extracted_workspace(self):
+    def test_generator_references_declared_include_dirs_without_copying_headers(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             project = Path(temp_dir) / "project"
             source = project / "src" / "control.c"
@@ -135,12 +136,15 @@ class BuildWorkspaceGenerationTests(unittest.TestCase):
                 dry_run=True,
             )
 
-            self.assertTrue((out_dir / "extracted" / "common" / "include" / "common.h").exists())
+            self.assertFalse((out_dir / "extracted" / "common" / "include" / "common.h").exists())
             self.assertFalse((out_dir / "extracted" / "include" / "common.h").exists())
-            include_dirs = {item.raw: item for item in report.include_dirs}
-            self.assertTrue((out_dir / include_dirs["common/include"].workspace_path).exists())
+            header_refs = [item for item in report.copied_files if item.file_kind == "target_header"]
+            self.assertEqual([header.resolve()], [item.source_path for item in header_refs])
+            self.assertFalse(header_refs[0].copied)
+            include_dirs = {Path(item.raw) for item in report.include_dirs if item.source in {"referenced_header_dir", "dsp_include"}}
+            self.assertIn(header.parent.resolve(), include_dirs)
             makefile = (out_dir / "build" / "Makefile").read_text(encoding="cp932")
-            self.assertIn('/I"..\\extracted\\common\\include"', makefile)
+            self.assertIn(str(header.parent.resolve()).replace("/", "\\"), makefile)
 
     def test_generator_enables_function_level_linking_for_unused_peer_functions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -216,10 +220,10 @@ class BuildWorkspaceGenerationTests(unittest.TestCase):
             def fake_run(*args, **kwargs):
                 build_dir = Path(kwargs["cwd"])
                 (build_dir.parent / "logs" / "build.log").write_text(diagnostic_log, encoding="utf-8")
-                return subprocess.CompletedProcess(args[0], 2, stdout="")
+                return ProcessTreeRunResult(2, "", None, False)
 
             with mock.patch("unit_test_runner.build.build_workspace_generator.shutil.which", return_value="tool.exe"):
-                with mock.patch("unit_test_runner.build.build_workspace_generator.subprocess.run", side_effect=fake_run):
+                with mock.patch("unit_test_runner.build.build_workspace_generator.run_process_tree", side_effect=fake_run):
                     _report, probe = generate_build_workspace(
                         reports["build_context"],
                         reports["source_digest"],
@@ -242,10 +246,10 @@ class BuildWorkspaceGenerationTests(unittest.TestCase):
             def fake_run(*args, **kwargs):
                 build_dir = Path(kwargs["cwd"])
                 (build_dir.parent / "logs" / "build.log").write_text("Build succeeded\n", encoding="utf-8")
-                return subprocess.CompletedProcess(args[0], 0, stdout="")
+                return ProcessTreeRunResult(0, "", None, False)
 
             with mock.patch("unit_test_runner.build.build_workspace_generator.shutil.which", return_value=None):
-                with mock.patch("unit_test_runner.build.build_workspace_generator.subprocess.run", side_effect=fake_run) as run:
+                with mock.patch("unit_test_runner.build.build_workspace_generator.run_process_tree", side_effect=fake_run) as run:
                     _report, probe = generate_build_workspace(
                         reports["build_context"],
                         reports["source_digest"],
