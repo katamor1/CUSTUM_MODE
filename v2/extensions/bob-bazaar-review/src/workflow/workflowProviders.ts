@@ -1,69 +1,85 @@
 import * as vscode from "vscode"
 import { captureReviewResult } from "../projectRules/resultCapture"
 import { openBazaarReviewGui } from "../ui/reviewGui"
+import {
+  startRetryRegistrationController,
+  type RegistrationAttemptResult
+} from "./retryRegistrationController"
 import { collectReviewContext, loadReviewRules } from "./workflowActions"
 import {
   captureOptionsFromCommandArgs,
   firstStringArg,
   getWorkflowRegisterApi,
-  initialTargetFromWorkflowInputs
+  initialTargetFromWorkflowInputs,
+  WORKFLOW_REGISTER_EXTENSION_ID,
+  type WorkflowActionProvider,
+  type WorkflowRegisterApi
 } from "./workflowRegisterBridge"
 
 const WORKFLOW_PROVIDER_RETRY_DELAYS_MS = [1000, 3000, 10000]
-let workflowProvidersRegistered = false
+const BAZAAR_PROVIDER_SOURCE_ID = "local.bob-bazaar-review"
 
 /**
  * workflow-register が利用できる場合に Bazaar レビュー用 action provider を登録する。
  *
- * provider ID は WORKFLOW.md から参照される互換性契約であり、再試行しても同じ ID だけを登録する。
- *
- * @param context GUI と review command handler に渡す VS Code extension context。
- * @returns なし。
+ * provider ID は WORKFLOW.md から参照される互換性契約であり、API世代が変わった場合だけ再登録する。
  */
 export function registerWorkflowProvidersWithRetry(context: vscode.ExtensionContext): void {
-  let retryIndex = 0
-  const attempt = (): void => {
-    registerWorkflowProviders(context)
-      .then((registered) => {
-        if (registered || retryIndex >= WORKFLOW_PROVIDER_RETRY_DELAYS_MS.length) return
-        const timer = setTimeout(() => attempt(), WORKFLOW_PROVIDER_RETRY_DELAYS_MS[retryIndex])
-        retryIndex += 1
-        context.subscriptions.push({ dispose: () => clearTimeout(timer) })
-      })
-      .catch((error) => console.warn("Bob Bazaar ワークフロー provider の登録に失敗しました", error))
-  }
-  context.subscriptions.push(vscode.extensions.onDidChange(() => attempt()))
-  attempt()
+  startRetryRegistrationController<WorkflowRegisterApi>({
+    retryDelaysMs: WORKFLOW_PROVIDER_RETRY_DELAYS_MS,
+    register: () => registerWorkflowProviders(context),
+    currentApi: () => {
+      const extension = vscode.extensions.getExtension<WorkflowRegisterApi>(WORKFLOW_REGISTER_EXTENSION_ID)
+      return extension?.isActive ? extension.exports : undefined
+    },
+    subscribeChanges: (listener) => vscode.extensions.onDidChange(listener),
+    own: (...registrations) => context.subscriptions.push(...registrations),
+    reportError: (error) => console.warn("Bob Bazaar ワークフロー provider の登録に失敗しました", error)
+  })
 }
 
-/**
- * workflow-register API へ Bazaar レビュー用 action provider を実際に登録する。
- *
- * workflow-register が未起動または未導入の場合は false を返し、呼び出し元の retry に任せる。
- *
- * @param context GUI と review command handler に渡す VS Code extension context。
- * @returns provider が既存または新規に登録済みなら true、workflow-register が使えない場合は false。
- */
-async function registerWorkflowProviders(context: vscode.ExtensionContext): Promise<boolean> {
-  if (workflowProvidersRegistered) return true
+/** workflow-register APIへBazaarレビュー用providerを一括登録する。 */
+async function registerWorkflowProviders(
+  context: vscode.ExtensionContext
+): Promise<RegistrationAttemptResult<WorkflowRegisterApi>> {
   const api = await getWorkflowRegisterApi()
-  if (!api) return false
-  api.registerActionProvider({
-    id: "bobBazaar.openReviewGui",
-    execute: (input) => openBazaarReviewGui(context, initialTargetFromWorkflowInputs(input.inputs, input))
-  })
-  api.registerActionProvider({
-    id: "bobBazaar.collectReviewContext",
-    execute: (input) => collectReviewContext(input)
-  })
-  api.registerActionProvider({
-    id: "bobBazaar.loadReviewRules",
-    execute: (input) => loadReviewRules(input)
-  })
-  api.registerActionProvider({
-    id: "bobBazaar.captureReviewResult",
-    execute: (input) => captureReviewResult(firstStringArg(input.args), captureOptionsFromCommandArgs([input]))
-  })
-  workflowProvidersRegistered = true
-  return true
+  if (!api) return { registered: false, registrations: [] }
+
+  const registrations: vscode.Disposable[] = []
+  try {
+    registerOwnedProvider(api, registrations, {
+      id: "bobBazaar.openReviewGui",
+      execute: (input) => openBazaarReviewGui(context, initialTargetFromWorkflowInputs(input.inputs, input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobBazaar.collectReviewContext",
+      execute: (input) => collectReviewContext(input)
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobBazaar.loadReviewRules",
+      execute: (input) => loadReviewRules(input)
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobBazaar.captureReviewResult",
+      execute: (input) => captureReviewResult(firstStringArg(input.args), captureOptionsFromCommandArgs([input]))
+    })
+    return { registered: true, registrations, api }
+  } catch (error) {
+    disposeRegistrations(registrations)
+    throw error
+  }
+}
+
+function registerOwnedProvider(
+  api: WorkflowRegisterApi,
+  registrations: vscode.Disposable[],
+  provider: WorkflowActionProvider
+): void {
+  const registration = api.registerActionProvider({ ...provider, sourceId: BAZAAR_PROVIDER_SOURCE_ID })
+  if (registration && typeof registration.dispose === "function") registrations.push(registration)
+}
+
+function disposeRegistrations(registrations: vscode.Disposable[]): void {
+  for (const registration of [...registrations].reverse()) registration.dispose()
+  registrations.length = 0
 }

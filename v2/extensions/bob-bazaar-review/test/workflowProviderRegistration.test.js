@@ -43,13 +43,48 @@ test("Bazaar capture command accepts workflow context appended by result sinks",
 })
 
 test("Bazaar workflow provider registration retries optional workflow-register integration", () => {
-  const source = readSourceSet(["extension.ts", "workflow/workflowProviders.ts"])
+  const source = readSourceSet([
+    "extension.ts",
+    "workflow/workflowProviders.ts",
+    "workflow/retryRegistrationController.ts"
+  ])
 
   assert.match(source, /registerWorkflowProvidersWithRetry\(context\)/)
   assert.match(source, /WORKFLOW_PROVIDER_RETRY_DELAYS_MS/)
   assert.match(source, /vscode\.extensions\.onDidChange/)
-  assert.match(source, /setTimeout\(\(\) => attempt\(\)/)
-  assert.match(source, /workflowProvidersRegistered/)
+  assert.match(source, /setTimeout\(/)
+  assert.match(source, /timers\.delete\(timer\)/)
+  assert.match(source, /providersRegistered/)
+})
+
+test("Bazaar provider retry lifecycle recovers restarts and disposes stale or late registrations", () => {
+  const source = readSourceSet([
+    "workflow/workflowProviders.ts",
+    "workflow/retryRegistrationController.ts"
+  ])
+
+  assert.match(source, /let disposed = false/)
+  assert.match(source, /let generation = 0/)
+  assert.match(source, /let registeredApi: Api \| undefined/)
+  assert.match(source, /let registrationAttempt: Promise<boolean> \| undefined/)
+  assert.match(source, /let activeRegistrations: DisposableLike\[\] = \[\]/)
+  assert.match(source, /const currentAttempt = performAttempt\(generation\)/)
+  assert.match(source, /if \(disposed \|\| attemptGeneration !== generation\)/)
+  assert.match(source, /disposeRegistrations\(result\.registrations\)/)
+  assert.match(source, /if \(registrationAttempt === currentAttempt\) registrationAttempt = undefined/)
+  assert.match(source, /currentApi === registeredApi/)
+  assert.match(source, /disposeRegistrations\(activeRegistrations\)/)
+  assert.doesNotMatch(source, /^let workflowProviderRegistrationAttempt/m)
+})
+
+test("Bazaar workflow providers declare ownership and register disposables", () => {
+  const source = readSourceSet(["workflow/workflowRegisterBridge.ts", "workflow/workflowProviders.ts"])
+
+  assert.match(source, /const BAZAAR_PROVIDER_SOURCE_ID = "local\.bob-bazaar-review"/)
+  assert.match(source, /sourceId: BAZAAR_PROVIDER_SOURCE_ID/)
+  assert.match(source, /const registrations: vscode\.Disposable\[\] = \[\]/)
+  assert.match(source, /disposeRegistrations\(registrations\)/)
+  assert.match(source, /context\.subscriptions\.push\(\.\.\.registrations\)/)
 })
 
 test("Bazaar workflow template starts review target selection from the GUI by default", () => {

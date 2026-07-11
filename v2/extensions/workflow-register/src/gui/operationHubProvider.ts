@@ -1,7 +1,7 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import * as vscode from "vscode"
-import type { WorkflowRegisterApi } from "../extension"
+import type { CoreWorkflowDefinition } from "../core/model"
 import { FileRunStateStore } from "../core/runStateStore"
 import { fallbackWorkspaceRootCandidates, findWorkflowRootCandidates, MarkerRootCandidate } from "../core/workspaceRoots"
 import { renderOperationHubHtml } from "./operationHubHtml"
@@ -13,8 +13,12 @@ import {
   OperationHubSetupState
 } from "./operationHubModel"
 
+interface OperationHubWorkflowApi {
+  listWorkflows: () => CoreWorkflowDefinition[]
+}
+
 interface OperationHubProviderOptions {
-  api: WorkflowRegisterApi
+  api: OperationHubWorkflowApi
   extensionUri: vscode.Uri
 }
 

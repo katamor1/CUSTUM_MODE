@@ -418,3 +418,11 @@ npm run package:metrics
 - `docs/workflow-authoring-guide-ja.md`
 - `extensions/workflow-register/README.md`
 - `extensions/README.md`
+
+<!-- REMEDIATION-2026-07-11 -->
+## Integration and process safety
+
+- Companion extensions are optional unless the command explicitly needs them; provider registration retries after delayed activation.
+- Workflow providers are owner-scoped, reject duplicate IDs, and are disposed with the extension lifecycle.
+- Git and Bazaar subprocesses have bounded output, hard timeouts, cancellation, and process-tree termination.
+- Release validation runs on both Ubuntu and Windows, while IBM Bob UI/MCP checks remain a release-candidate real-machine gate.

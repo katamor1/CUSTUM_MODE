@@ -167,8 +167,18 @@ export function validateTraceabilityCatalog(catalog: TraceabilityCatalog): Trace
       errors.push(
         issue(
           "error",
-          "missing_na_reason",
-          `accepted n/a decision for '${decision.subject}' must include a reason`,
+          "missing_decision_reason",
+          `accepted ${decision.decision} decision for '${decision.subject}' must include a reason`,
+          decision.subject
+        )
+      )
+    }
+    if (decision.decision === "tbd") {
+      warnings.push(
+        issue(
+          "warning",
+          "tbd_decision",
+          `decision for '${decision.subject}' gate '${decision.gate}' is TBD and must be resolved later`,
           decision.subject
         )
       )
@@ -243,7 +253,7 @@ function addGateIssues(
     (link) => link.status === "accepted" && link.from && link.to
   ) as Array<TraceabilityLink & { from: string; to: string }>
   const decisions = (catalog.decisions ?? []).filter(
-    (decision) => decision.status === "accepted" && decision.decision === "n/a"
+    (decision) => decision.status === "accepted" && (decision.decision === "n/a" || decision.decision === "tbd")
   )
 
   for (const [id, item] of acceptedItems) {
@@ -252,13 +262,13 @@ function addGateIssues(
         !hasAcceptedLinkToType(id, "satisfies", "basic_design", links, acceptedItems) &&
         !hasAcceptedDecision(id, "basic_design", decisions)
       ) {
-        errors.push(issue("error", "missing_basic_design", `requirement '${id}' has no accepted basic-design link or n/a decision`, id))
+        errors.push(issue("error", "missing_basic_design", `requirement '${id}' has no accepted basic-design link or n/a/TBD decision`, id))
       }
       if (
         !hasAcceptedLinkToType(id, "verified_by", "test_spec", links, acceptedItems) &&
         !hasAcceptedDecision(id, "test", decisions)
       ) {
-        errors.push(issue("error", "missing_test", `requirement '${id}' has no accepted test link or n/a decision`, id))
+        errors.push(issue("error", "missing_test", `requirement '${id}' has no accepted test link or n/a/TBD decision`, id))
       }
     }
     if (
@@ -266,14 +276,14 @@ function addGateIssues(
       !hasAcceptedLinkToType(id, "elaborates", "detailed_design", links, acceptedItems) &&
       !hasAcceptedDecision(id, "detailed_design", decisions)
     ) {
-      errors.push(issue("error", "missing_detailed_design", `basic design '${id}' has no accepted detailed-design link or n/a decision`, id))
+      errors.push(issue("error", "missing_detailed_design", `basic design '${id}' has no accepted detailed-design link or n/a/TBD decision`, id))
     }
     if (
       item.type === "detailed_design" &&
       !hasAcceptedLinkToType(id, "verified_by", "test_spec", links, acceptedItems) &&
       !hasAcceptedDecision(id, "test", decisions)
     ) {
-      errors.push(issue("error", "missing_test", `detailed design '${id}' has no accepted test link or n/a decision`, id))
+      errors.push(issue("error", "missing_test", `detailed design '${id}' has no accepted test link or n/a/TBD decision`, id))
     }
     if (item.type === "qa_item") {
       if (
@@ -283,9 +293,10 @@ function addGateIssues(
           ["requirement", "basic_design", "detailed_design", "test_spec", "review_finding"],
           links,
           acceptedItems
-        )
+        ) &&
+        !hasAcceptedDecision(id, "clarifies", decisions)
       ) {
-        errors.push(issue("error", "missing_qa_clarifies", `QA item '${id}' has no accepted clarifies link`, id))
+        errors.push(issue("error", "missing_qa_clarifies", `QA item '${id}' has no accepted clarifies link or n/a/TBD decision`, id))
       }
       if (item.qa?.status === "answered") {
         warnings.push(issue("warning", "qa_answered_not_closed", `QA item '${id}' is answered but not closed`, id))
@@ -299,12 +310,13 @@ function addGateIssues(
           ["requirement", "basic_design", "detailed_design", "test_spec", "qa_item"],
           links,
           acceptedItems
-        )
+        ) &&
+        !hasAcceptedDecision(id, "reviewed_by", decisions)
       ) {
-        errors.push(issue("error", "missing_reviewed_by", `review finding '${id}' has no accepted reviewed_by link`, id))
+        errors.push(issue("error", "missing_reviewed_by", `review finding '${id}' has no accepted reviewed_by link or n/a/TBD decision`, id))
       }
-      if (!isResolvedReviewFinding(item)) {
-        errors.push(issue("error", "unresolved_review_finding", `review finding '${id}' is not closed`, id))
+      if (!isResolvedReviewFinding(item) && !hasAcceptedDecision(id, "resolution", decisions)) {
+        errors.push(issue("error", "unresolved_review_finding", `review finding '${id}' is not closed and has no accepted resolution n/a/TBD decision`, id))
       }
     }
   }

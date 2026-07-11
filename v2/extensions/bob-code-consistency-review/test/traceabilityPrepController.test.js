@@ -89,6 +89,26 @@ test("applyTraceabilityPrepAction rejects n/a approval without a reason", () => 
   assert.match(result.message, /reason/)
 })
 
+test("applyTraceabilityPrepAction defers eligible gate errors as accepted TBD decisions", () => {
+  const catalog = proposedCatalog()
+  const before = buildTraceabilityPrepModel(catalog)
+  assert.ok(before.report.errors.some((item) => item.code === "missing_detailed_design"))
+
+  const result = applyTraceabilityPrepAction(catalog, {
+    type: "deferIssue",
+    code: "missing_detailed_design",
+    subject: "BD-BD001-PAY-0001",
+    message: "basic design still needs a detailed design trace"
+  })
+
+  assert.equal(result.status, "ok")
+  assert.equal(result.catalog.decisions[0].decision, "tbd")
+  assert.equal(result.catalog.decisions[0].gate, "detailed_design")
+  assert.equal(result.catalog.decisions[0].status, "accepted")
+  assert.ok(result.model.report.warnings.some((item) => item.code === "tbd_decision"))
+  assert.ok(!result.model.report.errors.some((item) => item.code === "missing_detailed_design"))
+})
+
 test("buildTraceabilityPrepModel exposes QA and review gate issues for the Webview", () => {
   const catalog = proposedCatalog()
   catalog.items.push({

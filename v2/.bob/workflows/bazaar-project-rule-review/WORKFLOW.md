@@ -168,7 +168,6 @@ steps:
       - reviewRules
     stateRequired: true
     resultKey: reviewAnalysis
-    maxResultBytes: 20000
   - id: output-result
     title: review-result JSON と Markdown チェックリストを作成
     type: agent

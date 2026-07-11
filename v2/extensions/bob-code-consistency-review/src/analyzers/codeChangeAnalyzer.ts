@@ -1,21 +1,29 @@
 import { analyzeCppChanges } from "./cCppChangeAnalyzer"
+import { createCodeEvidenceBudget } from "./codeEvidenceBudget"
 import { analyzeGenericCodeEvidence } from "./genericCodeEvidenceAnalyzer"
 import { isCLikeLanguage } from "../core/languageClassifier"
 import { toPosixPath } from "../core/fileSystem"
+import { normalizeReviewProcessingLimits, type ReviewProcessingLimits } from "../core/limits"
 import type { CodeAnalysisResult } from "../core/analysisTypes"
 import type { DiffSummary } from "../core/diffTypes"
 import type { ReviewInput } from "../core/reviewTypes"
 
-type AnalyzeCodeChangesOptions = { workspaceRoot: string; textEncoding?: string }
+type AnalyzeCodeChangesOptions = {
+  workspaceRoot: string
+  textEncoding?: string
+  limits?: Partial<ReviewProcessingLimits>
+}
 
 export async function analyzeCodeChanges(
   diff: DiffSummary,
   reviewInput: ReviewInput,
   options: AnalyzeCodeChangesOptions
 ): Promise<CodeAnalysisResult> {
+  const limits = normalizeReviewProcessingLimits(options.limits)
+  const budget = createCodeEvidenceBudget(limits)
   const filteredDiff = filterDiffByRequestedLanguages(diff, reviewInput)
   const cLikeDiff = { ...filteredDiff, files: filteredDiff.files.filter((file) => isCLikeLanguage(file.language)) }
-  const cLikeAnalysis = await analyzeCppChanges(cLikeDiff, reviewInput, options)
+  const cLikeAnalysis = await analyzeCppChanges(cLikeDiff, reviewInput, { ...options, limits, budget })
   const filesWithDetailedEvidence = new Set(cLikeAnalysis.evidence.map((item) => toPosixPath(item.source ?? "")))
   const genericDiff = {
     ...filteredDiff,
@@ -23,7 +31,9 @@ export async function analyzeCodeChanges(
   }
   const genericAnalysis = analyzeGenericCodeEvidence(genericDiff, reviewInput, {
     startEvidenceIndex: cLikeAnalysis.evidence.length + 1,
-    startSymbolIndex: cLikeAnalysis.changedSymbols.length + 1
+    startSymbolIndex: cLikeAnalysis.changedSymbols.length + 1,
+    limits,
+    budget
   })
 
   return {

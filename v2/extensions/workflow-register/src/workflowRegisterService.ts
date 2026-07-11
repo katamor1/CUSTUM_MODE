@@ -1,7 +1,9 @@
 import * as vscode from "vscode"
 import { StepRuntime, type StepCompletionExpectation } from "./bobStepRuntime"
 import type { BobSourceLike } from "./bobApi"
-import { ActionProvider, createDefaultActionRegistry } from "./core/actionRegistry"
+import { createDefaultActionRegistry } from "./core/actionRegistry"
+import type { ActionProvider, ActionProviderRegistration } from "./core/actionRegistry"
+import { ActionProviderRegistrationStore } from "./core/actionProviderRegistrationStore"
 import type { AgentProvider, CoreWorkflowDefinition } from "./core/model"
 import type { ResultSinkRegistry } from "./core/resultSinkRegistry"
 import {
@@ -38,6 +40,7 @@ export class WorkflowRegisterService implements vscode.Disposable {
     executeCommand: (command, ...args) => vscode.commands.executeCommand(command, ...args)
   })
   private readonly customResultSinks: Array<{ type: string; handler: Parameters<ResultSinkRegistry["register"]>[1] }> = []
+  private readonly actionProviderRegistrations = new ActionProviderRegistrationStore()
   private readonly manualStepPanel: ManualStepPanelController
   private readonly runtimeFactory: WorkflowRuntimeFactory
   private readonly runCommands: WorkflowRunCommandService
@@ -87,6 +90,12 @@ export class WorkflowRegisterService implements vscode.Disposable {
 
   dispose(): void {
     this.watcher.dispose()
+    this.manualStepPanel.dispose()
+    try {
+      this.actionProviderRegistrations.dispose()
+    } catch (error) {
+      console.warn("Failed to dispose one or more workflow action providers", error)
+    }
     const source = this.registeredSource
     this.registeredSource = undefined
     void deactivateRegisteredSource(source)
@@ -126,8 +135,8 @@ export class WorkflowRegisterService implements vscode.Disposable {
     return this.runCommands.openManualStepPanel(runArg)
   }
 
-  registerActionProvider(provider: ActionProvider): void {
-    this.actionRegistry.register(provider)
+  registerActionProvider(provider: ActionProvider): ActionProviderRegistration {
+    return this.actionProviderRegistrations.track(this.actionRegistry.register(provider))
   }
 
   registerAgentProvider(provider: AgentProvider): void {

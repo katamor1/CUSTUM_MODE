@@ -410,3 +410,16 @@ file basename は `review_id` を sanitize して作る。`review_id` が無い�
 - workspace resolver を変更する場合は multi-root の `.bob` / `.bzr` 分離動作を確認する。
 - result capture を変更する場合は workflow-register result handoff 互換、`args[0]` 入力、`workflowRoot` 保存先を確認する。
 - dependency を追加・削除する場合は `unused:policy` と `package:metrics` の結果を確認し、VSIX size 差分を release / PR summary に残す。
+
+<!-- REMEDIATION-2026-07-11 -->
+## 2026-07-11 横断修正契約
+
+3拡張の横断レビューに基づき、次をリリース契約とする。
+
+- IBM Bob と companion extension は、機能上必須でない場合は soft dependency とし、未導入でも通常 command を起動できること。
+- workflow action provider は所有元 source ID を持ち、同一 ID の無警告上書きを禁止する。登録解除用 disposable を返し、extension 停止時に解除する。
+- Git / Bazaar 外部プロセスは shell を使わず、hard timeout、出力上限、AbortSignal、子プロセス終了を必須とする。
+- Bazaar repository path は POSIX / Windows の絶対 path、drive-relative path、UNC、device path、dot / traversal / control-character segment を拒否する。
+- review processing limit は manifest と runtime で同じ最小・既定・最大値を持つ。UTF-8 切り詰め後の suffix を含めても byte 上限を超えないこと。
+- repository 内の全 WORKFLOW.md を strict validation し、provider、preflight、nested command ID、template mirror の契約ずれを CI で拒否する。
+- Ubuntu と Windows の両方で compile、unit test、VSIX package、package policy を確認する。IBM Bob 実環境の UI / task / MCP は release candidate 実機ゲートで確認する。

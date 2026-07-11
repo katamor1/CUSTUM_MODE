@@ -499,3 +499,13 @@ bazaar_test/branch2/
 | P1 | workflow-register provider、Bob Workflow UI、MCP initialize / tools/list、multi-root、Phase 1 record / triage / summary。 |
 | P2 | revisionRange、working tree、Shift-JIS / CP932、diff / added file truncation。 |
 | P3 | file save fallback、Bob 拡張なし fallback、unsafe input、OS 差分。 |
+
+<!-- REMEDIATION-2026-07-11 -->
+## 2026-07-11 追加リリースゲート
+
+1. Windows と Ubuntu の CI が成功していること。
+2. timeout / cancel 後に Git / Bazaar 子プロセスが残留しないこと。
+3. companion extension を無効化した状態で通常 command が起動し、再有効化後に provider が回復すること。
+4. multi-root workspace で Bob root と VCS root が混同されないこと。
+5. IBM Bob 実環境で workflow source、step review、result handoff、MCP、Webview の代表 smoke を実施し、結果を release evidence に保存すること。
+6. workflow-contracts CI が repository 内の全対象 WORKFLOW.md を検証し成功していること。

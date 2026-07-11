@@ -200,6 +200,7 @@ function invokeAction(action, args) {
   else if (action === 'approveDecision') approveDecision(args[0], args[1]);
   else if (action === 'rejectDecision') rejectDecision(args[0], args[1]);
   else if (action === 'restoreDecision') restoreDecision(args[0], args[1]);
+  else if (action === 'deferIssue') deferIssue(args[0], args[1], args[2]);
   else if (action === 'approveDomain') approveDomain(args[0]);
   else if (action === 'rejectDomain') rejectDomain(args[0]);
   else if (action === 'restoreDomain') restoreDomain(args[0]);
@@ -251,6 +252,10 @@ function rejectDecision(subject, gate) {
 
 function restoreDecision(subject, gate) {
   send({ type: 'restoreDecision', subject: subject, gate: gate });
+}
+
+function deferIssue(code, subject, message) {
+  send({ type: 'deferIssue', code: code, subject: subject, message: message });
 }
 
 function approveDomain(code) {
@@ -358,13 +363,15 @@ function renderDecisions() {
         + actionButton('rejectDecision', [decision.subject, decision.gate], 'Reject', true)
       : '';
     actions += restoreButtonIfChanged(decision, original, 'restoreDecision', [decision.subject, decision.gate]);
-    return row(decision.subject, decision.status, escapeHtml(decision.gate + ' / ' + (decision.reason || '')), actions);
+    return row(decision.subject, decision.status, escapeHtml(decision.decision + ' / ' + decision.gate + ' / ' + (decision.reason || '')), actions);
   }).join('') + '</div>';
 }
 
 function renderGate() {
   content.innerHTML = [
-    '<h2>Gate Report</h2><h3>Errors</h3>',
+    '<h2>Gate Report</h2>',
+    '<div class="meta">Missing traceability links can be carried forward as accepted TBD decisions. They remain warnings and should be resolved later.</div>',
+    '<h3>Errors</h3>',
     issues(model.report.errors, 'error'),
     '<h3>Warnings</h3>',
     issues(model.report.warnings, 'warning')
@@ -392,18 +399,34 @@ function renderPreview() {
 function issues(items, cls) {
   if (!items.length) return '<div class="meta">none</div>';
   return '<div class="table">' + items.map(function(item) {
+    const actions = cls === 'error' && canDeferIssue(item)
+      ? actionButton('deferIssue', [item.code, item.subject, item.message], 'Defer as TBD')
+      : '';
     return [
       '<div class="row ',
       cls,
-      '"><b>',
+      '"><div class="rowHead"><div><b>',
       escapeHtml(item.code),
       '</b><div>',
       escapeHtml(item.message),
       '</div><div class="meta">',
       escapeHtml(item.subject || ''),
-      '</div></div>'
+      '</div></div><div class="actions">',
+      actions,
+      '</div></div></div>'
     ].join('');
   }).join('') + '</div>';
+}
+
+function canDeferIssue(item) {
+  return !!item.subject && [
+    'missing_basic_design',
+    'missing_test',
+    'missing_detailed_design',
+    'missing_qa_clarifies',
+    'missing_reviewed_by',
+    'unresolved_review_finding'
+  ].includes(item.code);
 }
 
 function row(title, state, body, actions) {

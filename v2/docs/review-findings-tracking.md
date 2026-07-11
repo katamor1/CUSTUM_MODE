@@ -211,3 +211,16 @@
 | `6d0c788c` | `EXT-MAINT-L`, `WFR-MAINT-L` | add export-star source policy, workflow schema policy, and extension metrics PR reporting |
 | `b2a18d78` | `CCR-MAINT-M` | split document extractors, C/C++ analyzer helpers, and review-input/workspace command modules |
 | `47d0f06f` | `WFR-MAINT-L` | split workflow-register core schema, runtime, authoring, and snapshot implementation modules into stage directories |
+
+<!-- REMEDIATION-2026-07-11 -->
+## 2026-07-11 three-extension remediation
+
+| ID | Severity | Scope | Summary | Status | Verification |
+| --- | --- | --- | --- | --- | --- |
+| REM-H01 | High | bob-code-consistency-review | hard / soft dependency contract alignment and delayed provider recovery | implemented | soft-dependency and provider registration tests |
+| REM-H02 | High | bob-bazaar-review, bob-code-consistency-review | bounded Git / Bazaar process execution with timeout, cancellation and kill | implemented | externalProcessRunner and wiring tests |
+| REM-M01 | Medium | bob-bazaar-review | cross-platform repository-relative path boundary | implemented | bazaarClient Windows / POSIX path tests |
+| REM-M02 | Medium | workflow-register and companion extensions | provider ownership, duplicate rejection and disposal | implemented | actionRegistry and provider registration tests |
+| REM-M03 | Medium | repository workflows | dynamic strict provider-aware workflow contract CI | in_progress | workflowContractFiles.test.js and workflow-contracts workflow |
+| REM-M04 | Medium | CI / release | Ubuntu and Windows quality matrix, IBM Bob release-candidate gate | in_progress | extensions-quality workflow and real-machine evidence |
+| REM-M05 | Medium | bob-code-consistency-review | bounded manifest/runtime processing limits and byte-safe truncation | implemented | sizeLimits and limitsPolicy tests |

@@ -30,6 +30,7 @@ export async function runPreprocess(options?: unknown): Promise<unknown> {
   const bzrPath = resolveTrustedBzrPath(record, config.get<string>("bzrPath", "bzr"))
   const textEncoding = stringOption(record, "textEncoding") ?? config.get<string>("textEncoding", "auto")
   const workflowRunId = stringOption(record, "workflowRunId")
+  const commandTimeoutMs = numberOption(record, "vcsCommandTimeoutMs") ?? config.get<number>("vcsCommandTimeoutMs")
   const limits = {
     maxDocumentBytes: numberOption(record, "maxDocumentBytes") ?? config.get<number>("maxDocumentBytes"),
     maxWorkbookSheets: numberOption(record, "maxWorkbookSheets") ?? config.get<number>("maxWorkbookSheets"),
@@ -39,9 +40,30 @@ export async function runPreprocess(options?: unknown): Promise<unknown> {
     maxBobInputBytes: numberOption(record, "maxBobInputBytes") ?? config.get<number>("maxBobInputBytes")
   }
 
-  const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "コード整合レビュー用パッケージを作成しています" }, () =>
-    preprocessReview({ workspaceRoot, inputPath, outDir, diffFixturePath, bzrPath, textEncoding, limits, workflowRunId })
-  )
+  const result = await vscode.window.withProgress({
+    location: vscode.ProgressLocation.Notification,
+    title: "コード整合レビュー用パッケージを作成しています",
+    cancellable: true
+  }, async (_progress, token) => {
+    const controller = new AbortController()
+    const cancellation = token.onCancellationRequested(() => controller.abort())
+    try {
+      return await preprocessReview({
+        workspaceRoot,
+        inputPath,
+        outDir,
+        diffFixturePath,
+        bzrPath,
+        textEncoding,
+        limits,
+        workflowRunId,
+        commandTimeoutMs,
+        abortSignal: controller.signal
+      })
+    } finally {
+      cancellation.dispose()
+    }
+  })
   notifyInfoWithReport(result.summary, path.join(result.packageDir, "deterministic-checks.md"))
   return result
 }

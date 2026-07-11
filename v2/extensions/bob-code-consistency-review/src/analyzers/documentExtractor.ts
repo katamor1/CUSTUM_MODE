@@ -20,6 +20,7 @@ const ARTIFACT_TYPES: Record<string, { evidenceType: string; prefix: string; doc
   ledgers: { evidenceType: "ledger", prefix: "LEDGER", documentPrefix: "LEDGER" },
   tickets: { evidenceType: "ticket", prefix: "TICKET", documentPrefix: "TICKET" }
 }
+const AGGREGATE_EXCERPT_SUFFIX = "\n\n[truncated: aggregate maxBobInputBytes]\n"
 
 export async function extractDocuments(reviewInput: ReviewInput, options: { workspaceRoot: string; textEncoding?: string; limits?: Partial<ReviewProcessingLimits> }): Promise<DocumentExtractionResult> {
   const documents: DocumentMeta[] = []
@@ -28,6 +29,8 @@ export async function extractDocuments(reviewInput: ReviewInput, options: { work
   const warnings: string[] = []
   const counters = new Map<string, number>()
   const limits = normalizeReviewProcessingLimits(options.limits)
+  let excerptMarkdownBytes = 0
+  let aggregateBudgetExhausted = false
 
   for (const [artifactType, value] of Object.entries(reviewInput.artifacts)) {
     const typeInfo = ARTIFACT_TYPES[artifactType] ?? { evidenceType: artifactType, prefix: artifactType.toUpperCase(), documentPrefix: artifactType.toUpperCase() }
@@ -37,6 +40,7 @@ export async function extractDocuments(reviewInput: ReviewInput, options: { work
     }
 
     for (const item of value as ArtifactRef[]) {
+      if (aggregateBudgetExhausted) break
       if (!item.path) {
         warnings.push(`artifact ${artifactType} has no path; skipped`)
         continue
@@ -66,23 +70,47 @@ export async function extractDocuments(reviewInput: ReviewInput, options: { work
       for (const chunk of chunks) {
         const limitedChunk = limitChunkText(chunk, item.path, warnings, limits)
         const evidenceId = nextEvidenceId(typeInfo.prefix, counters)
+        const separatorBytes = excerpts.length > 0 ? Buffer.byteLength("\n", "utf8") : 0
+        const remainingBytes = Math.max(0, limits.maxBobInputBytes - excerptMarkdownBytes - separatorBytes)
+        const aggregateFit = fitExcerptWithinAggregateBudget(
+          evidenceId,
+          item.path,
+          item.version,
+          typeInfo.evidenceType,
+          limitedChunk,
+          remainingBytes
+        )
+        if (!aggregateFit) {
+          warnings.push(`document excerpts exhausted aggregate maxBobInputBytes (${limits.maxBobInputBytes}); remaining excerpts skipped.`)
+          aggregateBudgetExhausted = true
+          break
+        }
+        if (aggregateFit.truncated) {
+          warnings.push(`${toPosixPath(item.path)} ${chunk.ref} exceeded aggregate maxBobInputBytes (${limits.maxBobInputBytes}); excerpt truncated and remaining excerpts skipped.`)
+          aggregateBudgetExhausted = true
+        }
+
         const evidenceRef: EvidenceRef = {
           evidence_id: evidenceId,
           type: typeInfo.evidenceType,
-          ref: limitedChunk.ref,
+          ref: aggregateFit.chunk.ref,
           document_id: documentId,
           source: toPosixPath(item.path),
           version: item.version,
-          location: limitedChunk.location,
-          text: limitedChunk.text
+          location: aggregateFit.chunk.location,
+          text: aggregateFit.chunk.text
         }
         evidence.push(evidenceRef)
-        document.sections.push({ id: limitedChunk.ref, title: limitedChunk.title, evidence_id: evidenceId, location: limitedChunk.location })
-        excerpts.push(renderExcerpt(evidenceId, item.path, item.version, typeInfo.evidenceType, limitedChunk))
+        document.sections.push({ id: aggregateFit.chunk.ref, title: aggregateFit.chunk.title, evidence_id: evidenceId, location: aggregateFit.chunk.location })
+        excerpts.push(aggregateFit.markdown)
+        excerptMarkdownBytes += separatorBytes + Buffer.byteLength(aggregateFit.markdown, "utf8")
+        if (aggregateBudgetExhausted) break
       }
 
       documents.push(document)
     }
+
+    if (aggregateBudgetExhausted) break
   }
 
   return { documents, excerptsMarkdown: excerpts.join("\n"), evidence, warnings }
@@ -141,6 +169,31 @@ function limitChunkText(chunk: ExtractedChunk, sourcePath: string, warnings: str
   return { ...chunk, text: limited.text }
 }
 
+function fitExcerptWithinAggregateBudget(
+  evidenceId: string,
+  sourcePath: string,
+  version: string | undefined,
+  evidenceType: string,
+  chunk: ExtractedChunk,
+  remainingBytes: number
+): { chunk: ExtractedChunk; markdown: string; truncated: boolean } | undefined {
+  const fullMarkdown = renderExcerpt(evidenceId, sourcePath, version, evidenceType, chunk)
+  if (Buffer.byteLength(fullMarkdown, "utf8") <= remainingBytes) {
+    return { chunk, markdown: fullMarkdown, truncated: false }
+  }
+
+  const emptyChunk = { ...chunk, text: "" }
+  const emptyMarkdown = renderExcerpt(evidenceId, sourcePath, version, evidenceType, emptyChunk)
+  const fixedBytes = Buffer.byteLength(emptyMarkdown, "utf8")
+  if (fixedBytes > remainingBytes) return undefined
+
+  const textBudget = Math.max(0, remainingBytes - fixedBytes)
+  const limitedText = truncateUtf8Text(chunk.text, textBudget, AGGREGATE_EXCERPT_SUFFIX).text
+  const limitedChunk = { ...chunk, text: limitedText }
+  const markdown = renderExcerpt(evidenceId, sourcePath, version, evidenceType, limitedChunk)
+  return { chunk: limitedChunk, markdown, truncated: true }
+}
+
 function nextEvidenceId(prefix: string, counters: Map<string, number>): string {
   const next = (counters.get(prefix) ?? 0) + 1
   counters.set(prefix, next)
@@ -161,4 +214,3 @@ function renderExcerpt(evidenceId: string, sourcePath: string, version: string |
     ""
   ].filter((line): line is string => line !== undefined).join("\n")
 }
-

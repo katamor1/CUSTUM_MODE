@@ -2,11 +2,17 @@ import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { classifyLanguageFromPath, isCLikeLanguage } from "../core/languageClassifier"
 import { normalizeChangedFilePathStrict, pathExists, readTextFile, resolveWorkspacePathStrict, toPosixPath } from "../core/fileSystem"
+import { normalizeReviewProcessingLimits, type ReviewProcessingLimits } from "../core/limits"
 import type { CodeAnalysisResult } from "../core/analysisTypes"
 import type { DiffSummary } from "../core/diffTypes"
 import type { EvidenceRef } from "../core/documentTypes"
 import type { ReviewInput } from "../core/reviewTypes"
 import { renderCodeSlice, renderSummary } from "./cCppAnalysisRenderer"
+import {
+  createCodeEvidenceBudget,
+  reserveCodeEvidence,
+  type CodeEvidenceBudget
+} from "./codeEvidenceBudget"
 import { changedIdentifierTokens, diffLinesForFile, parseUnifiedDiff } from "./cCppDiffParser"
 import {
   changedRanges,
@@ -18,7 +24,12 @@ import {
   escapeRegExp
 } from "./cCppSymbolDetector"
 
-type AnalyzeCppChangesOptions = { workspaceRoot: string; textEncoding?: string }
+type AnalyzeCppChangesOptions = {
+  workspaceRoot: string
+  textEncoding?: string
+  limits?: Partial<ReviewProcessingLimits>
+  budget?: CodeEvidenceBudget
+}
 type SourceResolution = { filePath?: string; warning?: string }
 
 export async function analyzeCppChanges(
@@ -38,17 +49,27 @@ export async function analyzeCppChanges(
   const diffLines = parseUnifiedDiff(diff)
   const changedTokens = changedIdentifierTokens(diffLines)
   const sourceRoot = resolveSourceRoot(diff.vcsRoot, options.workspaceRoot, warnings)
+  const limits = normalizeReviewProcessingLimits(options.limits)
+  const budget = options.budget ?? createCodeEvidenceBudget(limits)
   let functionIndex = 1
   let codeEvidenceIndex = 1
   let cLikeFileSeen = false
 
+  fileLoop:
   for (const file of diff.files) {
+    if (budget.exhausted) break
     const language = file.language ?? classifyLanguageFromPath(file.path)
     if (!isCLikeLanguage(language)) continue
     cLikeFileSeen = true
     const resolved = await resolveSourceFile(sourceRoot, file.path)
     if (!resolved.filePath) {
       warnings.push(resolved.warning ?? `変更された C/C++ ファイルがワークスペース内で見つかりません: ${file.path}`)
+      continue
+    }
+
+    const sourceStat = await fs.stat(resolved.filePath)
+    if (sourceStat.size > limits.maxDocumentBytes) {
+      warnings.push(`${toPosixPath(file.path)} exceeded maxDocumentBytes (${sourceStat.size} > ${limits.maxDocumentBytes}); detailed C/C++ source analysis skipped.`)
       continue
     }
 
@@ -62,9 +83,26 @@ export async function analyzeCppChanges(
     for (const globalName of detectGlobalCandidates(lines, changedTokens)) globals.add(globalName)
 
     for (const range of changedRanges(ranges, fileDiffLines)) {
-      const functionId = `FUNC-${String(functionIndex++).padStart(4, "0")}`
-      const evidenceId = `SRC-${String(codeEvidenceIndex++).padStart(4, "0")}`
-      const callees = detectCallees(range.body.join("\n"), range.name)
+      if (budget.exhausted) break fileLoop
+      const functionId = `FUNC-${String(functionIndex).padStart(4, "0")}`
+      const evidenceId = `SRC-${String(codeEvidenceIndex).padStart(4, "0")}`
+      const rawBody = range.body.join("\n")
+      const ref = `${toPosixPath(file.path)}:${range.start}-${range.end}`
+      const reservation = reserveCodeEvidence({
+        label: ref,
+        text: rawBody,
+        render: (text) => renderCodeSlice(
+          evidenceId,
+          file.path,
+          { ...range, body: text.split(/\r?\n/) },
+          fileDiffLines
+        )
+      }, budget, warnings)
+      if (!reservation) break fileLoop
+      functionIndex += 1
+      codeEvidenceIndex += 1
+
+      const callees = detectCallees(rawBody, range.name)
       const callers = detectDirectCallers(ranges, range.name)
       for (const callee of callees) {
         callGraph.push({
@@ -83,15 +121,13 @@ export async function analyzeCppChanges(
         })
       }
 
-      const ref = `${toPosixPath(file.path)}:${range.start}-${range.end}`
-      const markdown = renderCodeSlice(evidenceId, file.path, range, fileDiffLines)
       codeSlices.push({
         evidence_id: evidenceId,
         file: toPosixPath(file.path),
         ref,
         functionName: range.name,
-        markdown,
-        text: range.body.join("\n")
+        markdown: reservation.markdown,
+        text: reservation.text
       })
       evidence.push({
         evidence_id: evidenceId,
@@ -99,7 +135,7 @@ export async function analyzeCppChanges(
         ref,
         source: toPosixPath(file.path),
         location: `${range.name}:${range.start}-${range.end}`,
-        text: range.body.join("\n")
+        text: reservation.text
       })
       changedSymbols.push({
         id: functionId,

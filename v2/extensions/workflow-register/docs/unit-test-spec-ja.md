@@ -241,3 +241,15 @@
 - `node --test test/*.test.js` が成功する。
 - 新規 run control / Run Control View 関連テストが既存 engine / snapshot テストと独立して実行できる。
 - テストデータは実 workspace や Bob task に依存しない。
+
+<!-- REMEDIATION-2026-07-11 -->
+## 2026-07-11 追加単体テスト契約
+
+| ID | 観点 | 期待結果 |
+| --- | --- | --- |
+| EXT-UT-REM-001 | soft dependency | companion extension 不在でも通常 command が利用でき、後から有効化すると provider 登録が回復する。 |
+| EXT-UT-REM-002 | provider ownership | 同一 ID の別所有元登録を拒否し、disposable 後は再登録できる。古い disposable は新登録を削除しない。 |
+| EXT-UT-REM-003 | external process | timeout、cancel、buffer exceed、非許可 exit code を分類し、子プロセスを終了する。 |
+| EXT-UT-REM-004 | Windows path | drive、UNC、device、drive-relative、dot、traversal、control-character path を拒否する。 |
+| EXT-UT-REM-005 | processing limits | manifest/runtime の範囲が一致し、極端値を clamp し、UTF-8 byte 上限を守る。 |
+| EXT-UT-REM-006 | workflow contracts | 全 workflow を動的探索し、未知 provider / command、strict warning、mirror drift を検出する。 |

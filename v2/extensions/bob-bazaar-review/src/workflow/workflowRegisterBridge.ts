@@ -21,11 +21,12 @@ export interface WorkflowActionExecutionInput {
 
 export interface WorkflowActionProvider {
   id: string
+  sourceId?: string
   execute: (input: WorkflowActionExecutionInput) => Promise<unknown> | unknown
 }
 
 export interface WorkflowRegisterApi {
-  registerActionProvider: (provider: WorkflowActionProvider) => void
+  registerActionProvider: (provider: WorkflowActionProvider) => vscode.Disposable | void
 }
 
 export async function getWorkflowRegisterApi(extensionId = WORKFLOW_REGISTER_EXTENSION_ID): Promise<WorkflowRegisterApi | undefined> {

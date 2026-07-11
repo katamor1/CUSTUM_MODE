@@ -16,7 +16,9 @@ export type TraceabilityLinkType =
   | "reviewed_by"
   | "references"
 
-export type TraceabilityGate = "basic_design" | "detailed_design" | "test"
+export type TraceabilityGate = "basic_design" | "detailed_design" | "test" | "clarifies" | "reviewed_by" | "resolution"
+
+export type TraceabilityDecisionKind = "n/a" | "tbd"
 
 export interface TraceabilityCatalog {
   schema_version: 1
@@ -83,7 +85,7 @@ export interface TraceabilityLink {
 export interface TraceabilityDecision {
   subject: string
   gate: TraceabilityGate
-  decision: "n/a"
+  decision: TraceabilityDecisionKind
   reason?: string
   status: TraceabilityStatus
 }

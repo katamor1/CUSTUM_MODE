@@ -1,0 +1,33 @@
+{
+  "schema_version": "bob-action-provider-contracts/v1",
+  "providers": {
+    "local.workflow-register": [
+      "vscode.executeCommand",
+      "workflowRegister.runMechanicalChecks"
+    ],
+    "local.bob-bazaar-review": [
+      "bobBazaar.openReviewGui",
+      "bobBazaar.collectReviewContext",
+      "bobBazaar.loadReviewRules",
+      "bobBazaar.captureReviewResult"
+    ],
+    "local.bob-code-consistency-review": [
+      "bobCodeConsistency.initializeWorkspace",
+      "bobCodeConsistency.createReviewInput",
+      "bobCodeConsistency.prepareAiReviewInputDraft",
+      "bobCodeConsistency.applyAiReviewInputDraft",
+      "bobCodeConsistency.prepareAiTraceabilityDraft",
+      "bobCodeConsistency.captureAiTraceabilityDraft",
+      "bobCodeConsistency.applyAiTraceabilityDraft",
+      "bobCodeConsistency.openTraceabilityPrep",
+      "bobCodeConsistency.validateTraceabilityCatalog",
+      "bobCodeConsistency.createReviewInputFromTraceability",
+      "bobCodeConsistency.repairReviewInput",
+      "bobCodeConsistency.explainReviewInputDiagnostics",
+      "bobCodeConsistency.preprocess",
+      "bobCodeConsistency.captureBobOutput",
+      "bobCodeConsistency.validateOutput",
+      "bobCodeConsistency.triage"
+    ]
+  }
+}

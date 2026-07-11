@@ -101,7 +101,8 @@ export function resolveWorkspacePathStrict(workspaceRoot: string, value: string,
 export function normalizeChangedFilePathStrict(value: string, label = "changed file path"): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is empty`)
   if (/[\0-\x1F\x7F]/u.test(value)) throw new Error(`${label} contains control characters: ${value}`)
-  const normalizedSlashes = value.trim().replace(/\\/g, "/")
+  if (value.trim() !== value) throw new Error(`${label} contains outer whitespace: ${value}`)
+  const normalizedSlashes = value.replace(/\\/g, "/")
   if (
     normalizedSlashes.startsWith("/") ||
     normalizedSlashes.startsWith("//") ||
@@ -126,15 +127,27 @@ export function normalizeChangedFilePathStrict(value: string, label = "changed f
 export function resolveWorkspacePathForKind(workspaceRoot: string, value: string, kind: WorkspacePathKind): string {
   const policy = WORKSPACE_PATH_POLICIES[kind]
   const root = path.resolve(workspaceRoot)
-  const trimmed = value.trim()
-  if (!trimmed) throw new Error(`${policy.label} is empty`)
-  if (path.isAbsolute(trimmed) || /^[A-Za-z]:/.test(trimmed)) {
+  if (!value.trim()) throw new Error(`${policy.label} is empty`)
+  if (/[\0-\x1F\x7F]/u.test(value)) throw new Error(`${policy.label} contains control characters: ${value}`)
+  if (value.trim() !== value) throw new Error(`${policy.label} contains outer whitespace: ${value}`)
+
+  const normalizedSlashes = toPosixPath(value)
+  if (
+    path.win32.isAbsolute(value) ||
+    path.posix.isAbsolute(normalizedSlashes) ||
+    /^[A-Za-z]:/.test(value)
+  ) {
     throw new Error(`${policy.label} must be a workspace-relative path; absolute paths are not allowed: ${value}`)
   }
 
-  const normalized = toPosixPath(path.normalize(trimmed))
-  const segments = normalized.split("/").filter((segment) => segment && segment !== ".")
+  const segments = normalizedSlashes.split("/")
   if (segments.some((segment) => segment === "..")) throw new Error(`${policy.label} escapes workspace: ${value}`)
+  if (segments.some((segment) => segment.length === 0 || segment === ".")) {
+    throw new Error(`${policy.label} contains empty or . segments: ${value}`)
+  }
+  if (segments.some((segment) => segment.trim() !== segment)) {
+    throw new Error(`${policy.label} contains segment whitespace: ${value}`)
+  }
 
   const resolved = path.resolve(root, ...segments)
   if (!isInsidePath(root, resolved)) throw new Error(`${policy.label} escapes workspace: ${value}`)

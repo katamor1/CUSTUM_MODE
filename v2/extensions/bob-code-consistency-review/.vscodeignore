@@ -14,6 +14,7 @@ pnpm-lock.yaml
 # Local editor / test / build artifacts.
 .vscode/**
 .vscode-test/**
+.vscode-test.json
 coverage/**
 .tmp/**
 tmp/**

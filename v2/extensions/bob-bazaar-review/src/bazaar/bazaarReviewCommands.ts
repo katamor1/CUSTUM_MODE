@@ -24,8 +24,8 @@ export async function reviewRevision(context: vscode.ExtensionContext, withProje
   })
   if (!revision) return
 
-  await withProgress("Bazaar 1リビジョンレビュー packet を作成しています", async () => {
-    const client = makeBazaarClient()
+  await withProgress("Bazaar 1リビジョンレビュー packet を作成しています", async (signal) => {
+    const client = makeBazaarClient(signal)
     const [prepared, projectRulesSection] = await Promise.all([
       prepareTarget(client, bazaarFolder.uri.fsPath, { mode: "singleRevision", revision }, {
         includeAddedFiles: true,
@@ -73,8 +73,8 @@ export async function reviewRange(context: vscode.ExtensionContext, withProjectR
   })
   if (!targetRevision) return
 
-  await withProgress("Bazaar リビジョン範囲レビュー packet を作成しています", async () => {
-    const client = makeBazaarClient()
+  await withProgress("Bazaar リビジョン範囲レビュー packet を作成しています", async (signal) => {
+    const client = makeBazaarClient(signal)
     const [prepared, projectRulesSection] = await Promise.all([
       prepareTarget(client, bazaarFolder.uri.fsPath, { mode: "revisionRange", baseRevision, targetRevision }, {
         includeAddedFiles: true,
@@ -117,12 +117,14 @@ async function buildProjectRulesSectionForWorkspace(workspaceRoot: string): Prom
   return buildProjectRulesSection({ checklist, schema })
 }
 
-function makeBazaarClient(): BazaarClient {
+function makeBazaarClient(signal?: AbortSignal): BazaarClient {
   const config = vscode.workspace.getConfiguration("bobBazaar")
   return new BazaarClient({
     bzrPath: resolveBzrPath(config, vscode.workspace.isTrusted),
     maxBuffer: maxBufferForDiffBytes(getMaxDiffBytes()),
-    textEncoding: config.get<string>("textEncoding", "auto")
+    textEncoding: config.get<string>("textEncoding", "auto"),
+    timeoutMs: config.get<number>("commandTimeoutMs", 120_000),
+    signal
   })
 }
 
@@ -195,6 +197,18 @@ async function addPacketToBobContext(uri: vscode.Uri, packet: string) {
   }, uri, packet)
 }
 
-async function withProgress<T>(title: string, task: () => Promise<T>): Promise<T> {
-  return vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title }, task)
+async function withProgress<T>(title: string, task: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  return vscode.window.withProgress({
+    location: vscode.ProgressLocation.Notification,
+    title,
+    cancellable: true
+  }, async (_progress, token) => {
+    const controller = new AbortController()
+    const cancellation = token.onCancellationRequested(() => controller.abort())
+    try {
+      return await task(controller.signal)
+    } finally {
+      cancellation.dispose()
+    }
+  })
 }

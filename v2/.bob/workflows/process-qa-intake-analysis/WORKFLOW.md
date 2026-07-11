@@ -75,6 +75,7 @@ steps:
   - id: validate-catalog
     title: 工程カタログを検証
     type: command
+    prompt: 設定された工程カタログを検証し、利用可能な工程定義として読み込んでください。
     action:
       provider: vscode.executeCommand
       args:
@@ -87,6 +88,7 @@ steps:
   - id: load-process-input
     title: 工程入力を検証
     type: command
+    prompt: process-input.yaml を検証し、キャンペーンと対象工程の入力値を読み込んでください。
     action:
       provider: vscode.executeCommand
       args:
@@ -99,6 +101,7 @@ steps:
   - id: collect-evidence
     title: 受付資料をエビデンス化
     type: command
+    prompt: 対象工程の証跡を収集し、evidence-index.json を作成してください。
     action:
       provider: vscode.executeCommand
       args:
@@ -139,6 +142,7 @@ steps:
   - id: validate-review-result
     title: QA 分析結果を検証
     type: command
+    prompt: 工程レビュー結果を process-review-result/v1 と evidence index に照らして検証してください。
     action:
       provider: vscode.executeCommand
       args:
@@ -152,6 +156,7 @@ steps:
   - id: human-gate
     title: QA 分析を人間が確認
     type: manual
+    prompt: 工程の成果物、検証結果、レビュー結果を人間が確認し、記録へ進むか差し戻すかを判断してください。
     approval:
       resultKey: humanGate
       approveLabel: 記録へ進む
@@ -161,6 +166,7 @@ steps:
   - id: write-process-record
     title: 工程記録を書き込む
     type: command
+    prompt: 人間承認済みの工程結果を監査可能な工程記録として保存してください。
     action:
       provider: vscode.executeCommand
       args:
@@ -186,6 +192,7 @@ steps:
   - id: generate-campaign-summary
     title: キャンペーンサマリーを更新
     type: command
+    prompt: 最新の工程記録を集約し、キャンペーンサマリーを更新してください。
     action:
       provider: vscode.executeCommand
       args:

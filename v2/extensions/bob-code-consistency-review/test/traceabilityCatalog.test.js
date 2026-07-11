@@ -40,6 +40,35 @@ test("validateTraceabilityCatalog accepts approved n/a decisions for missing lin
   assert.deepEqual(report.errors, [])
 })
 
+test("validateTraceabilityCatalog accepts TBD decisions for missing links and keeps warnings", () => {
+  const catalog = sampleCatalog()
+  catalog.links = catalog.links.filter((link) => link.link_type !== "satisfies")
+  catalog.decisions.push({
+    subject: "REQ-RS001-PAY-0001",
+    gate: "basic_design",
+    decision: "tbd",
+    reason: "TBD: basic design trace is not confirmed yet.",
+    status: "accepted"
+  })
+
+  const report = validateTraceabilityCatalog(catalog)
+  const draft = buildReviewInputDraftFromTraceability(catalog, {
+    review: {
+      id: "REVIEW-PAY-001",
+      title: "Payment traceability review",
+      change_type: "feature",
+      purpose: "Check payment status traceability.",
+      base: "main",
+      head: "feature/payment",
+      vcs: "git"
+    }
+  })
+
+  assert.deepEqual(report.errors, [])
+  assert.ok(report.warnings.some((item) => item.code === "tbd_decision"))
+  assert.equal(draft.status, "ok")
+})
+
 test("validateTraceabilityCatalog rejects accepted items that use unapproved domains", () => {
   const catalog = sampleCatalog()
   catalog.domains[0].status = "proposed"
@@ -115,6 +144,40 @@ test("validateTraceabilityCatalog reports unlinked or unresolved review findings
 
   assert.ok(report.errors.some((item) => item.code === "missing_reviewed_by"))
   assert.ok(report.errors.some((item) => item.code === "unresolved_review_finding"))
+})
+
+test("validateTraceabilityCatalog accepts TBD decisions for QA and review-finding gates", () => {
+  const catalog = sampleCatalogWithQaAndReview()
+  catalog.links = catalog.links.filter((link) => link.link_type !== "clarifies" && link.link_type !== "reviewed_by")
+  catalog.items.find((item) => item.type === "review_finding").review.status = "open"
+  catalog.decisions.push(
+    {
+      subject: "QA-QA001-PAY-0001",
+      gate: "clarifies",
+      decision: "tbd",
+      reason: "TBD: QA clarification target is not confirmed yet.",
+      status: "accepted"
+    },
+    {
+      subject: "RV-RV001-PAY-0001",
+      gate: "reviewed_by",
+      decision: "tbd",
+      reason: "TBD: review finding source item is not confirmed yet.",
+      status: "accepted"
+    },
+    {
+      subject: "RV-RV001-PAY-0001",
+      gate: "resolution",
+      decision: "tbd",
+      reason: "TBD: review finding resolution is being tracked outside Traceability Prep.",
+      status: "accepted"
+    }
+  )
+
+  const report = validateTraceabilityCatalog(catalog)
+
+  assert.deepEqual(report.errors, [])
+  assert.equal(report.warnings.filter((item) => item.code === "tbd_decision").length, 3)
 })
 
 test("buildReviewInputDraftFromTraceability maps accepted QA and review findings into review-input artifacts", () => {

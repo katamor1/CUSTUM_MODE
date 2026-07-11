@@ -50,6 +50,7 @@ steps:
   - id: validate-catalog
     title: 工程カタログを検証
     type: command
+    prompt: 設定された工程カタログを検証し、利用可能な工程定義として読み込んでください。
     action: { provider: vscode.executeCommand, args: [bobProcess.validateCatalog, { catalogPath: "{{inputs.catalogPath}}" }] }
     resultKey: processCatalog
     sendResult: true
@@ -57,6 +58,7 @@ steps:
   - id: load-process-input
     title: 工程入力を検証
     type: command
+    prompt: process-input.yaml を検証し、キャンペーンと対象工程の入力値を読み込んでください。
     action: { provider: vscode.executeCommand, args: [bobProcess.loadProcessInput, { inputPath: "{{inputs.processInputPath}}" }] }
     resultKey: processInput
     sendResult: true
@@ -64,6 +66,7 @@ steps:
   - id: collect-evidence
     title: コード事前チェックの証跡を収集
     type: command
+    prompt: コード事前チェックに必要な証跡を収集し、evidence-index.json を作成してください。
     action: { provider: vscode.executeCommand, args: [bobProcess.collectEvidence, { inputPath: "{{inputs.processInputPath}}", runId: "{{run.id}}" }] }
     resultKey: evidenceIndex
     sendResult: true
@@ -71,6 +74,7 @@ steps:
   - id: phase2-preprocess
     title: Phase 2 review-package を生成
     type: command
+    prompt: Phase 2 の review-input.yaml を前処理し、Bob が参照する review-package と bob-input.md を生成してください。
     action:
       provider: bobCodeConsistency.preprocess
       args: { reviewInputPath: "{{inputs.phase2ReviewInputPath}}", outDir: "{{inputs.reviewPackagePath}}", textEncoding: "{{inputs.textEncoding}}", workflowRunId: "{{run.id}}" }
@@ -93,6 +97,7 @@ steps:
   - id: phase2-validate-output
     title: Phase 2 Bob 出力を検証
     type: command
+    prompt: 保存した Phase 2 Bob 出力を schema と evidence index に照らして検証してください。
     action:
       provider: bobCodeConsistency.validateOutput
       args: { bobOutputPath: "{{inputs.bobOutputPath}}", reviewPackagePath: "{{inputs.reviewPackagePath}}" }
@@ -102,6 +107,7 @@ steps:
   - id: phase2-triage
     title: Phase 2 human triage を生成
     type: command
+    prompt: 検証済み Bob 出力から、人間が採否と追加調査を判断する triage 成果物を生成してください。
     action:
       provider: bobCodeConsistency.triage
       args: { bobOutputPath: "{{inputs.bobOutputPath}}", reviewPackagePath: "{{inputs.reviewPackagePath}}", triagePath: "{{inputs.triagePath}}" }
@@ -124,6 +130,7 @@ steps:
   - id: validate-review-result
     title: コード事前チェック結果を検証
     type: command
+    prompt: 工程レビュー結果を process-review-result/v1 と evidence index に照らして検証してください。
     action: { provider: vscode.executeCommand, args: [bobProcess.validateReviewResult, { reviewResultPath: ".bob-process-runs/{{run.id}}/code-precheck/review-result.yaml", evidenceIndexPath: ".bob-process-runs/{{run.id}}/evidence-index.json" }] }
     resultKey: reviewValidation
     sendResult: true
@@ -131,6 +138,7 @@ steps:
   - id: human-gate
     title: Phase 2 triage と工程結果を人間が確認
     type: manual
+    prompt: Phase 2 出力、検証結果、human triage、工程レビュー結果を確認し、記録へ進むか差し戻すかを判断してください。
     approval: { resultKey: humanGate, approveLabel: 記録へ進む, rejectLabel: 差し戻す, message: Phase 2 出力、validateOutput、human triage、工程レビュー結果を確認してください。 }
     transition:
       decisions:
@@ -141,6 +149,7 @@ steps:
   - id: write-process-record
     title: 工程記録を書き込む
     type: command
+    prompt: 人間承認済みの結果と Phase 2 handoff 情報を工程記録へ保存してください。
     action:
       provider: vscode.executeCommand
       args:
@@ -168,6 +177,7 @@ steps:
   - id: generate-campaign-summary
     title: キャンペーンサマリーを更新
     type: command
+    prompt: 最新の工程記録を集約し、キャンペーンサマリーを更新してください。
     action: { provider: vscode.executeCommand, args: [bobProcess.generateCampaignSummary, { campaignId: "{{json state.processInput.input.campaignId}}" }] }
     resultKey: campaignSummary
     sendResult: true

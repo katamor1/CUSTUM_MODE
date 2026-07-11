@@ -154,16 +154,17 @@ test("review-gated Bob tasks are reconciled when Operation Hub accepts the step"
   assert.match(runner, /bobTaskSyncRegistry\.registerTask\(run\.runId, step\.id, task\)/)
   assert.match(stepReview, /import \{ bobTaskSyncRegistry \} from "\.\.\/bobTaskSync"/)
   assert.match(stepReview, /const acceptedStepId = run\.currentStep/)
-  assert.match(stepReview, /bobTaskSyncRegistry\.reconcileRun\(accepted, undefined/)
+  assert.match(stepReview, /await bobTaskSyncRegistry\.reconcileRun\(accepted, undefined/)
 })
 
 test("Operation Hub accept-and-run-next lets Bob task advance instead of standalone agent execution", () => {
   const stepReview = readSrc("commands", "stepReview.ts")
 
   assert.match(stepReview, /interface AcceptedStepResult \{[\s\S]*completedViaBobTask: boolean[\s\S]*\}/)
-  assert.match(stepReview, /const sync = bobTaskSyncRegistry\.reconcileRun\(accepted, undefined/)
-  assert.match(stepReview, /const completedViaBobTask = sync\.status === "synced" && sync\.taskAvailable/)
-  assert.match(stepReview, /if \(accepted\.completedViaBobTask\) \{[\s\S]*return accepted\.run[\s\S]*\}/)
+  assert.match(stepReview, /const sync = await bobTaskSyncRegistry\.reconcileRun\(accepted, undefined/)
+  assert.match(stepReview, /const completedViaBobTask = sync\.status === "synced" && sync\.appliedStepCount > 0/)
+  assert.match(stepReview, /return \{ run: accepted, message, completedViaBobTask \}/)
+  assert.match(stepReview, /if \(completedViaBobTask\) \{/)
   assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", accepted\.run\.runId\)/)
 })
 

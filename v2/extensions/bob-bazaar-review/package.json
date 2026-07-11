@@ -72,7 +72,8 @@
         "bobBazaar.maxDiffBytes": { "type": "number", "default": 1048576, "minimum": 32768, "maximum": 5242880, "description": "生成するレビュー packet に含める Bazaar diff の最大サイズ。" },
         "bobBazaar.maxAddedFileContentBytes": { "type": "number", "default": 262144, "minimum": 0, "maximum": 2097152, "description": "新規追加ファイル本文をレビュー packet に含める最大合計サイズ。0 の場合、追加ファイル本文セクションを省略します。" },
         "bobBazaar.projectRules.checklistPath": { "type": "string", "default": ".bob/review/checklist.json", "description": "プロジェクト固有レビュー checklist JSON のワークスペース相対パスまたは絶対パス。" },
-        "bobBazaar.projectRules.schemaPath": { "type": "string", "default": ".bob/review/review-result.schema.json", "description": "レビュー結果 JSON schema のワークスペース相対パスまたは絶対パス。" }
+        "bobBazaar.projectRules.schemaPath": { "type": "string", "default": ".bob/review/review-result.schema.json", "description": "レビュー結果 JSON schema のワークスペース相対パスまたは絶対パス。" },
+        "bobBazaar.commandTimeoutMs": { "type": "number", "default": 120000, "minimum": 1000, "maximum": 600000, "description": "Bazaar CLI と関連する外部コマンドのタイムアウト（ミリ秒）。GUI からキャンセルした場合も同じ実行境界を中止します。" }
       }
     },
     "menus": {
@@ -131,5 +132,17 @@
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
+  },
+  "knip": {
+    "entry": [
+      "src/extension.ts",
+      "src/mcp/server.ts"
+    ],
+    "project": [
+      "src/**/*.ts"
+    ],
+    "ignoreDependencies": [
+      "js-yaml"
+    ]
   }
 }

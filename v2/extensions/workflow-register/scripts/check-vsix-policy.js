@@ -75,6 +75,7 @@ function checkForbiddenEntries(entries) {
     { pattern: /^extension\/tests?\//, reason: "test directory" },
     { pattern: /^extension\/docs\//, reason: "development documentation" },
     { pattern: /^extension\/\.vscode\//, reason: "editor settings" },
+    { pattern: /^extension\/\.vscode-test\.json$/, reason: "generated VS Code test configuration" },
     { pattern: /^extension\/\.git\//, reason: "git metadata" },
     { pattern: /^extension\/package-lock\.json$/, reason: "package lock" },
     { pattern: /^extension\/tsconfig\.json$/, reason: "TypeScript config" },

@@ -37,9 +37,18 @@ test("bob-bazaar-review dependency policy requires a committed lockfile and loca
   assert.equal(packageJson.devDependencies.depcheck, "^1.4.7")
   assert.equal(packageJson.devDependencies["ts-prune"], "^0.10.3")
 
+  const yamlRuntimeSource = fs.readFileSync(path.join(extensionRoot, "src", "records", "reviewRecordYaml.ts"), "utf8")
+  assert.match(yamlRuntimeSource, /from "js-yaml"/, "review record runtime must keep the js-yaml import")
+  assert.deepEqual(
+    packageJson.knip?.ignoreDependencies,
+    ["js-yaml"],
+    "Knip must document its js-yaml false positive while depcheck and the source contract verify runtime use"
+  )
+
   const vscodeignore = fs.readFileSync(path.join(extensionRoot, ".vscodeignore"), "utf8").split(/\r?\n/)
   assert.ok(vscodeignore.includes("out/**/*.map"), "compiled source maps must be excluded from the VSIX")
   assert.ok(vscodeignore.includes("docs/**"), "development docs must be excluded from the VSIX")
+  assert.ok(vscodeignore.includes(".vscode-test.json"), "generated VS Code test config must be excluded from the VSIX")
 
   const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"))
   const rootPackage = lock.packages?.[""]

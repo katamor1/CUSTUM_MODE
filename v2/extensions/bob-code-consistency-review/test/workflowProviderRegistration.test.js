@@ -11,10 +11,8 @@ test("extension registers code consistency workflow providers with workflow-regi
   const packageJson = readJson("package.json")
   const source = readSourceSet(["extension.ts", "workflowProviderRegistration.ts"])
 
-  assert.ok(packageJson.extensionDependencies.includes("local.workflow-register"))
   assert.ok(packageJson.activationEvents.includes("onStartupFinished"))
   assert.match(source, /const WORKFLOW_REGISTER_EXTENSION_ID = "local\.workflow-register"/)
-  assert.match(source, /registerWorkflowProviders\(\{/)
   assert.match(source, /id: "bobCodeConsistency\.preprocess"/)
   assert.match(source, /id: "bobCodeConsistency\.captureBobOutput"/)
   assert.match(source, /buildCaptureWorkflowOptions\(\{ args, inputs, state \}\)/)
@@ -47,6 +45,62 @@ test("extension registers code consistency workflow providers with workflow-regi
   assert.equal(packageJson.contributes.configuration.properties["bobCodeConsistency.traceabilityCatalogPath"].default, ".bob-trace/traceability-catalog.json")
   assert.equal(packageJson.contributes.configuration.properties["bobCodeConsistency.traceabilityGateReportPath"].default, ".bob-trace/gate-report.md")
   assert.match(packageJson.contributes.configuration.properties["bobCodeConsistency.textEncoding"].description, /Shift-JIS/)
+})
+
+test("workflow-register and IBM Bob are soft dependencies with delayed provider registration recovery", () => {
+  const packageJson = readJson("package.json")
+  const source = readSourceSet([
+    "extension.ts",
+    "workflowProviderRegistration.ts",
+    "retryRegistrationController.ts"
+  ])
+
+  assert.ok(!packageJson.extensionDependencies || packageJson.extensionDependencies.length === 0)
+  assert.match(source, /registerWorkflowProvidersWithRetry/)
+  assert.match(source, /vscode\.extensions\.onDidChange/)
+  assert.match(source, /WORKFLOW_PROVIDER_RETRY_DELAYS_MS/)
+  assert.match(source, /context\.subscriptions\.push/)
+  assert.match(source, /clearTimeout/)
+  assert.match(source, /providersRegistered/)
+})
+
+test("code consistency provider retry lifecycle recovers restarts and disposes stale or late registrations", () => {
+  const source = readSourceSet([
+    "extension.ts",
+    "workflowProviderRegistration.ts",
+    "retryRegistrationController.ts"
+  ])
+
+  assert.match(source, /let disposed = false/)
+  assert.match(source, /let generation = 0/)
+  assert.match(source, /let registeredApi: Api \| undefined/)
+  assert.match(source, /let registrationAttempt: Promise<boolean> \| undefined/)
+  assert.match(source, /let activeRegistrations: DisposableLike\[\] = \[\]/)
+  assert.match(source, /const currentAttempt = performAttempt\(generation\)/)
+  assert.match(source, /if \(disposed \|\| attemptGeneration !== generation\)/)
+  assert.match(source, /disposeRegistrations\(result\.registrations\)/)
+  assert.match(source, /if \(registrationAttempt === currentAttempt\) registrationAttempt = undefined/)
+  assert.match(source, /currentApi === registeredApi/)
+  assert.match(source, /disposeRegistrations\(activeRegistrations\)/)
+  assert.doesNotMatch(source, /^let workflowProviderRegistrationAttempt/m)
+})
+
+test("code consistency provider generation records the exact API used for registration", () => {
+  const source = readSourceSet(["extension.ts", "workflowProviderRegistration.ts"])
+
+  assert.match(source, /return \{ registered: true, registrations, api \}/)
+  assert.match(source, /register: \(\) => registerWorkflowProviders\(handlers\)/)
+  assert.doesNotMatch(source, /api: result\.registered \? currentWorkflowRegisterApi\(\) : undefined/)
+})
+
+test("code consistency workflow providers declare ownership and register disposables", () => {
+  const source = readSourceSet(["extension.ts", "workflowProviderRegistration.ts"])
+
+  assert.match(source, /const CODE_CONSISTENCY_PROVIDER_SOURCE_ID = "local\.bob-code-consistency-review"/)
+  assert.match(source, /sourceId: CODE_CONSISTENCY_PROVIDER_SOURCE_ID/)
+  assert.match(source, /const registrations: vscode\.Disposable\[\] = \[\]/)
+  assert.match(source, /disposeRegistrations\(registrations\)/)
+  assert.match(source, /context\.subscriptions\.push\(\.\.\.registrations\)/)
 })
 
 test("code consistency provider accepts workflowRoot without first-folder fallback", () => {

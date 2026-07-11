@@ -8,16 +8,39 @@ import { buildReviewPackage } from "./reviewPackageBuilder"
 import { validateReviewInput } from "./reviewInputValidator"
 import type { PreprocessResult } from "./preprocessTypes"
 
-export async function preprocessReview(input: { workspaceRoot: string; inputPath: string; outDir: string; diffFixturePath?: string; bzrPath?: string; textEncoding?: string; limits?: Partial<ReviewProcessingLimits>; workflowRunId?: string }): Promise<PreprocessResult> {
+export interface PreprocessReviewInput {
+  workspaceRoot: string
+  inputPath: string
+  outDir: string
+  diffFixturePath?: string
+  bzrPath?: string
+  textEncoding?: string
+  limits?: Partial<ReviewProcessingLimits>
+  workflowRunId?: string
+  commandTimeoutMs?: number
+  abortSignal?: AbortSignal
+}
+
+export async function preprocessReview(input: PreprocessReviewInput): Promise<PreprocessResult> {
   const textEncoding = input.textEncoding ?? "auto"
   const limits = normalizeReviewProcessingLimits(input.limits)
   const inputPath = resolveWorkspacePathStrict(input.workspaceRoot, input.inputPath, "reviewInputPath")
   const outDir = resolveWorkspacePathForKind(input.workspaceRoot, input.outDir, "review-package-output")
-  const diffFixturePath = input.diffFixturePath ? resolveWorkspacePathStrict(input.workspaceRoot, input.diffFixturePath, "diffFixturePath") : undefined
-  const reviewInput = await validateReviewInput(inputPath, input.workspaceRoot, textEncoding)
-  const diff = await collectGitDiff(reviewInput, { workspaceRoot: input.workspaceRoot, diffFixturePath, bzrPath: input.bzrPath, textEncoding, limits })
+  const diffFixturePath = input.diffFixturePath
+    ? resolveWorkspacePathStrict(input.workspaceRoot, input.diffFixturePath, "diffFixturePath")
+    : undefined
+  const reviewInput = await validateReviewInput(inputPath, input.workspaceRoot, textEncoding, limits.maxDocumentBytes)
+  const diff = await collectGitDiff(reviewInput, {
+    workspaceRoot: input.workspaceRoot,
+    diffFixturePath,
+    bzrPath: input.bzrPath,
+    textEncoding,
+    limits,
+    commandTimeoutMs: input.commandTimeoutMs,
+    signal: input.abortSignal
+  })
   const documents = await extractDocuments(reviewInput, { workspaceRoot: input.workspaceRoot, textEncoding, limits })
-  const codeAnalysis = await analyzeCodeChanges(diff, reviewInput, { workspaceRoot: input.workspaceRoot, textEncoding })
+  const codeAnalysis = await analyzeCodeChanges(diff, reviewInput, { workspaceRoot: input.workspaceRoot, textEncoding, limits })
   const traceability = await buildTraceability({ reviewInput, documents, codeAnalysis, diff })
 
   const packageWarnings = await buildReviewPackage({

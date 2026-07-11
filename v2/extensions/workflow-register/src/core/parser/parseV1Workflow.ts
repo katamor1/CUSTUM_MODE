@@ -117,7 +117,7 @@ function ignoredFieldsForStepType(type: string): string[] {
   if (type === "command") return ["result"]
   if (type === "agent") return ["action", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
   if (type === "manual") return ["action", "result", "resultKey", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
-  if (type === "result") return ["action", "prompt", "resultKey", "includeState", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
+  if (type === "result") return ["action", "resultKey", "sendResult", "completeOnSuccess", "runAgent", "captureResult", "resultCommand", "resultCommandArgs", "maxResultBytes"]
   return []
 }
 

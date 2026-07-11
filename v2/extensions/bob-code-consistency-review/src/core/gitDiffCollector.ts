@@ -1,84 +1,123 @@
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
-import { readTextFile, resolveWorkspacePathStrict, toPosixPath } from "./fileSystem"
+import {
+  normalizeChangedFilePathStrict,
+  readTextFile,
+  resolveWorkspacePathStrict
+} from "./fileSystem"
+import { parseDiffFixtureText } from "./diffFixture"
 import { classifyLanguageFromPath } from "./languageClassifier"
 import { decodeTextBuffer } from "./textEncoding"
-import { normalizeReviewProcessingLimits, truncateUtf8Text, type ReviewProcessingLimits } from "./limits"
+import {
+  maxVcsProcessBufferBytes,
+  normalizeReviewProcessingLimits,
+  truncateUtf8Text,
+  type ReviewProcessingLimits
+} from "./limits"
+import { ExternalProcessError, runExternalProcess } from "./externalProcessRunner"
 import type { DiffSummary } from "./diffTypes"
 import type { ReviewInput } from "./reviewTypes"
 
-const execFileAsync = promisify(execFile)
-
 type VcsKind = "git" | "bazaar"
 const MAX_BAZAAR_REVISION_SPEC_LENGTH = 128
+const MIN_VCS_COMMAND_TIMEOUT_MS = 1_000
+const DEFAULT_VCS_COMMAND_TIMEOUT_MS = 120_000
+const MAX_VCS_COMMAND_TIMEOUT_MS = 600_000
 
-export async function collectGitDiff(reviewInput: ReviewInput, options: { workspaceRoot: string; diffFixturePath?: string; bzrPath?: string; textEncoding?: string; limits?: Partial<ReviewProcessingLimits> }): Promise<DiffSummary> {
+export async function collectGitDiff(reviewInput: ReviewInput, options: {
+  workspaceRoot: string
+  diffFixturePath?: string
+  bzrPath?: string
+  textEncoding?: string
+  limits?: Partial<ReviewProcessingLimits>
+  commandTimeoutMs?: number
+  signal?: AbortSignal
+}): Promise<DiffSummary> {
   const limits = normalizeReviewProcessingLimits(options.limits)
   if (options.diffFixturePath) {
     const fixturePath = resolveWorkspacePathStrict(options.workspaceRoot, options.diffFixturePath, "diffFixturePath")
-    const fixture = JSON.parse(await readTextFile(fixturePath, options.textEncoding)) as DiffSummary
-    return applyDiffLimits(normalizeDiffLanguages(fixture), limits)
+    const fixture = parseDiffFixtureText(await readTextFile(fixturePath, options.textEncoding))
+    return applyDiffLimits(fixture, limits)
   }
 
   const vcs = normalizeVcs(reviewInput.review.vcs)
   const vcsRoot = resolveVcsRoot(options.workspaceRoot, reviewInput.review.vcs_root)
   const diff = vcs === "bazaar"
-    ? await collectBazaarDiff(reviewInput, { ...options, vcsRoot })
-    : await collectStandardGitDiff(reviewInput, { ...options, vcsRoot })
+    ? await collectBazaarDiff(reviewInput, { ...options, vcsRoot, limits })
+    : await collectStandardGitDiff(reviewInput, { ...options, vcsRoot, limits })
   return applyDiffLimits(diff, limits)
 }
 
-async function collectStandardGitDiff(reviewInput: ReviewInput, options: { workspaceRoot: string; vcsRoot: string; textEncoding?: string }): Promise<DiffSummary> {
-  const base = await resolveGitRevision(reviewInput.review.base, options.vcsRoot, options.textEncoding)
-  const head = await resolveGitRevision(reviewInput.review.head, options.vcsRoot, options.textEncoding)
-  const nameStatus = await runGitText(["diff", "--find-renames", "--name-status", base, head], options.vcsRoot, 20 * 1024 * 1024, options.textEncoding)
-  const numstat = await runGitText(["diff", "--find-renames", "--numstat", base, head], options.vcsRoot, 20 * 1024 * 1024, options.textEncoding)
-  const unifiedDiff = await runGitText(["diff", "--find-renames", "--unified=80", base, head], options.vcsRoot, 50 * 1024 * 1024, options.textEncoding)
+async function collectStandardGitDiff(reviewInput: ReviewInput, options: {
+  workspaceRoot: string
+  vcsRoot: string
+  textEncoding?: string
+  limits: ReviewProcessingLimits
+  commandTimeoutMs?: number
+  signal?: AbortSignal
+}): Promise<DiffSummary> {
+  const base = await resolveGitRevision(reviewInput.review.base, options.vcsRoot, options.textEncoding, options.commandTimeoutMs, options.signal)
+  const head = await resolveGitRevision(reviewInput.review.head, options.vcsRoot, options.textEncoding, options.commandTimeoutMs, options.signal)
+  const processBufferBytes = maxVcsProcessBufferBytes(options.limits.maxRawDiffBytes)
+  const nameStatus = await runGitText(["diff", "--find-renames", "--name-status", "-z", base, head], options.vcsRoot, processBufferBytes, options.textEncoding, options.commandTimeoutMs, options.signal)
+  const numstat = await runGitText(["diff", "--find-renames", "--numstat", "-z", base, head], options.vcsRoot, processBufferBytes, options.textEncoding, options.commandTimeoutMs, options.signal)
+  const unifiedDiff = await runGitText(["diff", "--find-renames", "--unified=80", base, head], options.vcsRoot, processBufferBytes, options.textEncoding, options.commandTimeoutMs, options.signal)
 
-  const counts = parseNumstat(numstat)
-  const files = nameStatus.split(/\r?\n/).flatMap((line) => {
-    if (!line.trim()) return []
-    const parts = line.split(/\t/)
-    const statusToken = parts[0] ?? ""
-    const filePath = statusToken.startsWith("R") ? parts[2] : parts[1]
-    if (!filePath) return []
-    const count = counts.get(toPosixPath(filePath))
-    return [buildChangedFile(filePath, statusFromGit(statusToken), count)]
+  const counts = parseNumstatZ(numstat)
+  const files = parseNameStatusZ(nameStatus).map(({ statusToken, filePath }) => {
+    const normalizedPath = normalizeChangedFilePathStrict(filePath)
+    return buildChangedFile(normalizedPath, statusFromGit(statusToken), counts.get(normalizedPath))
   })
 
   return { vcs: "git", vcsRoot: options.vcsRoot, base, head, files, unifiedDiff, warnings: [] }
 }
 
-async function collectBazaarDiff(reviewInput: ReviewInput, options: { workspaceRoot: string; vcsRoot: string; bzrPath?: string; textEncoding?: string }): Promise<DiffSummary> {
+async function collectBazaarDiff(reviewInput: ReviewInput, options: {
+  workspaceRoot: string
+  vcsRoot: string
+  bzrPath?: string
+  textEncoding?: string
+  limits: ReviewProcessingLimits
+  commandTimeoutMs?: number
+  signal?: AbortSignal
+}): Promise<DiffSummary> {
   const bzrPath = options.bzrPath?.trim() || "bzr"
   const base = validateBazaarRevision(reviewInput.review.base)
   const head = validateBazaarRevision(reviewInput.review.head)
   const revisionRange = `${base}..${head}`
+  const processBufferBytes = maxVcsProcessBufferBytes(options.limits.maxRawDiffBytes)
   // Bazaar の alias は差分本文と副作用を変え得るため、収集系でも bzr --no-aliases を必ず先頭に置く。
   const unifiedDiff = await runCommandText(
     bzrPath,
     ["--no-aliases", "diff", "-r", revisionRange],
     options.vcsRoot,
-    50 * 1024 * 1024,
+    processBufferBytes,
     [0, 1],
     options.textEncoding,
-    { BZR_PROGRESS_BAR: "none" }
+    { BZR_PROGRESS_BAR: "none" },
+    options.commandTimeoutMs,
+    options.signal
   )
   const files = parseBazaarDiffFiles(unifiedDiff)
   return { vcs: "bazaar", vcsRoot: options.vcsRoot, base, head, files, unifiedDiff, warnings: [] }
 }
 
-async function resolveGitRevision(revision: string, cwd: string, textEncoding = "auto"): Promise<string> {
+async function resolveGitRevision(
+  revision: string,
+  cwd: string,
+  textEncoding = "auto",
+  commandTimeoutMs?: number,
+  signal?: AbortSignal
+): Promise<string> {
   const trimmed = revision.trim()
   if (!trimmed) throw new Error("Invalid Git revision: revision is empty")
 
   try {
     // Git revision は rev-parse --verify --end-of-options で commit SHA に固定し、以降の diff へ曖昧指定を渡さない。
-    const output = await runGitText(["rev-parse", "--verify", "--end-of-options", `${trimmed}^{commit}`], cwd, 1024 * 1024, textEncoding)
+    const output = await runGitText(["rev-parse", "--verify", "--end-of-options", `${trimmed}^{commit}`], cwd, 1024 * 1024, textEncoding, commandTimeoutMs, signal)
     const sha = output.trim().split(/\r?\n/).at(-1) ?? ""
     if (/^[0-9a-f]{40}$/i.test(sha)) return sha.toLowerCase()
-  } catch {
-    // git の詳細 error はそのまま出さず、下の正規化済み validation error に揃える。
+  } catch (error) {
+    if (!(error instanceof ExternalProcessError) || error.kind !== "nonZeroExit") throw error
+    // rev-parse が対象を解決できない場合だけ、下の正規化済み validation error に揃える。
   }
 
   throw new Error(`Invalid Git revision: ${formatRevisionForError(revision)}`)
@@ -86,6 +125,9 @@ async function resolveGitRevision(revision: string, cwd: string, textEncoding = 
 
 export function validateBazaarRevision(revision: string): string {
   const trimmed = revision.trim()
+  if (/[\0-\x1F\x7F]/u.test(revision)) {
+    throw new Error(`安全でない Bazaar リビジョン指定です: ${formatRevisionForError(revision)}`)
+  }
   if (!trimmed) throw new Error("リビジョンを入力してください。")
   if (trimmed.length > MAX_BAZAAR_REVISION_SPEC_LENGTH) {
     throw new Error(`Bazaar リビジョン指定が長すぎます: ${formatRevisionForError(revision)}`)
@@ -100,67 +142,115 @@ export function validateBazaarRevision(revision: string): string {
 }
 
 function formatRevisionForError(revision: string): string {
-  return revision.replace(/[\0\r\n\t]/g, " ").trim()
+  return revision.replace(/[\0-\x1F\x7F]/g, " ").trim()
 }
 
-async function runGitText(args: string[], cwd: string, maxBuffer: number, textEncoding = "auto"): Promise<string> {
-  const result = await execFileAsync("git", args, { cwd, maxBuffer, encoding: "buffer" } as any) as { stdout?: Buffer | string }
-  return decodeTextBuffer(toBuffer(result.stdout), textEncoding)
+async function runGitText(
+  args: string[],
+  cwd: string,
+  maxBuffer: number,
+  textEncoding = "auto",
+  commandTimeoutMs?: number,
+  signal?: AbortSignal
+): Promise<string> {
+  return runCommandText("git", args, cwd, maxBuffer, [0], textEncoding, undefined, commandTimeoutMs, signal)
 }
 
-function runCommandText(command: string, args: string[], cwd: string, maxBuffer: number, allowedExitCodes: number[], textEncoding = "auto", env?: Record<string, string>): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(command, args, {
-      cwd,
-      maxBuffer,
-      encoding: "buffer",
-      shell: false,
-      env: { ...process.env, ...env }
-    } as any, (error, stdout, stderr) => {
-      const code = exitCode(error)
-      if (error && !allowedExitCodes.includes(code)) {
-        const stderrText = decodeTextBuffer(toBuffer(stderr), textEncoding)
-        const stdoutText = decodeTextBuffer(toBuffer(stdout), textEncoding)
-        reject(new Error(`${command} ${args.join(" ")} failed with exit code ${code}\n${stderrText || stdoutText}`.trim()))
-        return
-      }
-      resolve(decodeTextBuffer(toBuffer(stdout), textEncoding))
-    })
+async function runCommandText(
+  command: string,
+  args: string[],
+  cwd: string,
+  maxBuffer: number,
+  allowedExitCodes: number[],
+  textEncoding = "auto",
+  env?: Record<string, string>,
+  commandTimeoutMs?: number,
+  signal?: AbortSignal
+): Promise<string> {
+  const result = await runExternalProcess({
+    command,
+    args,
+    cwd,
+    maxBufferBytes: maxBuffer,
+    timeoutMs: normalizeCommandTimeout(commandTimeoutMs),
+    allowedExitCodes,
+    signal,
+    env: { ...process.env, ...env }
   })
+  return decodeTextBuffer(result.stdout, textEncoding)
 }
 
-function exitCode(error: unknown): number {
-  if (!error) return 0
-  if (typeof error === "object" && error !== null && "code" in error && typeof (error as { code?: unknown }).code === "number") {
-    return (error as { code: number }).code
+function normalizeCommandTimeout(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return DEFAULT_VCS_COMMAND_TIMEOUT_MS
+  return Math.max(MIN_VCS_COMMAND_TIMEOUT_MS, Math.min(MAX_VCS_COMMAND_TIMEOUT_MS, Math.floor(value)))
+}
+
+function parseNameStatusZ(text: string): Array<{ statusToken: string; filePath: string }> {
+  const fields = nulFields(text)
+  const records: Array<{ statusToken: string; filePath: string }> = []
+  let index = 0
+
+  while (index < fields.length) {
+    const statusToken = fields[index++]
+    if (!statusToken) continue
+    if (statusToken.startsWith("R") || statusToken.startsWith("C")) {
+      const previousPath = fields[index++]
+      const filePath = fields[index++]
+      if (previousPath === undefined || filePath === undefined) {
+        throw new Error(`Malformed Git name-status rename record: ${statusToken}`)
+      }
+      records.push({ statusToken, filePath })
+      continue
+    }
+
+    const filePath = fields[index++]
+    if (filePath === undefined) throw new Error(`Malformed Git name-status record: ${statusToken}`)
+    records.push({ statusToken, filePath })
   }
-  return -1
+
+  return records
 }
 
-function toBuffer(value: Buffer | string | undefined): Buffer {
-  return Buffer.isBuffer(value) ? value : Buffer.from(value ?? "", "utf8")
-}
-
-function parseNumstat(text: string): Map<string, { additions: number; deletions: number }> {
+function parseNumstatZ(text: string): Map<string, { additions: number; deletions: number }> {
+  const fields = nulFields(text)
   const result = new Map<string, { additions: number; deletions: number }>()
-  for (const line of text.split(/\r?\n/)) {
-    const parts = line.split(/\t/)
-    if (parts.length < 3) continue
-    const additions = Number.parseInt(parts[0], 10)
-    const deletions = Number.parseInt(parts[1], 10)
-    const filePath = normalizeNumstatPath(parts.slice(2).join("\t"))
-    result.set(toPosixPath(filePath), {
+  let index = 0
+
+  while (index < fields.length) {
+    const record = fields[index++]
+    if (!record) continue
+    const firstTab = record.indexOf("\t")
+    const secondTab = firstTab >= 0 ? record.indexOf("\t", firstTab + 1) : -1
+    if (firstTab < 0 || secondTab < 0) throw new Error(`Malformed Git numstat record: ${record}`)
+
+    const additionsToken = record.slice(0, firstTab)
+    const deletionsToken = record.slice(firstTab + 1, secondTab)
+    let filePath = record.slice(secondTab + 1)
+    if (!filePath) {
+      const previousPath = fields[index++]
+      const renamedPath = fields[index++]
+      if (previousPath === undefined || renamedPath === undefined) {
+        throw new Error("Malformed Git numstat rename record.")
+      }
+      filePath = renamedPath
+    }
+
+    const normalizedPath = normalizeChangedFilePathStrict(filePath)
+    const additions = Number.parseInt(additionsToken, 10)
+    const deletions = Number.parseInt(deletionsToken, 10)
+    result.set(normalizedPath, {
       additions: Number.isFinite(additions) ? additions : 0,
       deletions: Number.isFinite(deletions) ? deletions : 0
     })
   }
+
   return result
 }
 
-function normalizeNumstatPath(filePath: string): string {
-  const renamed = filePath.match(/^(.*)\{(.+?) => (.+?)\}(.*)$/)
-  if (!renamed) return filePath
-  return `${renamed[1]}${renamed[3]}${renamed[4]}`
+function nulFields(text: string): string[] {
+  const fields = text.split("\0")
+  if (fields.at(-1) === "") fields.pop()
+  return fields
 }
 
 function parseBazaarDiffFiles(text: string): DiffSummary["files"] {
@@ -179,8 +269,9 @@ function parseBazaarDiffFiles(text: string): DiffSummary["files"] {
 
     const plusFile = line.match(/^\+\+\+\s+(.+?)(?:\t.*)?$/)
     if (plusFile && plusFile[1] !== "/dev/null") {
-      const filePath = normalizeDiffPath(plusFile[1])
-      current = files.get(filePath) ?? buildChangedFile(filePath, "modified")
+      const filePath = plusFile[1]
+      const normalizedPath = normalizeChangedFilePathStrict(filePath)
+      current = files.get(normalizedPath) ?? buildChangedFile(normalizedPath, "modified")
       files.set(current.path, current)
       continue
     }
@@ -194,14 +285,15 @@ function parseBazaarDiffFiles(text: string): DiffSummary["files"] {
 }
 
 function buildChangedFile(filePath: string, status: DiffSummary["files"][number]["status"], count?: { additions: number; deletions: number }): DiffSummary["files"][number] {
+  const normalizedPath = normalizeChangedFilePathStrict(filePath)
   return {
-    path: toPosixPath(normalizeDiffPath(filePath)),
+    path: normalizedPath,
     status,
     additions: count?.additions ?? 0,
     deletions: count?.deletions ?? 0,
-    language: languageFromPath(filePath),
-    is_test: /(^|[\\/])(test|tests|spec)([\\/]|$)|\btest\b/i.test(filePath),
-    is_interface_candidate: /\.(h|hpp|hh)$/i.test(filePath)
+    language: languageFromPath(normalizedPath),
+    is_test: /(^|[\\/])(test|tests|spec)([\\/]|$)|\btest\b/i.test(normalizedPath),
+    is_interface_candidate: /\.(h|hpp|hh)$/i.test(normalizedPath)
   }
 }
 
@@ -220,13 +312,6 @@ function statusFromBazaar(status: string): DiffSummary["files"][number]["status"
   if (normalized.includes("removed") || normalized.includes("deleted")) return "deleted"
   if (normalized.includes("renamed")) return "renamed"
   return "unknown"
-}
-
-function normalizeDiffLanguages(diff: DiffSummary): DiffSummary {
-  return {
-    ...diff,
-    files: diff.files.map((file) => ({ ...file, path: toPosixPath(file.path), language: file.language ?? languageFromPath(file.path) }))
-  }
 }
 
 function applyDiffLimits(diff: DiffSummary, limits: ReviewProcessingLimits): DiffSummary {
@@ -251,10 +336,6 @@ function normalizeVcs(value: ReviewInput["review"]["vcs"]): VcsKind {
 
 function resolveVcsRoot(workspaceRoot: string, value: string | undefined): string {
   return value ? resolveWorkspacePathStrict(workspaceRoot, value, "vcsRoot") : workspaceRoot
-}
-
-function normalizeDiffPath(filePath: string): string {
-  return filePath.replace(/^a\//, "").replace(/^b\//, "")
 }
 
 export function languageFromPath(filePath: string): string {

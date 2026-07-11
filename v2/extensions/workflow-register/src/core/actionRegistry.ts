@@ -1,16 +1,49 @@
 import { ActionExecutionInput, ActionExecutionResult } from "./model"
 import { requireWorkspaceTrust, type WorkspaceTrustCheck } from "./workspaceTrust"
 import { createMechanicalChecksActionProvider } from "./mechanicalChecks/actionProvider"
-import type { ActionProvider } from "./actionTypes"
+import type { ActionProvider, ActionProviderRegistration } from "./actionTypes"
 
-export type { ActionProvider } from "./actionTypes"
+export type { ActionProvider, ActionProviderRegistration } from "./actionTypes"
+
+interface RegisteredActionProvider {
+  provider: ActionProvider
+  sourceId: string
+  token: symbol
+}
+
+const DEFAULT_PROVIDER_SOURCE_ID = "anonymous"
+const WORKFLOW_REGISTER_PROVIDER_SOURCE_ID = "local.workflow-register"
 
 export class ActionRegistry {
-  private readonly providers = new Map<string, ActionProvider>()
+  private readonly providers = new Map<string, RegisteredActionProvider>()
 
-  register(provider: ActionProvider): void {
-    if (!provider.id.trim()) throw new Error("Action provider id is required.")
-    this.providers.set(provider.id, provider)
+  register(provider: ActionProvider): ActionProviderRegistration {
+    const id = provider.id.trim()
+    if (!id) throw new Error("Action provider id is required.")
+    const sourceId = normalizedSourceId(provider.sourceId)
+    const existing = this.providers.get(id)
+    if (existing) {
+      throw new Error(
+        `Action provider '${id}' is already registered by '${existing.sourceId}' and cannot be replaced by '${sourceId}'.`
+      )
+    }
+
+    const token = Symbol(id)
+    this.providers.set(id, {
+      provider: { ...provider, id, sourceId },
+      sourceId,
+      token
+    })
+
+    let disposed = false
+    return {
+      dispose: () => {
+        if (disposed) return
+        disposed = true
+        const current = this.providers.get(id)
+        if (current?.token === token) this.providers.delete(id)
+      }
+    }
   }
 
   list(): string[] {
@@ -18,10 +51,10 @@ export class ActionRegistry {
   }
 
   async execute(providerId: string, input: ActionExecutionInput): Promise<ActionExecutionResult> {
-    const provider = this.providers.get(providerId)
-    if (!provider) return { ok: false, error: `Unsupported action provider: ${providerId}` }
+    const registration = this.providers.get(providerId)
+    if (!registration) return { ok: false, error: `Unsupported action provider: ${providerId}` }
     try {
-      const value = await Promise.resolve(provider.execute(input))
+      const value = await Promise.resolve(registration.provider.execute(input))
       return { ok: true, value }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -36,12 +69,16 @@ export interface DefaultActionRegistryOptions {
 
 export function createDefaultActionRegistry(options?: DefaultActionRegistryOptions): ActionRegistry {
   const registry = new ActionRegistry()
-  registry.register(createMechanicalChecksActionProvider({
-    isWorkspaceTrusted: options?.isWorkspaceTrusted
-  }))
+  registry.register({
+    ...createMechanicalChecksActionProvider({
+      isWorkspaceTrusted: options?.isWorkspaceTrusted
+    }),
+    sourceId: WORKFLOW_REGISTER_PROVIDER_SOURCE_ID
+  })
   if (options) {
     registry.register({
       id: "vscode.executeCommand",
+      sourceId: WORKFLOW_REGISTER_PROVIDER_SOURCE_ID,
       execute: (input) => {
         requireWorkspaceTrust(options.isWorkspaceTrusted, "running VS Code commands")
         const args = argumentList(input.args)
@@ -55,6 +92,10 @@ export function createDefaultActionRegistry(options?: DefaultActionRegistryOptio
     })
   }
   return registry
+}
+
+function normalizedSourceId(value: string | undefined): string {
+  return typeof value === "string" && value.trim() ? value.trim() : DEFAULT_PROVIDER_SOURCE_ID
 }
 
 function argumentList(value: unknown): unknown[] {

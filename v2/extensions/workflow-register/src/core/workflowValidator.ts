@@ -71,7 +71,7 @@ export function validateCoreWorkflow(
   }
   if (workflow.stepMessage === "step") {
     for (const step of workflow.engineSteps) {
-      if (!step.prompt?.trim()) {
+      if (step.type !== "result" && !step.prompt?.trim()) {
         diagnostics.push(warning(filePath, `stepMessage is 'step' but step '${step.id}' has no prompt.`))
       }
     }

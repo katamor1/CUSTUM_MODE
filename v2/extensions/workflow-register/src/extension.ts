@@ -1,5 +1,5 @@
 import * as vscode from "vscode"
-import type { ActionProvider } from "./core/actionRegistry"
+import type { ActionProvider, ActionProviderRegistration } from "./core/actionRegistry"
 import type { AgentProvider, CoreWorkflowDefinition } from "./core/model"
 import type { ResultSinkRegistry } from "./core/resultSinkRegistry"
 import { OperationHubProvider } from "./gui/operationHubProvider"
@@ -16,9 +16,9 @@ export interface WorkflowRegisterApi {
    * custom action step を実行する workflow action provider を登録する。
    *
    * @param provider workflow runtime へ公開する action provider 実装。
-   * @returns なし。
+   * @returns provider 登録を解除する disposable。
    */
-  registerActionProvider: (provider: ActionProvider) => void
+  registerActionProvider: (provider: ActionProvider) => ActionProviderRegistration
   /**
    * agent-backed workflow step を実行する agent provider を登録する。
    *

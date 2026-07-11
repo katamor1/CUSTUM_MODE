@@ -1,4 +1,4 @@
-import { validateTraceabilityCatalog, type TraceabilityCatalog, type TraceabilityLinkType, type TraceabilityValidationReport } from "./traceabilityCatalog"
+import { validateTraceabilityCatalog, type TraceabilityCatalog, type TraceabilityGate, type TraceabilityLinkType, type TraceabilityValidationReport } from "./traceabilityCatalog"
 
 type TraceabilityLinkEntity = NonNullable<TraceabilityCatalog["links"]>[number]
 
@@ -16,6 +16,7 @@ export type TraceabilityPrepAction =
   | { type: "approveDecision"; subject: string; gate: string }
   | { type: "rejectDecision"; subject: string; gate: string }
   | { type: "restoreDecision"; subject: string; gate: string }
+  | { type: "deferIssue"; code: string; subject?: string; message?: string }
 
 export type TraceabilityPrepModel = {
   catalog: TraceabilityCatalog
@@ -118,7 +119,7 @@ function applyAction(catalog: TraceabilityCatalog, action: TraceabilityPrepActio
     const decision = (catalog.decisions ?? []).find((candidate) => candidate.subject === action.subject && candidate.gate === action.gate)
     if (!decision) return `decision not found: ${action.subject}`
     if (action.type === "approveDecision") {
-      if (!decision.reason?.trim()) return "n/a decision approval requires reason"
+      if (!decision.reason?.trim()) return "decision approval requires reason"
       decision.status = "accepted"
     } else {
       decision.status = "rejected"
@@ -130,7 +131,40 @@ function applyAction(catalog: TraceabilityCatalog, action: TraceabilityPrepActio
     return restoreDecision(catalog, originalCatalog, action.subject, action.gate)
   }
 
+  if (action.type === "deferIssue") {
+    return deferIssue(catalog, action.code, action.subject, action.message)
+  }
+
   return `unsupported action: ${(action as { type?: string }).type ?? "(unknown)"}`
+}
+
+function deferIssue(catalog: TraceabilityCatalog, code: string, subject: string | undefined, message: string | undefined): string | undefined {
+  const gate = gateForIssue(code)
+  if (!gate) return `issue cannot be deferred: ${code}`
+  if (!subject?.trim()) return `issue has no subject: ${code}`
+  const item = catalog.items.find((candidate) => candidate.id === subject && candidate.status === "accepted")
+  if (!item) return `accepted item not found: ${subject}`
+  const decisions = catalog.decisions ??= []
+  const reason = message?.trim() ? `TBD: ${message.trim()}` : `TBD: ${code}`
+  const existing = decisions.find((decision) => decision.subject === subject && decision.gate === gate)
+  if (existing) {
+    existing.decision = "tbd"
+    existing.reason = existing.reason?.trim() || reason
+    existing.status = "accepted"
+  } else {
+    decisions.push({ subject, gate, decision: "tbd", reason, status: "accepted" })
+  }
+  return undefined
+}
+
+function gateForIssue(code: string): TraceabilityGate | undefined {
+  if (code === "missing_basic_design") return "basic_design"
+  if (code === "missing_detailed_design") return "detailed_design"
+  if (code === "missing_test") return "test"
+  if (code === "missing_qa_clarifies") return "clarifies"
+  if (code === "missing_reviewed_by") return "reviewed_by"
+  if (code === "unresolved_review_finding") return "resolution"
+  return undefined
 }
 
 function restoreDomain(catalog: TraceabilityCatalog, originalCatalog: TraceabilityCatalog, code: string): string | undefined {

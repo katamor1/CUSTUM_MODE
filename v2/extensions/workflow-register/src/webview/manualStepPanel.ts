@@ -5,6 +5,10 @@ import {
   type ManualStepPanelInput
 } from "./manualStepViewModel"
 
+interface DisposableLike {
+  dispose(): unknown
+}
+
 export interface ManualStepPanelHost {
   createWebviewPanel: (
     viewType: string,
@@ -21,10 +25,11 @@ export interface ManualStepWebviewPanel {
   webview: {
     cspSource: string
     html: string
-    onDidReceiveMessage: (listener: (message: unknown) => unknown) => { dispose(): unknown }
+    onDidReceiveMessage: (listener: (message: unknown) => unknown) => DisposableLike
   }
   reveal: () => unknown
-  onDidDispose: (listener: () => unknown) => { dispose(): unknown }
+  onDidDispose: (listener: () => unknown) => DisposableLike
+  dispose: () => unknown
 }
 
 export interface ManualStepCompletionRequest {
@@ -43,13 +48,30 @@ interface ManualStepPanelControllerOptions {
   completeStep: (request: ManualStepCompletionRequest) => Promise<ManualStepCompletionResult>
 }
 
-export class ManualStepPanelController {
+export class ManualStepPanelController implements DisposableLike {
   private panel?: ManualStepWebviewPanel
   private current?: ManualStepPanelInput
+  private messageSubscription?: DisposableLike
+  private panelSubscription?: DisposableLike
+  private disposed = false
 
   constructor(private readonly options: ManualStepPanelControllerOptions) {}
 
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    const panel = this.panel
+    this.panel = undefined
+    this.current = undefined
+    this.messageSubscription?.dispose()
+    this.messageSubscription = undefined
+    this.panelSubscription?.dispose()
+    this.panelSubscription = undefined
+    panel?.dispose()
+  }
+
   async show(input: ManualStepPanelInput): Promise<void> {
+    if (this.disposed) throw new Error("Manual step panel controller is disposed.")
     this.current = input
     const panel = this.ensurePanel()
     panel.webview.html = this.render(input)
@@ -57,6 +79,7 @@ export class ManualStepPanelController {
   }
 
   private ensurePanel(): ManualStepWebviewPanel {
+    if (this.disposed) throw new Error("Manual step panel controller is disposed.")
     if (this.panel) return this.panel
     const panel = this.options.host.createWebviewPanel(
       "workflowRegister.manualStepPanel",
@@ -64,8 +87,11 @@ export class ManualStepPanelController {
       this.options.host.activeViewColumn,
       { enableScripts: true }
     )
-    panel.webview.onDidReceiveMessage((message) => this.handleMessage(message))
-    panel.onDidDispose(() => {
+    this.messageSubscription = panel.webview.onDidReceiveMessage((message) => this.handleMessage(message))
+    this.panelSubscription = panel.onDidDispose(() => {
+      this.messageSubscription?.dispose()
+      this.messageSubscription = undefined
+      this.panelSubscription = undefined
       this.panel = undefined
       this.current = undefined
     })

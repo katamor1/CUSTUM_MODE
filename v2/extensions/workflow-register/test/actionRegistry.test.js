@@ -134,3 +134,32 @@ test("action registry executes registered providers and rejects unknown provider
   assert.equal(missing.ok, false)
   assert.match(missing.error, /Unsupported action provider/)
 })
+
+test("action registry rejects duplicate ids and preserves the original owner", async () => {
+  const registry = new ActionRegistry()
+  registry.register({ id: "sample.collect", sourceId: "extension.alpha", execute: () => "alpha" })
+
+  assert.throws(
+    () => registry.register({ id: "sample.collect", sourceId: "extension.beta", execute: () => "beta" }),
+    /sample\.collect.*extension\.alpha.*extension\.beta/
+  )
+
+  const result = await registry.execute("sample.collect", { args: {}, inputs: {} })
+  assert.equal(result.ok, true)
+  assert.equal(result.value, "alpha")
+})
+
+test("action provider registration disposable removes only its own registration", async () => {
+  const registry = new ActionRegistry()
+  const first = registry.register({ id: "sample.collect", sourceId: "extension.alpha", execute: () => "alpha" })
+
+  first.dispose()
+  const missing = await registry.execute("sample.collect", { args: {}, inputs: {} })
+  assert.equal(missing.ok, false)
+
+  registry.register({ id: "sample.collect", sourceId: "extension.beta", execute: () => "beta" })
+  first.dispose()
+  const replacement = await registry.execute("sample.collect", { args: {}, inputs: {} })
+  assert.equal(replacement.ok, true)
+  assert.equal(replacement.value, "beta")
+})

@@ -3,6 +3,7 @@ import { buildCaptureWorkflowOptions } from "./workflowOptions"
 import { buildSafeWorkflowOptions, optionRecord } from "./workflowUserOptions"
 
 const WORKFLOW_REGISTER_EXTENSION_ID = "local.workflow-register"
+const CODE_CONSISTENCY_PROVIDER_SOURCE_ID = "local.bob-code-consistency-review"
 
 interface WorkflowActionExecutionInput {
   args: unknown
@@ -21,12 +22,17 @@ interface WorkflowActionExecutionInput {
 
 interface WorkflowActionProvider {
   id: string
+  sourceId?: string
   execute: (input: WorkflowActionExecutionInput) => Promise<unknown> | unknown
 }
 
-interface WorkflowRegisterApi {
-  registerActionProvider: (provider: WorkflowActionProvider) => void
+export interface WorkflowRegisterApi {
+  registerActionProvider: (provider: WorkflowActionProvider) => vscode.Disposable | void
 }
+
+export type WorkflowProviderRegistrationResult =
+  | { registered: false; registrations: vscode.Disposable[]; api?: undefined }
+  | { registered: true; registrations: vscode.Disposable[]; api: WorkflowRegisterApi }
 
 type WorkflowCommandHandler = (options?: unknown) => Promise<unknown> | unknown
 
@@ -110,6 +116,7 @@ const WORKFLOW_COMMAND_ALLOWED_OPTIONS: Record<string, readonly string[]> = {
     "maxRawDiffBytes",
     "maxRowsPerSheet",
     "maxWorkbookSheets",
+    "vcsCommandTimeoutMs",
     "outDir",
     "reviewInputPath",
     "reviewPackagePath",
@@ -138,74 +145,100 @@ export interface CodeConsistencyWorkflowHandlers {
   triage: WorkflowCommandHandler
 }
 
-export async function registerWorkflowProviders(handlers: CodeConsistencyWorkflowHandlers): Promise<void> {
+export async function registerWorkflowProviders(
+  handlers: CodeConsistencyWorkflowHandlers
+): Promise<WorkflowProviderRegistrationResult> {
   const api = await getWorkflowRegisterApi()
-  if (!api) return
+  if (!api) return { registered: false, registrations: [] }
 
-  api.registerActionProvider({
-    id: "bobCodeConsistency.initializeWorkspace",
-    execute: (input) => handlers.initializeWorkspace(mergeWorkflowOptions("bobCodeConsistency.initializeWorkspace", input))
+  const registrations: vscode.Disposable[] = []
+  try {
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.initializeWorkspace",
+      execute: (input) => handlers.initializeWorkspace(mergeWorkflowOptions("bobCodeConsistency.initializeWorkspace", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.createReviewInput",
+      execute: (input) => handlers.createReviewInput(mergeWorkflowOptions("bobCodeConsistency.createReviewInput", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.prepareAiReviewInputDraft",
+      execute: (input) => handlers.prepareAiReviewInputDraft(mergeWorkflowOptions("bobCodeConsistency.prepareAiReviewInputDraft", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.applyAiReviewInputDraft",
+      execute: (input) => handlers.applyAiReviewInputDraft(mergeWorkflowOptions("bobCodeConsistency.applyAiReviewInputDraft", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.prepareAiTraceabilityDraft",
+      execute: (input) => handlers.prepareAiTraceabilityDraft(mergeWorkflowOptions("bobCodeConsistency.prepareAiTraceabilityDraft", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.captureAiTraceabilityDraft",
+      execute: (input) => handlers.captureAiTraceabilityDraft(buildCaptureTraceabilityDraftOptions(input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.applyAiTraceabilityDraft",
+      execute: (input) => handlers.applyAiTraceabilityDraft(buildApplyTraceabilityDraftOptions(input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.openTraceabilityPrep",
+      execute: (input) => handlers.openTraceabilityPrep(mergeWorkflowOptions("bobCodeConsistency.openTraceabilityPrep", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.validateTraceabilityCatalog",
+      execute: (input) => handlers.validateTraceabilityCatalog(mergeWorkflowOptions("bobCodeConsistency.validateTraceabilityCatalog", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.createReviewInputFromTraceability",
+      execute: (input) => handlers.createReviewInputFromTraceability(mergeWorkflowOptions("bobCodeConsistency.createReviewInputFromTraceability", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.repairReviewInput",
+      execute: (input) => handlers.repairReviewInput(mergeWorkflowOptions("bobCodeConsistency.repairReviewInput", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.explainReviewInputDiagnostics",
+      execute: (input) => handlers.explainReviewInputDiagnostics(mergeWorkflowOptions("bobCodeConsistency.explainReviewInputDiagnostics", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.preprocess",
+      execute: (input) => handlers.preprocess(mergeWorkflowOptions("bobCodeConsistency.preprocess", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.captureBobOutput",
+      execute: (input) => handlers.captureBobOutput(buildCaptureBobOutputOptions(input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.validateOutput",
+      execute: (input) => handlers.validateOutput(mergeWorkflowOptions("bobCodeConsistency.validateOutput", input))
+    })
+    registerOwnedProvider(api, registrations, {
+      id: "bobCodeConsistency.triage",
+      execute: (input) => handlers.triage(mergeWorkflowOptions("bobCodeConsistency.triage", input))
+    })
+    return { registered: true, registrations, api }
+  } catch (error) {
+    disposeRegistrations(registrations)
+    throw error
+  }
+}
+
+function registerOwnedProvider(
+  api: WorkflowRegisterApi,
+  registrations: vscode.Disposable[],
+  provider: WorkflowActionProvider
+): void {
+  const registration = api.registerActionProvider({
+    ...provider,
+    sourceId: CODE_CONSISTENCY_PROVIDER_SOURCE_ID
   })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.createReviewInput",
-    execute: (input) => handlers.createReviewInput(mergeWorkflowOptions("bobCodeConsistency.createReviewInput", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.prepareAiReviewInputDraft",
-    execute: (input) => handlers.prepareAiReviewInputDraft(mergeWorkflowOptions("bobCodeConsistency.prepareAiReviewInputDraft", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.applyAiReviewInputDraft",
-    execute: (input) => handlers.applyAiReviewInputDraft(mergeWorkflowOptions("bobCodeConsistency.applyAiReviewInputDraft", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.prepareAiTraceabilityDraft",
-    execute: (input) => handlers.prepareAiTraceabilityDraft(mergeWorkflowOptions("bobCodeConsistency.prepareAiTraceabilityDraft", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.captureAiTraceabilityDraft",
-    execute: (input) => handlers.captureAiTraceabilityDraft(buildCaptureTraceabilityDraftOptions(input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.applyAiTraceabilityDraft",
-    execute: (input) => handlers.applyAiTraceabilityDraft(buildApplyTraceabilityDraftOptions(input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.openTraceabilityPrep",
-    execute: (input) => handlers.openTraceabilityPrep(mergeWorkflowOptions("bobCodeConsistency.openTraceabilityPrep", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.validateTraceabilityCatalog",
-    execute: (input) => handlers.validateTraceabilityCatalog(mergeWorkflowOptions("bobCodeConsistency.validateTraceabilityCatalog", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.createReviewInputFromTraceability",
-    execute: (input) => handlers.createReviewInputFromTraceability(mergeWorkflowOptions("bobCodeConsistency.createReviewInputFromTraceability", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.repairReviewInput",
-    execute: (input) => handlers.repairReviewInput(mergeWorkflowOptions("bobCodeConsistency.repairReviewInput", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.explainReviewInputDiagnostics",
-    execute: (input) => handlers.explainReviewInputDiagnostics(mergeWorkflowOptions("bobCodeConsistency.explainReviewInputDiagnostics", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.preprocess",
-    execute: (input) => handlers.preprocess(mergeWorkflowOptions("bobCodeConsistency.preprocess", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.captureBobOutput",
-    execute: (input) => handlers.captureBobOutput(buildCaptureBobOutputOptions(input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.validateOutput",
-    execute: (input) => handlers.validateOutput(mergeWorkflowOptions("bobCodeConsistency.validateOutput", input))
-  })
-  api.registerActionProvider({
-    id: "bobCodeConsistency.triage",
-    execute: (input) => handlers.triage(mergeWorkflowOptions("bobCodeConsistency.triage", input))
-  })
+  if (registration && typeof registration.dispose === "function") registrations.push(registration)
+}
+
+export function disposeRegistrations(registrations: vscode.Disposable[]): void {
+  for (const registration of [...registrations].reverse()) registration.dispose()
+  registrations.length = 0
 }
 
 async function getWorkflowRegisterApi(): Promise<WorkflowRegisterApi | undefined> {

@@ -1,6 +1,12 @@
-import { execFile } from "node:child_process"
+import * as path from "node:path"
 import { decodeTextBuffer } from "./textEncoding"
 import { clampExecBufferBytes } from "./reviewLimits"
+import {
+  ExternalProcessError,
+  runExternalProcess,
+  type ExternalProcessResult,
+  type ExternalProcessOptions
+} from "./externalProcessRunner"
 
 export interface BazaarCommandResult {
   stdout: string
@@ -14,6 +20,9 @@ export interface BazaarOptions {
   bzrPath: string
   maxBuffer?: number
   textEncoding?: string
+  timeoutMs?: number
+  signal?: AbortSignal
+  processRunner?: (options: ExternalProcessOptions) => Promise<ExternalProcessResult>
 }
 
 interface RunOptions {
@@ -22,6 +31,9 @@ interface RunOptions {
 
 const REQUIRED_BZR_GLOBAL_OPTION = "--no-aliases"
 const MAX_REVISION_SPEC_LENGTH = 128
+const DEFAULT_BAZAAR_TIMEOUT_MS = 120_000
+const MIN_BAZAAR_TIMEOUT_MS = 1_000
+const MAX_BAZAAR_TIMEOUT_MS = 600_000
 
 export class BazaarError extends Error {
   constructor(message: string, readonly details?: unknown) {
@@ -34,11 +46,17 @@ export class BazaarClient {
   private readonly bzrPath: string
   private readonly maxBuffer: number
   private readonly textEncoding: string
+  private readonly timeoutMs: number
+  private readonly signal?: AbortSignal
+  private readonly processRunner: (options: ExternalProcessOptions) => Promise<ExternalProcessResult>
 
   constructor(options: BazaarOptions) {
     this.bzrPath = options.bzrPath || "bzr"
     this.maxBuffer = clampExecBufferBytes(options.maxBuffer)
     this.textEncoding = options.textEncoding ?? "auto"
+    this.timeoutMs = positiveTimeout(options.timeoutMs)
+    this.signal = options.signal
+    this.processRunner = options.processRunner ?? runExternalProcess
   }
 
   async root(cwd: string): Promise<string> {
@@ -85,10 +103,10 @@ export class BazaarClient {
 
     // Bazaar はユーザー環境の alias で出力や副作用が変わり得るため、全呼び出しで bzr --no-aliases を強制する。
     const commandArgs = withRequiredGlobalOption(args)
-    const allowedExitCodes = options.allowedExitCodes ?? [0]
+    const allowedExitCodes = (options.allowedExitCodes ?? [0]).map((code) => Number(code))
 
     try {
-      const result = await this.exec(cwd, commandArgs)
+      const result = await this.exec(cwd, commandArgs, allowedExitCodes)
       return {
         stdout: decodeTextBuffer(result.stdout, this.textEncoding),
         stderr: decodeTextBuffer(result.stderr, this.textEncoding),
@@ -96,54 +114,40 @@ export class BazaarClient {
         args: commandArgs,
         cwd
       }
-    } catch (error: any) {
-      const stdout = decodeTextBuffer(toBuffer(error?.stdout), this.textEncoding)
-      const stderr = decodeTextBuffer(toBuffer(error?.stderr), this.textEncoding)
-      const code = error?.code
-
-      if (allowedExitCodes.includes(code)) {
-        return {
-          stdout,
-          stderr,
-          command: this.bzrPath,
-          args: commandArgs,
-          cwd
-        }
-      }
-
-      const message = stderr.trim() || stdout.trim() || String(error?.message ?? error)
+    } catch (error) {
+      const stdout = error instanceof ExternalProcessError
+        ? decodeTextBuffer(error.stdout, this.textEncoding)
+        : ""
+      const stderr = error instanceof ExternalProcessError
+        ? decodeTextBuffer(error.stderr, this.textEncoding)
+        : ""
+      const code = error instanceof ExternalProcessError ? error.exitCode : undefined
+      const kind = error instanceof ExternalProcessError ? error.kind : "spawnFailure"
+      const message = stderr.trim() || stdout.trim() || (error instanceof Error ? error.message : String(error))
       throw new BazaarError(`bzr ${commandArgs.join(" ")} が失敗しました: ${message}`, {
         cwd,
         args: commandArgs,
         stdout,
         stderr,
-        code
+        code,
+        kind
       })
     }
   }
 
-  private exec(cwd: string, args: string[]): Promise<{ stdout: Buffer; stderr: Buffer }> {
-    return new Promise((resolve, reject) => {
-      // 外部コマンド境界では shell を使わず argv として渡し、リビジョンやパス検証の前提を壊さない。
-      execFile(this.bzrPath, args, {
-        cwd,
-        shell: false,
-        windowsHide: true,
-        maxBuffer: this.maxBuffer,
-        encoding: "buffer",
-        env: {
-          ...process.env,
-          BZR_PROGRESS_BAR: "none"
-        }
-      } as any, (error, stdout, stderr) => {
-        if (error) {
-          ;(error as any).stdout = toBuffer(stdout)
-          ;(error as any).stderr = toBuffer(stderr)
-          reject(error)
-          return
-        }
-        resolve({ stdout: toBuffer(stdout), stderr: toBuffer(stderr) })
-      })
+  private exec(cwd: string, args: string[], allowedExitCodes: number[] = [0]): Promise<ExternalProcessResult> {
+    return this.processRunner({
+      command: this.bzrPath,
+      args,
+      cwd,
+      maxBufferBytes: this.maxBuffer,
+      timeoutMs: this.timeoutMs,
+      allowedExitCodes,
+      signal: this.signal,
+      env: {
+        ...process.env,
+        BZR_PROGRESS_BAR: "none"
+      }
     })
   }
 }
@@ -152,14 +156,16 @@ function withRequiredGlobalOption(args: string[]): string[] {
   return args.includes(REQUIRED_BZR_GLOBAL_OPTION) ? [...args] : [REQUIRED_BZR_GLOBAL_OPTION, ...args]
 }
 
-function toBuffer(value: unknown): Buffer {
-  if (Buffer.isBuffer(value)) return value
-  if (typeof value === "string") return Buffer.from(value, "utf8")
-  return Buffer.alloc(0)
+function positiveTimeout(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return DEFAULT_BAZAAR_TIMEOUT_MS
+  return Math.max(MIN_BAZAAR_TIMEOUT_MS, Math.min(MAX_BAZAAR_TIMEOUT_MS, Math.floor(value)))
 }
 
 export function validateRevision(revision: string): string {
   const trimmed = revision.trim()
+  if (/[\0-\x1F\x7F]/u.test(revision)) {
+    throw new BazaarError(`安全でない Bazaar リビジョン指定です: ${revision}`)
+  }
   if (!trimmed) {
     throw new BazaarError("リビジョンを入力してください。")
   }
@@ -179,12 +185,22 @@ export function validateRevision(revision: string): string {
 }
 
 export function validateRelativePath(relativePath: string): string {
-  const normalized = relativePath.replace(/\\/g, "/").trim()
-  if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
+  const trimmed = relativePath.trim()
+  const normalized = trimmed.replace(/\\/g, "/")
+  if (
+    !trimmed ||
+    trimmed !== relativePath ||
+    /[\0-\x1F\x7F]/u.test(relativePath) ||
+    path.win32.isAbsolute(trimmed) ||
+    path.posix.isAbsolute(normalized) ||
+    /^[A-Za-z]:/.test(trimmed)
+  ) {
     throw new BazaarError(`安全でない Bazaar パスです: ${relativePath}`)
   }
-  if (normalized.split("/").includes("..")) {
-    throw new BazaarError(`親ディレクトリ参照は許可しません: ${relativePath}`)
+
+  const segments = normalized.split("/")
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+    throw new BazaarError(`安全でない Bazaar パスです: ${relativePath}`)
   }
   return normalized
 }

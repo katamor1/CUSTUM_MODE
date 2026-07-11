@@ -16,10 +16,6 @@
   "categories": [
     "Other"
   ],
-  "extensionDependencies": [
-    "IBM.bob-code",
-    "local.workflow-register"
-  ],
   "activationEvents": [
     "onStartupFinished",
     "onCommand:bobCodeConsistency.openReviewWizard",
@@ -179,65 +175,128 @@
           "default": "bzr",
           "description": "review.vcs が bazaar / bzr の場合に使用する Bazaar 実行ファイルのパス。実行時は必ず --no-aliases を付与します。"
         },
+        "bobCodeConsistency.vcsCommandTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 1000,
+          "maximum": 600000,
+          "description": "Git / Bazaar CLI 1回あたりのハードタイムアウト（ミリ秒）。"
+        },
         "bobCodeConsistency.textEncoding": {
           "type": "string",
-          "enum": ["auto", "utf8", "shift_jis", "cp932", "windows-31j"],
+          "enum": [
+            "auto",
+            "utf8",
+            "shift_jis",
+            "cp932",
+            "windows-31j"
+          ],
           "default": "auto",
           "description": "review-input.yaml、Markdown 文書、C/C++ ソース、Git/Bazaar 差分 stdout、diff fixture の読み取り文字コード。auto は UTF-8 を優先し、文字化けが疑われる場合に Shift-JIS 系へ fallback します。"
         },
         "bobCodeConsistency.maxDocumentBytes": {
           "type": "number",
           "default": 5242880,
+          "minimum": 1,
+          "maximum": 52428800,
           "description": "1 文書あたりの読み取り上限 bytes。Markdown は上限まで読み、DOCX/XLSX は上限超過時に抽出を中止します。"
         },
         "bobCodeConsistency.maxWorkbookSheets": {
           "type": "number",
           "default": 20,
+          "minimum": 1,
+          "maximum": 100,
           "description": "XLSX 抽出時に処理する最大 sheet 数。"
         },
         "bobCodeConsistency.maxRowsPerSheet": {
           "type": "number",
           "default": 500,
+          "minimum": 1,
+          "maximum": 5000,
           "description": "XLSX 抽出時に 1 sheet あたり処理する最大 data row 数。"
         },
         "bobCodeConsistency.maxExcerptBytesPerDocument": {
           "type": "number",
           "default": 65536,
+          "minimum": 1,
+          "maximum": 1048576,
           "description": "1 evidence excerpt あたりの最大 UTF-8 bytes。超過分は truncation warning とともに切り詰めます。"
         },
         "bobCodeConsistency.maxRawDiffBytes": {
           "type": "number",
           "default": 1048576,
+          "minimum": 1,
+          "maximum": 10485760,
           "description": "review package と Bob input に含める raw unified diff の最大 UTF-8 bytes。"
         },
         "bobCodeConsistency.maxBobInputBytes": {
           "type": "number",
           "default": 2097152,
+          "minimum": 1,
+          "maximum": 8388608,
           "description": "生成する bob-input.md の最大 UTF-8 bytes。"
         }
       }
     },
     "menus": {
       "commandPalette": [
-        { "command": "bobCodeConsistency.openReviewWizard" },
-        { "command": "bobCodeConsistency.openResultCaptureGui" },
-        { "command": "bobCodeConsistency.openHumanTriageGui" },
-        { "command": "bobCodeConsistency.initializeWorkspace" },
-        { "command": "bobCodeConsistency.createReviewInput" },
-        { "command": "bobCodeConsistency.prepareAiReviewInputDraft" },
-        { "command": "bobCodeConsistency.applyAiReviewInputDraft" },
-        { "command": "bobCodeConsistency.prepareAiTraceabilityDraft" },
-        { "command": "bobCodeConsistency.captureAiTraceabilityDraft" },
-        { "command": "bobCodeConsistency.applyAiTraceabilityDraft" },
-        { "command": "bobCodeConsistency.openTraceabilityPrep" },
-        { "command": "bobCodeConsistency.validateTraceabilityCatalog" },
-        { "command": "bobCodeConsistency.createReviewInputFromTraceability" },
-        { "command": "bobCodeConsistency.repairReviewInput" },
-        { "command": "bobCodeConsistency.explainReviewInputDiagnostics" },
-        { "command": "bobCodeConsistency.preprocess" },
-        { "command": "bobCodeConsistency.captureBobOutput" },
-        { "command": "bobCodeConsistency.validateOutput" },
-        { "command": "bobCodeConsistency.triage" }
+        {
+          "command": "bobCodeConsistency.openReviewWizard"
+        },
+        {
+          "command": "bobCodeConsistency.openResultCaptureGui"
+        },
+        {
+          "command": "bobCodeConsistency.openHumanTriageGui"
+        },
+        {
+          "command": "bobCodeConsistency.initializeWorkspace"
+        },
+        {
+          "command": "bobCodeConsistency.createReviewInput"
+        },
+        {
+          "command": "bobCodeConsistency.prepareAiReviewInputDraft"
+        },
+        {
+          "command": "bobCodeConsistency.applyAiReviewInputDraft"
+        },
+        {
+          "command": "bobCodeConsistency.prepareAiTraceabilityDraft"
+        },
+        {
+          "command": "bobCodeConsistency.captureAiTraceabilityDraft"
+        },
+        {
+          "command": "bobCodeConsistency.applyAiTraceabilityDraft"
+        },
+        {
+          "command": "bobCodeConsistency.openTraceabilityPrep"
+        },
+        {
+          "command": "bobCodeConsistency.validateTraceabilityCatalog"
+        },
+        {
+          "command": "bobCodeConsistency.createReviewInputFromTraceability"
+        },
+        {
+          "command": "bobCodeConsistency.repairReviewInput"
+        },
+        {
+          "command": "bobCodeConsistency.explainReviewInputDiagnostics"
+        },
+        {
+          "command": "bobCodeConsistency.preprocess"
+        },
+        {
+          "command": "bobCodeConsistency.captureBobOutput"
+        },
+        {
+          "command": "bobCodeConsistency.validateOutput"
+        },
+        {
+          "command": "bobCodeConsistency.triage"
+        }
       ]
     }
   },

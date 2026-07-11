@@ -4,12 +4,20 @@ import type { DiffSummary } from "../core/diffTypes"
 import type { EvidenceRef } from "../core/documentTypes"
 import type { ReviewInput } from "../core/reviewTypes"
 import { toPosixPath } from "../core/fileSystem"
+import { normalizeReviewProcessingLimits, type ReviewProcessingLimits } from "../core/limits"
+import {
+  createCodeEvidenceBudget,
+  reserveCodeEvidence,
+  type CodeEvidenceBudget
+} from "./codeEvidenceBudget"
 import { diffLinesForFile, parseUnifiedDiff } from "./cCppDiffParser"
 
 type GenericCodeEvidenceOptions = {
   startEvidenceIndex?: number
   startSymbolIndex?: number
   skipFiles?: Set<string>
+  limits?: Partial<ReviewProcessingLimits>
+  budget?: CodeEvidenceBudget
 }
 
 type GenericEvidence = Pick<CodeAnalysisResult, "changedSymbols" | "codeSlices" | "evidence" | "summaryMarkdown" | "warnings">
@@ -24,11 +32,14 @@ export function analyzeGenericCodeEvidence(
   const evidence: EvidenceRef[] = []
   const warnings: string[] = []
   const diffLines = parseUnifiedDiff(diff)
+  const limits = normalizeReviewProcessingLimits(options.limits)
+  const budget = options.budget ?? createCodeEvidenceBudget(limits)
   let evidenceIndex = options.startEvidenceIndex ?? 1
   let symbolIndex = options.startSymbolIndex ?? 1
   const skipFiles = new Set(Array.from(options.skipFiles ?? []).map(toPosixPath))
 
   for (const file of diff.files) {
+    if (budget.exhausted) break
     const filePath = toPosixPath(file.path)
     if (skipFiles.has(filePath)) continue
 
@@ -38,21 +49,28 @@ export function analyzeGenericCodeEvidence(
       continue
     }
 
-    const evidenceId = `SRC-${String(evidenceIndex++).padStart(4, "0")}`
-    const symbolId = `CODE-${String(symbolIndex++).padStart(4, "0")}`
+    const evidenceId = `SRC-${String(evidenceIndex).padStart(4, "0")}`
+    const symbolId = `CODE-${String(symbolIndex).padStart(4, "0")}`
     const language = file.language ?? "unknown"
     const changedLineNumbers = fileDiffLines.map((line) => line.line)
     const lineRef = lineRange(changedLineNumbers)
     const ref = `${filePath}:${lineRef}`
-    const text = fileDiffLines.map((line) => `${line.kind === "add" ? "+" : "-"}${line.text}`).join("\n")
-    const markdown = renderGenericCodeSlice(evidenceId, filePath, language, file.status, lineRef, text)
+    const rawText = fileDiffLines.map((line) => `${line.kind === "add" ? "+" : "-"}${line.text}`).join("\n")
+    const reservation = reserveCodeEvidence({
+      label: filePath,
+      text: rawText,
+      render: (text) => renderGenericCodeSlice(evidenceId, filePath, language, file.status, lineRef, text)
+    }, budget, warnings)
+    if (!reservation) break
+    evidenceIndex += 1
+    symbolIndex += 1
 
     codeSlices.push({
       evidence_id: evidenceId,
       file: filePath,
       ref,
-      markdown,
-      text
+      markdown: reservation.markdown,
+      text: reservation.text
     })
     evidence.push({
       evidence_id: evidenceId,
@@ -60,7 +78,7 @@ export function analyzeGenericCodeEvidence(
       ref,
       source: filePath,
       location: `${language}:${lineRef}`,
-      text
+      text: reservation.text
     })
     changedSymbols.push({
       id: symbolId,
