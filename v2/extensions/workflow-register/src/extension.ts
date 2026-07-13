@@ -5,6 +5,8 @@ import type { ResultSinkRegistry } from "./core/resultSinkRegistry"
 import { OperationHubProvider } from "./gui/operationHubProvider"
 import { WorkflowRegisterService } from "./workflowRegisterService"
 import type { StepCompletionOptions } from "./workflowRegisterService"
+import type { BobWorkflowGateAcceptance, BobWorkflowGateAcceptResult } from "./bobWorkflowGateRegistry"
+import type { ArtifactSourceRunArg, RunCommandArg, WorkflowCommandArg } from "./workflowRunCommands"
 
 /**
  * 他の Bob companion extension へ公開する workflow-register API。
@@ -12,6 +14,28 @@ import type { StepCompletionOptions } from "./workflowRegisterService"
  * provider ID、workflow ID、command ID は WORKFLOW.md と companion extension から参照される互換性契約である。
  */
 export interface WorkflowRegisterApi {
+  /**
+   * live Bob execution が待機している review gate を承認する。
+   *
+   * @param workspaceRoot workflow run を所有する workspace root。
+   * @param runId 承認済み run identifier。
+   * @param stepId 承認済み step identifier。
+   * @returns 今回 accept、accept 済み、abort/dispose 済み、または live gate 不在を表す atomic decision。
+   */
+  acceptBobWorkflowGate: (workspaceRoot: string, runId: string, stepId: string) => BobWorkflowGateAcceptResult
+  /**
+   * live gate の承認結果と、その承認を待っていた Bob execution metadata を同時に返す。
+   */
+  acceptBobWorkflowGateWithMetadata: (workspaceRoot: string, runId: string, stepId: string) => BobWorkflowGateAcceptance
+  /**
+   * 同じ workspace run に対する重複 review acceptance を、現在の service activation 内で共有する。
+   *
+   * @param workspaceRoot workflow run を所有する workspace root。
+   * @param runId acceptance 対象 run identifier。
+   * @param operation durable acceptance と Bob reconciliation を含む owner operation。
+   * @returns 同じ root/run で進行中の owner Promise、または新しい owner Promise。
+   */
+  coordinateReviewAcceptance: <T>(workspaceRoot: string, runId: string, operation: () => Promise<T>) => Promise<T>
   /**
    * custom action step を実行する workflow action provider を登録する。
    *
@@ -115,6 +139,9 @@ export interface WorkflowRegisterApi {
 export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi {
   const service = new WorkflowRegisterService(String(context.extension.packageJSON.version ?? "unknown"))
   const api: WorkflowRegisterApi = {
+    acceptBobWorkflowGate: (workspaceRoot, runId, stepId) => service.acceptBobWorkflowGate(workspaceRoot, runId, stepId),
+    acceptBobWorkflowGateWithMetadata: (workspaceRoot, runId, stepId) => service.acceptBobWorkflowGateWithMetadata(workspaceRoot, runId, stepId),
+    coordinateReviewAcceptance: (workspaceRoot, runId, operation) => service.coordinateReviewAcceptance(workspaceRoot, runId, operation),
     registerActionProvider: (provider) => service.registerActionProvider(provider),
     registerAgentProvider: (provider) => service.registerAgentProvider(provider),
     registerResultSink: (type, handler) => service.registerResultSink(type, handler),
@@ -143,7 +170,7 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     vscode.commands.registerCommand("workflowRegister.inspectActiveSteps", () => service.inspectActiveSteps()),
     vscode.commands.registerCommand(
       "workflowRegister.runWorkflow",
-      (workflowId?: string, inputs?: Record<string, unknown>) => service.runWorkflow(workflowId, inputs)
+      (workflowArg?: WorkflowCommandArg, inputs?: Record<string, unknown>) => service.runWorkflow(workflowArg, inputs)
     ),
     vscode.commands.registerCommand(
       "workflowRegister.runWorkflowStep",
@@ -153,14 +180,14 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     ),
     vscode.commands.registerCommand(
       "workflowRegister.startFromStepWithArtifacts",
-      (workflowId?: string, stepId?: string, sourceRunId?: string, inputs?: Record<string, unknown>) => service.startFromStepWithArtifacts(workflowId, stepId, sourceRunId, inputs)
+      (workflowId?: string, stepId?: string, sourceRunArg?: ArtifactSourceRunArg, inputs?: Record<string, unknown>) => service.startFromStepWithArtifacts(workflowId, stepId, sourceRunArg, inputs)
     ),
     vscode.commands.registerCommand("workflowRegister.importArtifactsFromTaskSnapshots", (runId?: string) => service.importArtifactsFromTaskSnapshots(runId)),
-    vscode.commands.registerCommand("workflowRegister.runNextStep", (runId?: string) => service.runNextStep(runId)),
+    vscode.commands.registerCommand("workflowRegister.runNextStep", (runArg?: RunCommandArg) => service.runNextStep(runArg)),
     vscode.commands.registerCommand("workflowRegister.openManualStepPanel", (runArg?: unknown) => service.openManualStepPanel(runArg as Parameters<WorkflowRegisterService["openManualStepPanel"]>[0])),
     vscode.commands.registerCommand("workflowRegister.inspectRuns", () => service.inspectRuns()),
-    vscode.commands.registerCommand("workflowRegister.resumeRun", (runId?: string) => service.resumeRun(runId)),
-    vscode.commands.registerCommand("workflowRegister.retryCurrentStep", (runId?: string) => service.retryCurrentStep(runId)),
+    vscode.commands.registerCommand("workflowRegister.resumeRun", (runArg?: RunCommandArg) => service.resumeRun(runArg)),
+    vscode.commands.registerCommand("workflowRegister.retryCurrentStep", (runArg?: RunCommandArg) => service.retryCurrentStep(runArg)),
     vscode.commands.registerCommand("workflowRegister.approveBranchCheckpoint", (runId?: string) => service.approveBranchCheckpoint(runId)),
     vscode.commands.registerCommand("workflowRegister.abortBranchCheckpoint", (runId?: string) => service.abortBranchCheckpoint(runId)),
     vscode.commands.registerCommand("workflowRegister.inspectBranching", (runId?: string) => service.inspectBranching(runId))

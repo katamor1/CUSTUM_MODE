@@ -43,6 +43,8 @@ export async function openTraceabilityPrepWebview(
 
   const originalCatalog = cloneCatalog(read.catalog)
   let catalog: TraceabilityCatalog = cloneCatalog(read.catalog)
+  let revision = read.revision
+  let messageTail = Promise.resolve()
   const panel = vscode.window.createWebviewPanel(
     "bobCodeConsistencyTraceabilityPrep",
     "Traceability Prep",
@@ -57,25 +59,29 @@ export async function openTraceabilityPrepWebview(
     buildTraceabilityPrepModel(catalog),
     getNonce()
   )
-  panel.webview.onDidReceiveMessage(async (message: TraceabilityPrepWebviewMessage) => {
-    // Webview は承認 UI だが保存主体ではないため、action 適用と catalog 書き込みは必ず extension host 側で行う。
-    if (message.type === "ready") {
-      await postTraceabilityPrepModel(panel, catalog)
-      return
-    }
-    if (message.type === "action") {
-      catalog = await handleTraceabilityPrepAction(panel, catalog, message.action, originalCatalog)
-      return
-    }
-    if (message.type === "restoreOriginalCatalog") {
-      catalog = cloneCatalog(originalCatalog)
-      await postTraceabilityPrepModel(panel, catalog)
-      await panel.webview.postMessage({ type: "info", message: "Opened catalog state restored. Save to write it to disk." })
-      return
-    }
-    if (message.type === "save") {
-      await saveTraceabilityPrepCatalog(panel, options, catalog)
-    }
+  panel.webview.onDidReceiveMessage((message: TraceabilityPrepWebviewMessage) => {
+    const handled = messageTail.then(async () => {
+      // Webview は承認 UI だが保存主体ではないため、action 適用と catalog 書き込みは必ず extension host 側で行う。
+      if (message.type === "ready") {
+        await postTraceabilityPrepModel(panel, catalog)
+        return
+      }
+      if (message.type === "action") {
+        catalog = await handleTraceabilityPrepAction(panel, catalog, message.action, originalCatalog)
+        return
+      }
+      if (message.type === "restoreOriginalCatalog") {
+        catalog = cloneCatalog(originalCatalog)
+        await postTraceabilityPrepModel(panel, catalog)
+        await panel.webview.postMessage({ type: "info", message: "Opened catalog state restored. Save to write it to disk." })
+        return
+      }
+      if (message.type === "save") {
+        revision = await saveTraceabilityPrepCatalog(panel, options, catalog, revision)
+      }
+    })
+    messageTail = handled.then(() => undefined, () => undefined)
+    return handled
   }, undefined, options.context.subscriptions)
 
   return { status: "ok", catalogPath: read.catalogPath }
@@ -108,30 +114,38 @@ async function handleTraceabilityPrepAction(
 async function saveTraceabilityPrepCatalog(
   panel: vscode.WebviewPanel,
   options: OpenTraceabilityPrepWebviewOptions,
-  catalog: TraceabilityCatalog
-): Promise<void> {
+  catalog: TraceabilityCatalog,
+  expectedRevision: string | null
+): Promise<string | null> {
   const write = await writeTraceabilityCatalog({
     workspaceRoot: options.workspaceRoot,
     catalogPath: options.catalogPath,
     catalog,
-    backupExisting: true
+    backupExisting: true,
+    expectedRevision
   })
   if (write.status === "error") {
     await panel.webview.postMessage({ type: "error", message: write.errors.join("; ") })
-    return
+    return expectedRevision
   }
   const gate = await validateAndWriteTraceabilityGateReport({
     workspaceRoot: options.workspaceRoot,
     catalogPath: options.catalogPath,
     reportPath: options.reportPath,
-    textEncoding: options.textEncoding
+    textEncoding: options.textEncoding,
+    expectedRevision: write.revision
   })
+  if (gate.status === "error") {
+    await panel.webview.postMessage({ type: "error", message: gate.errors.join("; ") })
+    return write.revision
+  }
   await panel.webview.postMessage({
     type: "saved",
     catalogPath: write.catalogPath,
     backupPath: write.backupPath,
-    reportPath: gate.status === "ok" ? gate.reportPath : undefined
+    reportPath: gate.reportPath
   })
+  return write.revision
 }
 
 function renderTraceabilityPrepHtml(cspSource: string, model: TraceabilityPrepModel, nonce: string): string {

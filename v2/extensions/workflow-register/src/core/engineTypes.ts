@@ -95,4 +95,9 @@ export interface WorkflowEngineOptions {
 export interface ResumeRunOptions {
   workflow: CoreWorkflowDefinition
   completeHeldStep?: boolean
+  executionMode?: WorkflowExecutionMode
+}
+
+export interface RetryRunOptions {
+  executionMode?: WorkflowExecutionMode
 }

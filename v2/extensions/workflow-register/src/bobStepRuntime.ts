@@ -44,6 +44,7 @@ export class StepRuntime {
       inputs?: Record<string, unknown>
       state?: Record<string, string>
       messageStartIndex?: number
+      completeBobTask?: boolean
       onHeldStep?: (active: ActiveStep) => Promise<void> | void
     }
   ): Promise<ManualCompletionResult> {
@@ -64,6 +65,7 @@ export class StepRuntime {
         inputs: context.inputs,
         state: context.state,
         messageStartIndex: context.messageStartIndex ?? getTaskMessageCount(task),
+        completeBobTask: context.completeBobTask !== false,
         resolve
       }
       this.activeSteps.set(key, active)
@@ -132,7 +134,7 @@ export class StepRuntime {
     }
     applyStateUpdates(active, completion.stateUpdates)
     applyManualCompletionState(active, completion)
-    active.task.setStepComplete?.()
+    if (active.completeBobTask !== false) active.task.setStepComplete?.()
     active.resolve(completion)
     this.activeSteps.delete(active.key)
     return { ok: true, message: `Completed: ${active.workflowLabel} / ${active.title}` }

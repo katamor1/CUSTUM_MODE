@@ -9,7 +9,7 @@ import type {
 export const ARTIFACT_MANIFEST_STATE_KEY = "workflow.artifactManifest"
 export const ARTIFACT_MANIFEST_PATH = ".bob/workflows/runs/{{run.id}}/artifacts/manifest.json"
 
-export type WorkflowArtifactManifestEntrySource = "workflow-artifact" | "task-snapshot" | "imported-artifact"
+export type WorkflowArtifactManifestEntrySource = "workflow-artifact" | "provider-artifact" | "task-snapshot" | "imported-artifact"
 
 export interface WorkflowArtifactManifestEntry {
   id: string
@@ -45,7 +45,7 @@ export function createWorkflowArtifactManifestEntry(input: {
   artifact: WorkflowArtifactDefinition
   step: EngineStep
   path: string
-  text: string
+  text: string | Buffer
   now?: () => string
   source?: WorkflowArtifactManifestEntrySource
 }): WorkflowArtifactManifestEntry {
@@ -55,14 +55,14 @@ export function createWorkflowArtifactManifestEntry(input: {
     producedBy: input.step.id,
     path: input.path,
     schema: input.artifact.schema,
-    sha256: sha256Text(input.text),
-    bytes: Buffer.byteLength(input.text, "utf8"),
+    sha256: createHash("sha256").update(input.text).digest("hex"),
+    bytes: typeof input.text === "string" ? Buffer.byteLength(input.text, "utf8") : input.text.byteLength,
     source: input.source ?? "workflow-artifact",
     updatedAt: input.now?.() ?? new Date().toISOString()
   }
 }
 
-export function updateWorkflowArtifactManifest(input: {
+export function buildWorkflowArtifactManifest(input: {
   workflow: CoreWorkflowDefinition
   run: WorkflowRunState
   entries: WorkflowArtifactManifestEntry[]
@@ -88,7 +88,23 @@ export function updateWorkflowArtifactManifest(input: {
       return byStep !== 0 ? byStep : left.id.localeCompare(right.id)
     })
   }
-  input.run.state[ARTIFACT_MANIFEST_STATE_KEY] = serializeWorkflowArtifactManifest(manifest)
+  return manifest
+}
+
+export function commitWorkflowArtifactManifest(
+  run: WorkflowRunState,
+  manifest: WorkflowArtifactManifest
+): void {
+  run.state[ARTIFACT_MANIFEST_STATE_KEY] = serializeWorkflowArtifactManifest(manifest)
+}
+
+// Preserve the original public helper while transactional callers use the
+// explicit build/write/commit sequence above.
+export function updateWorkflowArtifactManifest(
+  input: Parameters<typeof buildWorkflowArtifactManifest>[0]
+): WorkflowArtifactManifest {
+  const manifest = buildWorkflowArtifactManifest(input)
+  commitWorkflowArtifactManifest(input.run, manifest)
   return manifest
 }
 

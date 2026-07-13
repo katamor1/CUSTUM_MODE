@@ -60,7 +60,11 @@
         },
         "vcs": {
           "type": "string",
-          "enum": ["git", "bazaar", "bzr"],
+          "enum": [
+            "git",
+            "bazaar",
+            "bzr"
+          ],
           "default": "git"
         },
         "vcs_root": {
@@ -166,6 +170,24 @@
           "maximum": 300,
           "default": 80
         },
+        "repository_symbol_index_path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\.json$"
+        },
+        "repository_symbol_index_mode": {
+          "type": "string",
+          "enum": [
+            "consume",
+            "build"
+          ],
+          "default": "consume"
+        },
+        "repository_symbol_index_cache_path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\.cache\\.json$"
+        },
         "language": {
           "type": "array",
           "items": {
@@ -193,7 +215,43 @@
           },
           "uniqueItems": true
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "repository_symbol_index_mode": {
+                "const": "build"
+              }
+            },
+            "required": [
+              "repository_symbol_index_mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "repository_symbol_index_path"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "repository_symbol_index_cache_path"
+            ]
+          },
+          "then": {
+            "required": [
+              "repository_symbol_index_mode"
+            ],
+            "properties": {
+              "repository_symbol_index_mode": {
+                "const": "build"
+              }
+            }
+          }
+        }
+      ]
     },
     "bob_options": {
       "type": "object",
@@ -218,6 +276,19 @@
         "forbid_final_approval": {
           "type": "boolean",
           "const": true
+        },
+        "evidence_scope_rules": {
+          "type": "array",
+          "items": {}
+        },
+        "evidence_scope_rule_pack_path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\.(?:json|ya?ml)$"
+        },
+        "evidence_scope_include_low_priority": {
+          "type": "boolean",
+          "default": false
         }
       }
     }
@@ -233,7 +304,9 @@
     "document_ref": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "properties": {
         "path": {
           "type": "string",

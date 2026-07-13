@@ -2,6 +2,7 @@ import { ParseWorkflowRequest, ParseWorkflowResult } from "../model"
 import { parseLegacyWorkflow } from "./parseLegacyWorkflow"
 import { parseV1Workflow } from "./parseV1Workflow"
 import { asRecord, formatError } from "./yamlFields"
+import { resolveWorkflowSchemaVersion } from "./workflowSchemaVersion"
 
 const yaml = require("js-yaml") as { load(text: string): unknown }
 
@@ -17,7 +18,10 @@ export function parseWorkflowMarkdown(request: ParseWorkflowRequest): ParseWorkf
   }
 
   try {
-    if (fields.schemaVersion === "workflow-register/v1") return parseV1Workflow(request, fields, split.body, request.text)
+    const schemaVersion = resolveWorkflowSchemaVersion(fields.schemaVersion)
+    if (schemaVersion === "workflow-register/v1") {
+      return parseV1Workflow(request, fields, split.body, request.text)
+    }
     return parseLegacyWorkflow(request, fields, split.body, request.text)
   } catch (error) {
     return { ok: false, diagnostics: [`- fail: ${request.filePath}: ${formatError(error)}`] }

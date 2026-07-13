@@ -24,13 +24,23 @@ import {
 import {
   writeProducedArtifacts as writeEngineProducedArtifacts,
 } from "./engine/resultWriters"
-import { prepareRetryResultRecovery } from "./engine/recoveryState"
+import {
+  clearCommandProviderCompleted,
+  commandProviderCompleted,
+  markCommandProviderCompleted,
+  prepareRetryResultRecovery
+} from "./engine/recoveryState"
 import {
   completeStepIfManual as completeEngineStepIfManual,
   waitForManualCompletion as waitForEngineManualCompletion
 } from "./engine/manualCompletion"
 import { pauseRunIfRequested } from "./engine/runPause"
-import { executeAutomatedStep } from "./engine/stepExecutor"
+import { coordinateWorkflowRunExecution } from "./engine/runExecutionCoordinator"
+import { executeAutomatedStep, type AutomatedStepResult } from "./engine/stepExecutor"
+import {
+  latestBranchCheckpointDecision,
+  recordBranchCheckpointDecision
+} from "./engine/branchCheckpoint"
 import {
   abortBranchCheckpointTransition,
   applyStepTransition,
@@ -45,6 +55,7 @@ import {
   WorkflowRunState
 } from "./model"
 import type {
+  RetryRunOptions,
   ResumeRunOptions,
   RunWorkflowOptions,
   WorkflowEngineEventInput,
@@ -61,6 +72,7 @@ export type {
   ManualCompletionInput,
   ManualCompletionResult,
   RecoverResultTextInput,
+  RetryRunOptions,
   ResumeRunOptions,
   RunWorkflowOptions,
   WorkflowEngineEventInput,
@@ -104,9 +116,29 @@ export class WorkflowEngine {
 
   async runWorkflow(workflow: CoreWorkflowDefinition, inputs: Record<string, unknown>, options: RunWorkflowOptions = {}): Promise<WorkflowRunState> {
     const recoveredRun = await this.runStore.findRecoverableRun?.(workflow, inputs, options)
-    const run = recoveredRun ?? await this.runStore.createRun(workflow, inputs)
+    const initialRun = recoveredRun ?? await this.runStore.createRun(workflow, inputs)
+    const initialStatus = initialRun.status
+    return coordinateWorkflowRunExecution(
+      this.runStore,
+      initialRun.runId,
+      runWorkflowOperationKey(options),
+      () => this.runWorkflowOwned(workflow, inputs, options, initialRun, initialStatus, !recoveredRun)
+    )
+  }
+
+  private async runWorkflowOwned(
+    workflow: CoreWorkflowDefinition,
+    inputs: Record<string, unknown>,
+    options: RunWorkflowOptions,
+    initialRun: WorkflowRunState,
+    initialStatus: WorkflowRunState["status"],
+    isNewRun: boolean
+  ): Promise<WorkflowRunState> {
+    const run = await this.runStore.loadRun(initialRun.runId) ?? initialRun
+    if (run.status === "completed") return run
+    if (run.status === "failed" && initialStatus !== "failed") return run
     await this.runStore.saveRun(run)
-    if (!recoveredRun) await this.emit(this.hooks.onWorkflowStart, { workflow, run })
+    if (isNewRun) await this.emit(this.hooks.onWorkflowStart, { workflow, run })
     if (run.status === "checkpoint") return run
     if (run.status === "paused") return run
     if (run.status === "reviewing" && !isOrderedSingleStepContinuation(options)) return run
@@ -178,8 +210,18 @@ export class WorkflowEngine {
   }
 
   async resumeRun(runId: string, options: ResumeRunOptions): Promise<WorkflowRunState> {
+    return coordinateWorkflowRunExecution(
+      this.runStore,
+      runId,
+      resumeRunOperationKey(options),
+      () => this.resumeRunOwned(runId, options)
+    )
+  }
+
+  private async resumeRunOwned(runId: string, options: ResumeRunOptions): Promise<WorkflowRunState> {
     const run = await this.runStore.loadRun(runId)
     if (!run) throw new Error(`Workflow run not found: ${runId}`)
+    if (run.status === "completed" || run.status === "failed") return run
     if (run.status === "checkpoint") throw new Error("Workflow run is waiting at a branch checkpoint. Approve or abort the checkpoint before resuming.")
     if (run.status === "reviewing") throw new Error("Workflow run is waiting for step review. Accept the current step or retry it before resuming.")
     let startIndex = options.workflow.engineSteps.findIndex((step) => step.id === run.currentStep)
@@ -193,6 +235,7 @@ export class WorkflowEngine {
     }
     if (run.status === "held" && options.completeHeldStep && startIndex >= 0) {
       const held = run.steps[startIndex]
+      clearCommandProviderCompleted(run, options.workflow.engineSteps[startIndex])
       if (approveHeldWorkflowStep(run, held.id)) {
         held.status = "pending"
         held.error = undefined
@@ -205,10 +248,27 @@ export class WorkflowEngine {
       run.status = "running"
     }
     await this.runStore.saveRun(run)
-    return this.continueRun(options.workflow, run, Math.max(0, startIndex), "full")
+    return this.continueRun(options.workflow, run, Math.max(0, startIndex), options.executionMode ?? "full")
   }
 
-  async retryCurrentStep(runId: string, workflow: CoreWorkflowDefinition): Promise<WorkflowRunState> {
+  async retryCurrentStep(
+    runId: string,
+    workflow: CoreWorkflowDefinition,
+    options: RetryRunOptions = {}
+  ): Promise<WorkflowRunState> {
+    return coordinateWorkflowRunExecution(
+      this.runStore,
+      runId,
+      retryRunOperationKey(options),
+      () => this.retryCurrentStepOwned(runId, workflow, options)
+    )
+  }
+
+  private async retryCurrentStepOwned(
+    runId: string,
+    workflow: CoreWorkflowDefinition,
+    options: RetryRunOptions
+  ): Promise<WorkflowRunState> {
     const run = await this.runStore.loadRun(runId)
     if (!run) throw new Error(`Workflow run not found: ${runId}`)
     const review = workflowStepReview(workflow)
@@ -230,25 +290,50 @@ export class WorkflowEngine {
     stepState.acceptedAt = undefined
     stepState.attempt = (stepState.attempts?.length ?? 0) + 1
     if ("resultKey" in step && step.resultKey) delete run.state[step.resultKey]
+    clearCommandProviderCompleted(run, step)
     noteDefinitionMismatch(run, workflow)
     await this.runStore.saveRun(run)
-    return this.continueRun(workflow, run, index, "full")
+    return this.continueRun(workflow, run, index, options.executionMode ?? "full")
   }
 
   async approveBranchCheckpoint(runId: string, workflow: CoreWorkflowDefinition): Promise<WorkflowRunState> {
+    return coordinateWorkflowRunExecution(
+      this.runStore,
+      runId,
+      `checkpoint:approve:${workflow.id}:${workflow.definitionHash ?? ""}`,
+      () => this.approveBranchCheckpointOwned(runId, workflow)
+    )
+  }
+
+  private async approveBranchCheckpointOwned(runId: string, workflow: CoreWorkflowDefinition): Promise<WorkflowRunState> {
     const run = await this.runStore.loadRun(runId)
     if (!run) throw new Error(`Workflow run not found: ${runId}`)
+    const checkpoint = run.status === "checkpoint" ? run.branching?.checkpoint : undefined
+    if (!checkpoint) return resolvePriorCheckpointDecision(run, "approved")
     const result = approveBranchCheckpointTransition(workflow, run)
     if (!result.ok) throw new Error(result.error)
+    recordBranchCheckpointDecision({ run, checkpoint, outcome: "approved" })
     await this.runStore.saveRun(run)
     return run
   }
 
   async abortBranchCheckpoint(runId: string, reason?: string): Promise<WorkflowRunState> {
+    return coordinateWorkflowRunExecution(
+      this.runStore,
+      runId,
+      `checkpoint:abort:${reason ?? ""}`,
+      () => this.abortBranchCheckpointOwned(runId, reason)
+    )
+  }
+
+  private async abortBranchCheckpointOwned(runId: string, reason?: string): Promise<WorkflowRunState> {
     const run = await this.runStore.loadRun(runId)
     if (!run) throw new Error(`Workflow run not found: ${runId}`)
+    const checkpoint = run.status === "checkpoint" ? run.branching?.checkpoint : undefined
+    if (!checkpoint) return resolvePriorCheckpointDecision(run, "aborted")
     const result = abortBranchCheckpointTransition(run, reason)
     if (!result.ok) throw new Error(result.error)
+    recordBranchCheckpointDecision({ run, checkpoint, outcome: "aborted", reason })
     await this.runStore.saveRun(run)
     return run
   }
@@ -287,33 +372,61 @@ export class WorkflowEngine {
       await this.runStore.saveRun(run)
       await this.emit(this.hooks.onStepStart, { workflow, run, step })
 
-      const stepResult = await this.executeStep(workflow, run, step)
-      if (!stepResult.ok) {
-        stepState.status = stepResult.held ? "held" : "failed"
-        stepState.error = stepResult.error
-        run.status = stepResult.held ? "held" : "failed"
-        run.error = stepResult.error
-        run.currentStep = step.id
-        await this.runStore.saveRun(run)
-        await this.emit(stepResult.held ? this.hooks.onStepHeld : this.hooks.onStepFailed, { workflow, run, step, error: stepResult.error })
-        return run
-      }
+      const recoveredCommandCompletion = step.type === "command" && commandProviderCompleted(run, step)
+      if (!recoveredCommandCompletion) {
+        const stepResult = await this.executeStep(workflow, run, step)
+        if (!stepResult.ok) {
+          stepState.status = stepResult.held ? "held" : "failed"
+          stepState.error = stepResult.error
+          run.status = stepResult.held ? "held" : "failed"
+          run.error = stepResult.error
+          run.currentStep = step.id
+          await this.runStore.saveRun(run)
+          await this.emit(stepResult.held ? this.hooks.onStepHeld : this.hooks.onStepFailed, { workflow, run, step, error: stepResult.error })
+          return run
+        }
 
-      const artifactResult = await writeEngineProducedArtifacts({
-        workflow,
-        run,
-        step,
-        resultSinks: this.resultSinks
-      })
-      if (!artifactResult.ok) {
-        stepState.status = "failed"
-        stepState.error = artifactResult.error
-        run.status = "failed"
-        run.error = artifactResult.error
-        run.currentStep = step.id
-        await this.runStore.saveRun(run)
-        await this.emit(this.hooks.onStepFailed, { workflow, run, step, error: artifactResult.error })
-        return run
+        const stateBeforeArtifactCommit = { ...run.state }
+        if (stepResult.stagedCommandResult) {
+          Object.assign(run.state, stepResult.stagedCommandResult.stateUpdates)
+          markCommandProviderCompleted(run, step)
+        }
+        const artifactResult = await writeEngineProducedArtifacts({
+          workflow,
+          run,
+          step,
+          resultSinks: this.resultSinks,
+          providerArtifacts: stepResult.providerArtifacts,
+          stateOverlay: stepResult.stagedCommandResult?.stateUpdates,
+          commitState: () => this.runStore.saveRun(run)
+        })
+        if (!artifactResult.ok) {
+          replaceRunState(run, stateBeforeArtifactCommit)
+          stepState.status = "failed"
+          stepState.error = artifactResult.error
+          run.status = "failed"
+          run.error = artifactResult.error
+          run.currentStep = step.id
+          await this.runStore.saveRun(run)
+          await this.emit(this.hooks.onStepFailed, { workflow, run, step, error: artifactResult.error })
+          return run
+        }
+
+        if (stepResult.stagedCommandResult) {
+          // The command is already durable; this hook only mirrors its result to presentation adapters.
+          try {
+            await this.emit(this.hooks.onCommandResult, {
+              workflow,
+              run,
+              step,
+              commandValue: stepResult.stagedCommandResult.commandValue
+            })
+          } catch (error) {
+            console.warn("Workflow command-result presentation hook failed; workflow execution will continue.", error)
+          }
+          const persisted = await this.runStore.loadRun(run.runId)
+          if (persisted && !commandProviderCompleted(persisted, step)) return persisted
+        }
       }
 
       const completion = await completeEngineStepIfManual({
@@ -335,6 +448,7 @@ export class WorkflowEngine {
 
       if (shouldPauseForStepReview(workflow, step, mode)) {
         markPendingReviewTransition(run, step)
+        clearCommandProviderCompleted(run, step)
         stepState.status = "reviewing"
         stepState.reviewStartedAt = new Date().toISOString()
         stepState.error = undefined
@@ -349,6 +463,7 @@ export class WorkflowEngine {
       stepState.status = "completed"
       stepState.completedAt = new Date().toISOString()
       stepState.error = undefined
+      clearCommandProviderCompleted(run, step)
       await this.runStore.saveRun(run)
       await this.emit(this.hooks.onStepCompleted, { workflow, run, step })
       const transition = applyStepTransition({ workflow, run, step, stepIndex: index, mode })
@@ -452,7 +567,7 @@ export class WorkflowEngine {
     workflow: CoreWorkflowDefinition,
     run: WorkflowRunState,
     step: EngineStep
-  ): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
+  ): Promise<AutomatedStepResult> {
     if (step.type === "manual") {
       return waitForEngineManualCompletion({
         workflow,
@@ -470,7 +585,6 @@ export class WorkflowEngine {
       resultSinks: this.resultSinks,
       recoverResultText: this.recoverResultText,
       emitAgentOutput: (event) => this.emit(this.hooks.onAgentOutput, event),
-      emitCommandResult: (event) => this.emit(this.hooks.onCommandResult, event),
       emitHandoffFailed: (event) => this.emit(this.hooks.onHandoffFailed, event)
     })
   }
@@ -495,6 +609,17 @@ export class WorkflowEngine {
   private async emit(hook: ((event: WorkflowEngineEventInput) => Promise<void> | void) | undefined, event: WorkflowEngineEventInput): Promise<void> {
     if (hook) await hook(event)
   }
+}
+
+function resolvePriorCheckpointDecision(
+  run: WorkflowRunState,
+  requested: "approved" | "aborted"
+): WorkflowRunState {
+  const prior = latestBranchCheckpointDecision(run)
+  if (!prior) throw new Error(`Workflow run is not waiting at a branch checkpoint: ${run.status}`)
+  if (prior.outcome === requested) return run
+  const requestedAction = requested === "approved" ? "approve" : "abort"
+  throw new Error(`Branch checkpoint '${prior.checkpointId}' was already ${prior.outcome}; cannot ${requestedAction} it.`)
 }
 
 function isOrderedSingleStepContinuation(options: RunWorkflowOptions): boolean {
@@ -523,4 +648,32 @@ function resetBlockedTargetStep(step: RunStepState | undefined): void {
   step.completedAt = undefined
   step.reviewStartedAt = undefined
   step.acceptedAt = undefined
+}
+
+function replaceRunState(run: WorkflowRunState, state: Record<string, string>): void {
+  for (const key of Object.keys(run.state)) delete run.state[key]
+  Object.assign(run.state, state)
+}
+
+function runWorkflowOperationKey(options: RunWorkflowOptions): string {
+  return JSON.stringify([
+    "runWorkflow",
+    options.executionMode ?? "full",
+    options.stepId ?? "",
+    options.allowOutOfOrder === true
+  ])
+}
+
+function resumeRunOperationKey(options: ResumeRunOptions): string {
+  return JSON.stringify([
+    "resumeRun",
+    options.workflow.id,
+    options.workflow.definitionHash ?? "",
+    options.completeHeldStep === true,
+    options.executionMode ?? "full"
+  ])
+}
+
+function retryRunOperationKey(options: RetryRunOptions): string {
+  return JSON.stringify(["retryCurrentStep", options.executionMode ?? "full"])
 }

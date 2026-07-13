@@ -137,6 +137,7 @@ export interface ActiveStep {
   inputs?: Record<string, unknown>
   state?: Record<string, string>
   messageStartIndex: number
+  completeBobTask?: boolean
   resolve: (value: ManualCompletionResult) => void
 }
 

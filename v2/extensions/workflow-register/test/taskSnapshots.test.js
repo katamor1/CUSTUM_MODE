@@ -129,3 +129,67 @@ test("file task snapshot store keeps workflow runs ignored idempotently", async 
 
   assert.equal((gitignore.match(/^\.bob\/workflows\/runs\/$/gm) ?? []).length, 1)
 })
+
+test("file task snapshot store rejects an external task-snapshots directory alias", async (t) => {
+  const { FileTaskSnapshotStore } = require("../out/core/taskSnapshots")
+  const workspaceRoot = tempDir()
+  const runDirectory = path.join(workspaceRoot, ".bob", "workflows", "runs", "run-1")
+  const outsideDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-task-snapshot-outside-"))
+  const latestBytes = `${JSON.stringify(snapshot({ reason: "agent-output", lastAssistantText: "outside latest" }))}\n`
+  const historyName = "20260630T000000Z-agent-output.json"
+  const historyBytes = `${JSON.stringify(snapshot({ reason: "agent-output", lastAssistantText: "outside history" }))}\n`
+  fs.mkdirSync(runDirectory, { recursive: true })
+  fs.writeFileSync(path.join(outsideDirectory, "latest.json"), latestBytes)
+  fs.writeFileSync(path.join(outsideDirectory, historyName), historyBytes)
+  try {
+    fs.symlinkSync(
+      outsideDirectory,
+      path.join(runDirectory, "task-snapshots"),
+      process.platform === "win32" ? "junction" : "dir"
+    )
+  } catch (error) {
+    fs.rmSync(outsideDirectory, { recursive: true, force: true })
+    if (["EPERM", "EACCES", "ENOTSUP", "UNKNOWN"].includes(error.code)) {
+      t.skip(`directory alias unavailable: ${error.code}`)
+      return
+    }
+    throw error
+  }
+  t.after(() => fs.rmSync(outsideDirectory, { recursive: true, force: true }))
+  const store = new FileTaskSnapshotStore({ workspaceRoot })
+
+  await assert.rejects(store.loadLatest("run-1"), /workspace|outside|symlink|junction|alias|direct/i)
+  await assert.rejects(store.findLatestSnapshot("run-1", () => true), /workspace|outside|symlink|junction|alias|direct/i)
+
+  assert.equal(fs.readFileSync(path.join(outsideDirectory, "latest.json"), "utf8"), latestBytes)
+  assert.equal(fs.readFileSync(path.join(outsideDirectory, historyName), "utf8"), historyBytes)
+})
+
+test("file task snapshot store does not read external snapshot file aliases", async (t) => {
+  const { FileTaskSnapshotStore } = require("../out/core/taskSnapshots")
+  const workspaceRoot = tempDir()
+  const snapshotDirectory = path.join(workspaceRoot, ".bob", "workflows", "runs", "run-1", "task-snapshots")
+  const outsideDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-task-snapshot-file-outside-"))
+  const externalFile = path.join(outsideDirectory, "external.json")
+  const externalBytes = `${JSON.stringify(snapshot({ reason: "agent-output", lastAssistantText: "outside file" }))}\n`
+  const historyName = "20260630T000000Z-agent-output.json"
+  fs.mkdirSync(snapshotDirectory, { recursive: true })
+  fs.writeFileSync(externalFile, externalBytes)
+  try {
+    fs.symlinkSync(externalFile, path.join(snapshotDirectory, "latest.json"), "file")
+    fs.symlinkSync(externalFile, path.join(snapshotDirectory, historyName), "file")
+  } catch (error) {
+    fs.rmSync(outsideDirectory, { recursive: true, force: true })
+    if (["EPERM", "EACCES", "ENOTSUP", "UNKNOWN"].includes(error.code)) {
+      t.skip(`file alias unavailable: ${error.code}`)
+      return
+    }
+    throw error
+  }
+  t.after(() => fs.rmSync(outsideDirectory, { recursive: true, force: true }))
+  const store = new FileTaskSnapshotStore({ workspaceRoot })
+
+  await assert.rejects(store.loadLatest("run-1"), /workspace|outside|symlink|alias|direct/i)
+  assert.equal(await store.findLatestSnapshot("run-1", () => true), undefined)
+  assert.equal(fs.readFileSync(externalFile, "utf8"), externalBytes)
+})

@@ -7,6 +7,7 @@ import type { RecoverResultTextInput } from "../engineTypes"
 
 const HANDOFF_FAILURE_STATE_PREFIX = "workflow.handoffFailed."
 const RETRY_RECOVERY_REASON_PREFIX = "workflow.retryRecoveryReason."
+const COMMAND_PROVIDER_COMPLETION_PREFIX = "workflow.commandProviderCompleted."
 
 type RetryRecoveryReason = Extract<RecoverResultTextInput["reason"], "handoff-failed">
 
@@ -33,6 +34,21 @@ export function takeRetryResultRecoveryReason(run: WorkflowRunState, step: Engin
   return reason === "handoff-failed" ? reason : undefined
 }
 
+export function markCommandProviderCompleted(run: WorkflowRunState, step: EngineStep): void {
+  run.state[commandProviderCompletionKey(step.id)] = JSON.stringify({
+    schemaVersion: "workflow-register/command-provider-completion/v1",
+    completedAt: new Date().toISOString()
+  })
+}
+
+export function commandProviderCompleted(run: WorkflowRunState, step: EngineStep): boolean {
+  return run.state[commandProviderCompletionKey(step.id)] !== undefined
+}
+
+export function clearCommandProviderCompleted(run: WorkflowRunState, step: EngineStep): void {
+  delete run.state[commandProviderCompletionKey(step.id)]
+}
+
 function retryRecoveryReasonForFailure(run: WorkflowRunState, step: EngineStep, stepState: RunStepState): RetryRecoveryReason | undefined {
   if (step.type !== "agent" || !step.result || stepState.status !== "failed") return undefined
   if (run.state[handoffFailureKey(step.id)]) return "handoff-failed"
@@ -46,4 +62,8 @@ function handoffFailureKey(stepId: string): string {
 
 function retryRecoveryReasonKey(stepId: string): string {
   return `${RETRY_RECOVERY_REASON_PREFIX}${stepId}`
+}
+
+function commandProviderCompletionKey(stepId: string): string {
+  return `${COMMAND_PROVIDER_COMPLETION_PREFIX}${stepId}`
 }

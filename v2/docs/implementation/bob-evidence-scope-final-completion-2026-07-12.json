@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "artifact": "bob-evidence-scope-final-completion",
+  "verified_source_head": "3abc4473637fd000b7940b0007e7e4ed45ba27ae",
+  "finalization_commit": "dcf27128764e4ffaf9795df408d877e5a1cf8677",
+  "pr_number": 72,
+  "plans_complete": true,
+  "local_test_count": 243,
+  "focused_test_count": 11,
+  "authoritative_ci": {
+    "code_consistency_review_scaffold": {
+      "run_id": 29209078322,
+      "conclusion": "success"
+    },
+    "extensions_quality": {
+      "run_id": 29209078319,
+      "conclusion": "success"
+    }
+  },
+  "temporary_helpers_present": false
+}

@@ -1,8 +1,9 @@
 import * as vscode from "vscode"
 import { ARTIFACT_MANIFEST_STATE_KEY, ARTIFACT_REUSE_STATE_KEY } from "../core/artifacts"
-import { FileRunStateStore } from "../core/runStateStore"
-import { fallbackWorkspaceRootCandidates, findWorkflowRootCandidates, MarkerRootCandidate } from "../core/workspaceRoots"
-import { WorkflowRunState } from "../core/model"
+import type { WorkflowRunState } from "../core/model"
+import { FileRunStateStore, isWorkflowRunStateWritable } from "../core/runStateStore"
+import { fallbackWorkspaceRootCandidates, findWorkflowRootCandidates } from "../core/workspaceRoots"
+import type { MarkerRootCandidate } from "../core/workspaceRoots"
 
 interface RunViewItem {
   root: string
@@ -39,9 +40,11 @@ export class WorkflowRunControlView implements vscode.Disposable, vscode.TreeDat
 
   getTreeItem(item: RunViewItem): vscode.TreeItem {
     const artifactStatus = artifactStatusForRun(item.run)
+    const writable = isWorkflowRunStateWritable(item.run)
     const treeItem = new vscode.TreeItem(item.run.runId, vscode.TreeItemCollapsibleState.None)
     treeItem.description = [
       item.run.status,
+      writable ? undefined : "read-only",
       item.run.currentStep,
       artifactStatus.description
     ].filter(Boolean).join(" / ")
@@ -49,13 +52,15 @@ export class WorkflowRunControlView implements vscode.Disposable, vscode.TreeDat
       `runId: ${item.run.runId}`,
       `workflow: ${item.run.workflowId}`,
       `status: ${item.run.status}`,
+      `run state schema: ${item.run.schemaVersion ?? "unversioned"}`,
+      writable ? undefined : "run state access: read-only",
       `currentStep: ${item.run.currentStep ?? "none"}`,
       artifactStatus.tooltip,
       `root: ${item.root}`,
       `updatedAt: ${item.run.updatedAt}`
     ].filter(Boolean).join("\n")
-    treeItem.iconPath = new vscode.ThemeIcon(iconForRun(item.run))
-    treeItem.contextValue = `workflowRun.${item.run.status}`
+    treeItem.iconPath = new vscode.ThemeIcon(writable ? iconForRun(item.run) : "lock")
+    treeItem.contextValue = writable ? `workflowRun.${item.run.status}` : "workflowRun.readOnly"
     treeItem.command = {
       command: "workflowRegister.inspectRunControl",
       title: "Inspect Run Control",
@@ -86,18 +91,24 @@ export class WorkflowRunControlView implements vscode.Disposable, vscode.TreeDat
   }
 
   private updateStatusBar(): void {
-    const active = this.latestItems.filter((item) => item.run.status === "running" || item.run.status === "paused" || item.run.status === "reviewing" || item.run.status === "held")
+    const active = this.latestItems.filter((item) => isWorkflowRunStateWritable(item.run) && (
+      item.run.status === "running"
+      || item.run.status === "paused"
+      || item.run.status === "reviewing"
+      || item.run.status === "held"
+    ))
     const running = active.filter((item) => item.run.status === "running").length
     const paused = active.filter((item) => item.run.status === "paused").length
     const reviewing = active.filter((item) => item.run.status === "reviewing").length
     const held = active.filter((item) => item.run.status === "held").length
     const reused = this.latestItems.filter((item) => Boolean(item.run.state[ARTIFACT_REUSE_STATE_KEY])).length
+    const readOnly = this.latestItems.filter((item) => !isWorkflowRunStateWritable(item.run)).length
     this.statusBar.text = active.length === 0
-      ? reused > 0 ? `$(check) Bob Workflow / ${reused} reused` : "$(check) Bob Workflow"
-      : `$(debug-pause) Bob Workflow ${running}r/${paused}p/${reviewing}v/${held}h${reused > 0 ? `/${reused}u` : ""}`
+      ? reused > 0 ? `$(check) Bob Workflow / ${reused} reused${readOnly > 0 ? ` / ${readOnly} read-only` : ""}` : `$(check) Bob Workflow${readOnly > 0 ? ` / ${readOnly} read-only` : ""}`
+      : `$(debug-pause) Bob Workflow ${running}r/${paused}p/${reviewing}v/${held}h${reused > 0 ? `/${reused}u` : ""}${readOnly > 0 ? `/${readOnly}ro` : ""}`
     this.statusBar.tooltip = active.length === 0
-      ? reused > 0 ? `No active Bob workflow runs; ${reused} run(s) reused artifacts` : "No active Bob workflow runs"
-      : `Active Bob workflow runs: ${running} running, ${paused} paused, ${reviewing} reviewing, ${held} held${reused > 0 ? `; ${reused} reused artifact run(s)` : ""}`
+      ? reused > 0 ? `No active Bob workflow runs; ${reused} run(s) reused artifacts${readOnly > 0 ? `; ${readOnly} read-only run(s)` : ""}` : `No active Bob workflow runs${readOnly > 0 ? `; ${readOnly} read-only run(s)` : ""}`
+      : `Active Bob workflow runs: ${running} running, ${paused} paused, ${reviewing} reviewing, ${held} held${reused > 0 ? `; ${reused} reused artifact run(s)` : ""}${readOnly > 0 ? `; ${readOnly} read-only run(s)` : ""}`
   }
 }
 

@@ -189,7 +189,7 @@ async function traceabilitySummary(input: {
 }): Promise<ConsistencyReviewWizardModel["traceability"]> {
   const read = await readTraceabilityCatalog(input)
   if (read.status === "error") return { proposed: 0, accepted: 0, rejected: 0, deprecated: 0, errors: read.errors.length, warnings: 0 }
-  const gate = await validateAndWriteTraceabilityGateReport(input)
+  const gate = await validateAndWriteTraceabilityGateReport({ ...input, expectedRevision: read.revision })
   const counts = countStatuses(read.catalog)
   return {
     ...counts,

@@ -5,7 +5,7 @@ import { collectProcessEvidence } from "../process/processEvidence"
 import { validateProcessInput } from "../process/processInputValidator"
 import { generateCampaignSummary, writeProcessRecord } from "../process/processRecordStore"
 import { validateProcessReviewResult } from "../process/processReviewResultValidator"
-import { validateSafePathSegment, workspacePath } from "../process/processPaths"
+import { validateExistingWorkspacePath, validateSafePathSegment, workspacePath } from "../process/processPaths"
 import type { ProcessEvidenceIndex, ProcessInput } from "../process/processTypes"
 
 export interface ProcessCommandOptions {
@@ -73,11 +73,11 @@ export async function collectEvidenceCommand(
     if (runIdDiagnostic) return error([runIdDiagnostic])
     const evidenceInput = { ...(processInput.input as ProcessInput), runId }
     const evidence = await collectProcessEvidence(options.workspaceRoot, evidenceInput)
-    return ok({
+    return ok(withProviderArtifact("evidenceIndex", evidence.relativePath, {
       index: evidence.index,
       absolutePath: evidence.absolutePath,
       relativePath: evidence.relativePath
-    })
+    }))
   })
 }
 
@@ -104,13 +104,19 @@ export async function writeProcessRecordCommand(
 ): Promise<ProcessCommandResult> {
   return runProcessCommand(async () => {
     const record = normalizeRecordForWrite(input.record ?? (await readWorkspaceData(options.workspaceRoot, requiredPath(input.recordPath, "recordPath"))).data)
+    const gateDiagnostic = completedRequiredGateDiagnostic(record)
+    if (gateDiagnostic) return error([gateDiagnostic])
+    if (isRecord(record) && record.status === "completed" && record.reviewResultPath !== undefined) {
+      const reviewDiagnostics = await validateExistingWorkspacePath(options.workspaceRoot, record.reviewResultPath, "reviewResultPath")
+      if (reviewDiagnostics.length > 0) return error(reviewDiagnostics)
+    }
     const written = await writeProcessRecord(options.workspaceRoot, record)
-    return ok({
+    return ok(withProviderArtifact("processRecord", written.relativePath, {
       absolutePath: written.absolutePath,
       relativePath: written.relativePath,
       backupAbsolutePath: written.backupAbsolutePath,
       backupRelativePath: written.backupRelativePath
-    })
+    }))
   })
 }
 
@@ -121,11 +127,11 @@ export async function generateCampaignSummaryCommand(
   return runProcessCommand(async () => {
     const campaignId = requiredPath(input.campaignId, "campaignId")
     const summary = await generateCampaignSummary(options.workspaceRoot, campaignId)
-    return ok({
+    return ok(withProviderArtifact("campaignSummary", summary.relativePath, {
       summary: summary.summary,
       absolutePath: summary.absolutePath,
       relativePath: summary.relativePath
-    })
+    }))
   })
 }
 
@@ -170,6 +176,15 @@ function error(diagnostics: string[]): ProcessCommandResult {
   return { status: "error", diagnostics, message: diagnostics.join("; ") }
 }
 
+function withProviderArtifact(id: string, artifactPath: string, payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...payload,
+    $workflow: {
+      artifacts: [{ id, ownership: "provider", path: artifactPath }]
+    }
+  }
+}
+
 function normalizeRecordForWrite(record: unknown): unknown {
   if (!isRecord(record) || !isRecord(record.humanGate)) return record
   const status = record.humanGate.status
@@ -181,6 +196,12 @@ function normalizeRecordForWrite(record: unknown): unknown {
       status: "accepted"
     }
   }
+}
+
+function completedRequiredGateDiagnostic(record: unknown): string | undefined {
+  if (!isRecord(record) || record.status !== "completed" || !isRecord(record.humanGate)) return undefined
+  if (record.humanGate.required !== true || record.humanGate.status === "accepted") return undefined
+  return "completed process record requires humanGate.status 'accepted' when humanGate.required is true"
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

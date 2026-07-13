@@ -6,6 +6,7 @@ import {
   type WorkflowArtifactManifest
 } from "../core/artifacts"
 import type { CoreWorkflowDefinition, WorkflowRunState } from "../core/model"
+import { isWorkflowRunStateWritable } from "../core/runStateStore"
 
 export const OPERATION_HUB_ALLOWED_ACTIONS = [
   "refresh",
@@ -37,6 +38,8 @@ export interface OperationHubAction {
   commandId?: string
   workflowId?: string
   runId?: string
+  workspaceRoot?: string
+  expectedRevision?: string
   artifactPath?: string
   variant?: "primary" | "secondary" | "danger"
 }
@@ -63,16 +66,18 @@ export interface OperationHubModelInput {
   workflows: OperationHubWorkflowInput[]
   runs: OperationHubRunInput[]
   focusedRunId?: string
+  focusedWorkspaceRoot?: string
 }
 
 export type OperationHubWorkflowInput = Pick<
   CoreWorkflowDefinition,
-  "id" | "label" | "description" | "hidden" | "inputs" | "artifacts" | "category"
+  "id" | "label" | "description" | "hidden" | "inputs" | "artifacts" | "category" | "workflowRoot"
 >
 
 export interface OperationHubRunInput {
   root: string
   run: WorkflowRunState
+  revision?: string
 }
 
 export interface OperationHubHomeModel {
@@ -147,7 +152,13 @@ interface ArtifactReuseState {
 export function buildOperationHubModel(input: OperationHubModelInput): OperationHubModel {
   const workflowCatalog = buildWorkflowCatalog(input.workflows)
   const runMonitor = input.runs
-    .map((item) => summarizeRunForHub(item.root, item.run, input.focusedRunId))
+    .map((item) => summarizeRunForHub(
+      item.root,
+      item.run,
+      input.focusedRunId,
+      item.revision,
+      input.focusedWorkspaceRoot
+    ))
     .sort((a, b) => Number(b.focused) - Number(a.focused) || b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 20)
   const activeRunCount = runMonitor.filter((run) => !["completed", "failed"].includes(run.status)).length
@@ -165,7 +176,13 @@ export function buildOperationHubModel(input: OperationHubModelInput): Operation
   }
 }
 
-export function summarizeRunForHub(root: string, run: WorkflowRunState, focusedRunId?: string): OperationHubRunSummary {
+export function summarizeRunForHub(
+  root: string,
+  run: WorkflowRunState,
+  focusedRunId?: string,
+  revision?: string,
+  focusedWorkspaceRoot?: string
+): OperationHubRunSummary {
   const currentStep = run.steps.find((step) => step.id === run.currentStep)
   const completedStepCount = run.steps.filter((step) => step.status === "completed").length
   const bobTaskSync = summarizeBobTaskSync(run)
@@ -188,10 +205,20 @@ export function summarizeRunForHub(root: string, run: WorkflowRunState, focusedR
     totalStepCount: run.steps.length,
     updatedAt: run.updatedAt,
     root,
-    focused: run.runId === focusedRunId,
-    primaryActions: actionsForRun(run, Boolean(manifest?.artifacts.length)),
+    focused: run.runId === focusedRunId && (
+      !focusedWorkspaceRoot || sameWorkspaceRoot(root, focusedWorkspaceRoot)
+    ),
+    primaryActions: actionsForRun(root, run, Boolean(manifest?.artifacts.length), revision),
     artifacts: artifactsForRun(root, run, manifest)
   }
+}
+
+function sameWorkspaceRoot(left: string, right: string): boolean {
+  const normalize = (value: string) => {
+    const resolved = path.resolve(value)
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved
+  }
+  return normalize(left) === normalize(right)
 }
 
 function buildRecommendedActions(activeRunCount: number): OperationHubAction[] {
@@ -268,6 +295,7 @@ function buildWorkflowCatalog(workflows: OperationHubWorkflowInput[]): Operation
           label: "開始",
           commandId: "workflowRegister.runWorkflow",
           workflowId: workflow.id,
+          workspaceRoot: workflow.workflowRoot,
           variant: "primary"
         } satisfies OperationHubAction
       ]
@@ -275,15 +303,17 @@ function buildWorkflowCatalog(workflows: OperationHubWorkflowInput[]): Operation
     .sort((a, b) => `${a.category}:${a.label}`.localeCompare(`${b.category}:${b.label}`, "ja"))
 }
 
-function actionsForRun(run: WorkflowRunState, hasReusableArtifacts: boolean): OperationHubAction[] {
-  const inspect = { id: "inspectRunControl", label: "詳細", commandId: "workflowRegister.inspectRunControl", runId: run.runId } as const
+function actionsForRun(root: string, run: WorkflowRunState, hasReusableArtifacts: boolean, revision?: string): OperationHubAction[] {
+  const target = { runId: run.runId, workspaceRoot: root, expectedRevision: revision }
+  const inspect = { id: "inspectRunControl", label: "詳細", commandId: "workflowRegister.inspectRunControl", ...target } as const
+  if (!isWorkflowRunStateWritable(run)) return [inspect]
   const startFromArtifacts = hasReusableArtifacts
     ? {
       id: "startFromArtifacts",
       label: "成果物から開始",
       commandId: "workflowRegister.startFromStepWithArtifacts",
       workflowId: run.workflowId,
-      runId: run.runId,
+      ...target,
       variant: run.status === "completed" ? "primary" : "secondary"
     } satisfies OperationHubAction
     : undefined
@@ -292,35 +322,35 @@ function actionsForRun(run: WorkflowRunState, hasReusableArtifacts: boolean): Op
   switch (run.status) {
     case "reviewing":
       return withReuse([
-        { id: "acceptAndRunNextStep", label: "承認して次へ", commandId: "workflowRegister.acceptAndRunNextStep", runId: run.runId, variant: "primary" },
-        { id: "retryCurrentStep", label: "再試行", commandId: "workflowRegister.retryCurrentStep", runId: run.runId },
+        { id: "acceptAndRunNextStep", label: "承認して次へ", commandId: "workflowRegister.acceptAndRunNextStep", ...target, variant: "primary" },
+        { id: "retryCurrentStep", label: "再試行", commandId: "workflowRegister.retryCurrentStep", ...target },
         inspect
       ])
     case "held":
       return withReuse([
-        { id: "openManualStepPanel", label: "手順を開く", commandId: "workflowRegister.openManualStepPanel", runId: run.runId, variant: "primary" },
-        { id: "runNextStep", label: "次へ", commandId: "workflowRegister.runNextStep", runId: run.runId },
+        { id: "openManualStepPanel", label: "手順を開く", commandId: "workflowRegister.openManualStepPanel", ...target, variant: "primary" },
+        { id: "runNextStep", label: "次へ", commandId: "workflowRegister.runNextStep", ...target },
         inspect
       ])
     case "paused":
       return withReuse([
-        { id: "resumeRun", label: "再開", commandId: "workflowRegister.resumePausedRun", runId: run.runId, variant: "primary" },
+        { id: "resumeRun", label: "再開", commandId: "workflowRegister.resumePausedRun", ...target, variant: "primary" },
         inspect
       ])
     case "failed":
       return withReuse([
-        { id: "retryCurrentStep", label: "再試行", commandId: "workflowRegister.retryCurrentStep", runId: run.runId, variant: "primary" },
+        { id: "retryCurrentStep", label: "再試行", commandId: "workflowRegister.retryCurrentStep", ...target, variant: "primary" },
         inspect
       ])
     case "running":
       if (current?.status === "pending") {
         return withReuse([
-          { id: "runNextStep", label: "次へ", commandId: "workflowRegister.runNextStep", runId: run.runId, variant: "primary" },
+          { id: "runNextStep", label: "次へ", commandId: "workflowRegister.runNextStep", ...target, variant: "primary" },
           inspect
         ])
       }
       return withReuse([
-        { id: "pauseCurrentRun", label: "一時停止", commandId: "workflowRegister.pauseCurrentRun", runId: run.runId },
+        { id: "pauseCurrentRun", label: "一時停止", commandId: "workflowRegister.pauseCurrentRun", ...target },
         inspect
       ])
     default:

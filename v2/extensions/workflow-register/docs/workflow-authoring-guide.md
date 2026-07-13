@@ -29,6 +29,17 @@ steps:
 
 `schemaVersion: workflow-register/v1` is recommended for all new workflows.
 
+## Schema version negotiation
+
+| `schemaVersion` | Behavior |
+| --- | --- |
+| omitted | Parsed as a legacy workflow. |
+| `legacy` | Parsed as a legacy workflow. |
+| `workflow-register/v1` | Parsed and validated as a v1 workflow. |
+| any other value | Rejected before legacy or v1 parsing. |
+
+Version values are exact and case-sensitive. Unknown future versions, typographical errors, and non-string YAML values are not downgraded to legacy workflows.
+
 ## Steps
 
 `steps` is the main execution plan. Supported step types are:

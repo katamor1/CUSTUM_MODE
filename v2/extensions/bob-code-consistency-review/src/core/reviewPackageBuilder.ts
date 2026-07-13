@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
+import type { ContextBudgetArtifact } from "../evidenceScope/contextBudgetArtifact"
 import { applyTemplate, loadPromptTemplates } from "../templates/templateLoader"
 import { relativePosix, writeJsonFile, writeTextFile } from "./fileSystem"
 import { normalizeReviewProcessingLimits, truncateUtf8Text, type ReviewProcessingLimits } from "./limits"
@@ -21,6 +22,7 @@ const MANAGED_PACKAGE_OUTPUTS = [
   "document-index.json",
   "evidence-index.json",
   "traceability-map.json",
+  "context-budget-report.json",
   "manifest.yaml",
   "change-summary.md",
   "diff-context.md",
@@ -38,6 +40,7 @@ export async function buildReviewPackage(input: {
   documents: DocumentExtractionResult
   codeAnalysis: CodeAnalysisResult
   traceability: TraceabilityResult
+  contextBudgetArtifact?: ContextBudgetArtifact
   limits?: Partial<ReviewProcessingLimits>
   workflowRunId?: string
 }): Promise<string[]> {
@@ -66,6 +69,9 @@ export async function buildReviewPackage(input: {
   await writeJsonFile(path.join(outDir, "document-index.json"), { documents: documents.documents, warnings: documents.warnings })
   await writeJsonFile(path.join(outDir, "evidence-index.json"), { evidence: evidence.map(stripEvidenceText) })
   await writeJsonFile(path.join(outDir, "traceability-map.json"), { rows: traceability.rows, warnings: traceability.warnings })
+  if (input.contextBudgetArtifact) {
+    await writeJsonFile(path.join(outDir, "context-budget-report.json"), input.contextBudgetArtifact)
+  }
 
   const changeSummary = buildChangeSummary(reviewInput, diff, codeAnalysis, documents)
   const diffContext = buildDiffContext(diff, codeAnalysis, limits, packageWarnings)
@@ -93,13 +99,35 @@ export async function buildReviewPackage(input: {
   const bobInput = limitBobInput(bobInputSource, limits, packageWarnings)
   deterministicChecks = buildDeterministicChecks(documents, codeAnalysis, traceability, packageWarnings)
 
-  await writeTextFile(path.join(outDir, "manifest.yaml"), buildManifest(reviewInput, diff, evidence, input.workspaceRoot, outDir, packageWarnings, generationId, input.workflowRunId))
+  await writeTextFile(path.join(outDir, "manifest.yaml"), buildManifest(
+    reviewInput,
+    diff,
+    evidence,
+    input.workspaceRoot,
+    outDir,
+    input.contextBudgetArtifact,
+    packageWarnings,
+    generationId,
+    input.workflowRunId
+  ))
   await writeTextFile(path.join(outDir, "deterministic-checks.md"), deterministicChecks)
   await writeTextFile(path.join(outDir, "bob-input.md"), bobInput)
   return packageWarnings
 }
 
-function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: EvidenceRef[], workspaceRoot: string, outDir: string, packageWarnings: string[], generationId: string, workflowRunId?: string): string {
+function buildManifest(
+  reviewInput: ReviewInput,
+  diff: DiffSummary,
+  evidence: EvidenceRef[],
+  workspaceRoot: string,
+  outDir: string,
+  contextBudgetArtifact: ContextBudgetArtifact | undefined,
+  packageWarnings: string[],
+  generationId: string,
+  workflowRunId?: string
+): string {
+  const rulePack = contextBudgetArtifact?.rule_pack
+  const symbolIndex = contextBudgetArtifact?.symbol_index
   return [
     "package_version: 1",
     `generation_id: ${generationId}`,
@@ -112,7 +140,7 @@ function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: Ev
     `  workflow_run_id: ${yamlScalar(workflowRunId ?? "")}`,
     `  source_vcs: ${yamlScalar(diff.vcs ?? "git")}`,
     `  source_revision: ${yamlScalar(sourceRevision(diff))}`,
-    `  input_hash: ${sha256Prefixed({ reviewInput, diff: diffHashInput(diff) })}`,
+    `  input_hash: ${computeReviewPackageInputHash(reviewInput, diff, contextBudgetArtifact)}`,
     "  contains_sensitive_context: true",
     "  human_review_required: true",
     "repository:",
@@ -129,6 +157,19 @@ function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: Ev
     "inputs:",
     `  review_package: ${relativePosix(workspaceRoot, outDir)}`,
     `  evidence_count: ${evidence.length}`,
+    contextBudgetArtifact
+      ? `  context_budget_report: ${relativePosix(workspaceRoot, path.join(outDir, "context-budget-report.json"))}`
+      : undefined,
+    rulePack ? `  project_rule_pack: ${yamlScalar(rulePack.source_path)}` : undefined,
+    rulePack ? `  project_rule_pack_id: ${yamlScalar(rulePack.id)}` : undefined,
+    rulePack ? `  project_rule_pack_version: ${JSON.stringify(rulePack.version)}` : undefined,
+    rulePack ? `  project_rule_pack_hash: ${yamlScalar(rulePack.content_hash)}` : undefined,
+    symbolIndex ? `  repository_symbol_index: ${yamlScalar(symbolIndex.source_path)}` : undefined,
+    symbolIndex ? `  repository_symbol_index_id: ${yamlScalar(symbolIndex.id)}` : undefined,
+    symbolIndex ? `  repository_symbol_index_revision: ${yamlScalar(symbolIndex.source_revision)}` : undefined,
+    symbolIndex ? `  repository_symbol_index_hash: ${yamlScalar(symbolIndex.content_hash)}` : undefined,
+    symbolIndex ? `  repository_symbol_count: ${symbolIndex.symbol_count}` : undefined,
+    symbolIndex ? `  repository_edge_count: ${symbolIndex.edge_count}` : undefined,
     "privacy_notice:",
     "  generated_artifacts_may_contain_sensitive_context: true",
     `  message: ${JSON.stringify("Generated files may contain internal design docs, customer specs, source code, and raw diff. Ignore .bob-review/ and .bob-trace/ai-traceability-draft/ unless intentionally versioned.")}`,
@@ -140,6 +181,63 @@ function buildManifest(reviewInput: ReviewInput, diff: DiffSummary, evidence: Ev
     ...packageWarnings.map((warning) => `  - ${JSON.stringify(warning)}`),
     ""
   ].filter((line): line is string => line !== undefined).join("\n")
+}
+
+export function computeReviewPackageInputHash(
+  reviewInput: ReviewInput,
+  diff: DiffSummary,
+  contextBudgetArtifact: ContextBudgetArtifact | undefined
+): string {
+  return sha256Prefixed({
+    reviewInput,
+    diff: diffHashInput(diff),
+    rulePackHash: contextBudgetArtifact?.rule_pack?.content_hash ?? "",
+    symbolIndexHash: contextBudgetArtifact?.symbol_index?.content_hash ?? ""
+  })
+}
+
+export async function computeManagedReviewPackageContentHash(outDir: string): Promise<string> {
+  const files: Array<{ relativePath: string; absolutePath: string }> = []
+  for (const managedPath of MANAGED_PACKAGE_OUTPUTS) {
+    await collectManagedFiles(outDir, managedPath, files)
+  }
+  files.sort((left, right) => left.relativePath.localeCompare(right.relativePath))
+  const hash = createHash("sha256")
+  for (const file of files) {
+    const bytes = await fs.readFile(file.absolutePath)
+    hash.update(file.relativePath)
+    hash.update("\0")
+    hash.update(String(bytes.length))
+    hash.update("\0")
+    hash.update(bytes)
+    hash.update("\0")
+  }
+  return `sha256:${hash.digest("hex")}`
+}
+
+async function collectManagedFiles(
+  outDir: string,
+  relativePath: string,
+  target: Array<{ relativePath: string; absolutePath: string }>
+): Promise<void> {
+  const absolutePath = path.join(outDir, ...relativePath.split("/"))
+  let stat
+  try {
+    stat = await fs.lstat(absolutePath)
+  } catch (error) {
+    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
+  }
+  if (stat.isSymbolicLink()) throw new Error(`managed review package output must not be a symbolic link: ${relativePath}`)
+  if (stat.isFile()) {
+    target.push({ relativePath, absolutePath })
+    return
+  }
+  if (!stat.isDirectory()) throw new Error(`managed review package output has unsupported file type: ${relativePath}`)
+  const entries = await fs.readdir(absolutePath, { withFileTypes: true })
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    await collectManagedFiles(outDir, `${relativePath}/${entry.name}`, target)
+  }
 }
 
 function sourceRevision(diff: DiffSummary): string {

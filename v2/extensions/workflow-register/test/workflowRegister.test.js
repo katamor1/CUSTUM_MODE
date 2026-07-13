@@ -75,8 +75,8 @@ test("package contributes standalone workflow launcher commands without a hard B
   }
   assert.match(source, /new WorkflowRegisterService\(String\(context\.extension\.packageJSON\.version \?\? "unknown"\)\)/)
   assert.match(source, /registerCommand\([\s\S]*"workflowRegister\.runWorkflowStep"[\s\S]*service\.runWorkflowStep\(workflowId, stepId, inputs\)/)
-  assert.match(source, /registerCommand\([\s\S]*"workflowRegister\.startFromStepWithArtifacts"[\s\S]*service\.startFromStepWithArtifacts\(workflowId, stepId, sourceRunId, inputs\)/)
-  assert.match(source, /registerCommand\("workflowRegister\.runNextStep", \(runId\?: string\) => service\.runNextStep\(runId\)\)/)
+  assert.match(source, /registerCommand\([\s\S]*"workflowRegister\.startFromStepWithArtifacts"[\s\S]*service\.startFromStepWithArtifacts\(workflowId, stepId, sourceRunArg, inputs\)/)
+  assert.match(source, /registerCommand\("workflowRegister\.runNextStep", \(runArg\?: RunCommandArg\) => service\.runNextStep\(runArg\)\)/)
   assert.match(source, /registerCommand\("workflowRegister\.approveBranchCheckpoint", \(runId\?: string\) => service\.approveBranchCheckpoint\(runId\)\)/)
   assert.match(source, /registerCommand\("workflowRegister\.abortBranchCheckpoint", \(runId\?: string\) => service\.abortBranchCheckpoint\(runId\)\)/)
   assert.match(source, /registerCommand\("workflowRegister\.inspectBranching", \(runId\?: string\) => service\.inspectBranching\(runId\)\)/)
@@ -96,7 +96,7 @@ test("authoring wrapper delegates accept-and-run-next to the core next-step comm
   const stepReview = readSrc("commands", "stepReview.ts")
 
   assert.doesNotMatch(wrapper, /registerCommand\("workflowRegister\.runNextStep"/)
-  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", accepted\.runId\)/)
+  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", operationHubTargetForAcceptedStep\(accepted\)\)/)
   assert.doesNotMatch(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.resumeRun", accepted\.runId\)/)
 })
 
@@ -106,8 +106,8 @@ test("accept-only review command tells operators the next step is not started", 
   assert.match(stepReview, /const RUN_NEXT_STEP_LABEL = "次のステップを実行"/)
   assert.match(stepReview, /const OPEN_OPERATION_HUB_LABEL = "Operation Hub を開く"/)
   assert.match(stepReview, /次のステップはまだ開始されていません。/)
-  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", accepted\.runId\)/)
-  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.openOperationHub", \{ runId: accepted\.runId, stepId: accepted\.currentStep/)
+  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.runNextStep", \{[\s\S]*workspaceRoot,[\s\S]*runId: accepted\.runId,[\s\S]*expectedRevision: revision/)
+  assert.match(stepReview, /vscode\.commands\.executeCommand\("workflowRegister\.openOperationHub", \{[\s\S]*workspaceRoot,[\s\S]*runId: accepted\.runId,[\s\S]*stepId: accepted\.currentStep/)
 })
 
 test("package exposes task snapshot retention settings", () => {
@@ -182,14 +182,15 @@ test("workflow authoring write paths enforce WORKFLOW.md document boundaries", (
   assert.match(improve, /isWorkflowDocumentPath\(editor\.document\.uri\.fsPath\)/)
   assert.match(improve, /Open a \.bob\/workflows\/\*\/WORKFLOW\.md file/)
   assert.match(edit, /isWorkflowDocumentPath\(targetUri\.fsPath\)/)
-  assert.match(panel, /validateWorkflowDocumentPath\(\{ workspaceRoot: this\.options\.workflowRoot, filePath: targetUri\.fsPath \}\)/)
-  assert.ok(panel.indexOf("validateWorkflowDocumentPath({ workspaceRoot: this.options.workflowRoot, filePath: targetUri.fsPath })") < panel.indexOf("workspace.fs.writeFile(targetUri"))
+  assert.match(panel, /validateWorkflowDocumentPath\(\{ workspaceRoot: options\.workflowRoot, filePath: targetUri\.fsPath \}\)/)
+  assert.ok(panel.indexOf("validateWorkflowDocumentPath({ workspaceRoot: options.workflowRoot, filePath: targetUri.fsPath })") < panel.indexOf("workspace.fs.writeFile(targetUri"))
 })
 
 test("workspace workflow validation uses strict diagnostics", () => {
   const source = readSrc("commands", "validateWorkflow.ts")
 
-  assert.match(source, /validateWorkflowText\(\{ sourceId: options\.sourceId, filePath, text, strict: true \}\)/)
+  assert.match(source, /const discovered = await discoverWorkspaceWorkflowFiles\(\)/)
+  assert.match(source, /compileWorkflowDocument\(\{ sourceId: options\.sourceId, filePath: candidate\.relativePath, text, strict: true \}\)/)
 })
 
 test("runtime dependencies are not excluded from VSIX packaging", () => {

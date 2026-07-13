@@ -76,6 +76,17 @@ export interface WorkflowArtifactDefinition {
   schema?: string
 }
 
+/** Reserved command-result metadata for an artifact already written by its provider. */
+export interface WorkflowProviderArtifactMetadata {
+  id: string
+  ownership: "provider"
+  path: string
+}
+
+export interface WorkflowCommandResultMetadata {
+  artifacts: WorkflowProviderArtifactMetadata[]
+}
+
 export interface WorkflowCompletionDefinition {
   summary?: string
   includeArtifacts?: boolean

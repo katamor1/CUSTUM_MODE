@@ -52,7 +52,7 @@ test("diff fixtures reject unsafe or silently normalized changed paths", async (
         workspaceRoot,
         diffFixturePath: fixturePath
       }),
-      /changed file path/
+      /diff fixture\.files\[0\]\.path/
     )
   }
 })

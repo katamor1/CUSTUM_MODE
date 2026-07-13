@@ -23,6 +23,9 @@ export type ReviewInput = {
     include_ledgers?: boolean
     max_call_depth?: number
     max_code_context_lines?: number
+    repository_symbol_index_path?: string
+    repository_symbol_index_mode?: "consume" | "build"
+    repository_symbol_index_cache_path?: string
     language?: string[]
   }
   bob_options?: Record<string, unknown>

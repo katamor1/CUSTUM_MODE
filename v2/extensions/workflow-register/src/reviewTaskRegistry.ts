@@ -1,4 +1,4 @@
-import { buildWorkflowAgentPrompt, extractSubagentResult } from "./agentStep"
+import { buildWorkflowAgentExecutionPrompt, extractSubagentResult } from "./agentStep"
 import type { BobWorkflowTask } from "./bobWorkflowTypes"
 import type {
   AgentProvider,
@@ -7,7 +7,7 @@ import type {
   CoreWorkflowDefinition,
   WorkflowRunState
 } from "./core/model"
-import type { WorkflowStateEntry } from "./workflowPromptContext"
+import { normalizeWorkspaceRootIdentity } from "./workspaceRootIdentity"
 
 export type BobTaskSyncReason =
   | "bob-runner-step-completed"
@@ -50,33 +50,33 @@ export class ReviewTaskRegistry {
   private readonly tasksByRun = new Map<string, BobWorkflowTask>()
   private readonly completedSteps = new Set<string>()
 
-  register(runId: string | undefined, stepId: string | undefined, task: BobWorkflowTask): boolean {
-    if (!runId || !stepId) return false
+  register(workspaceRoot: string, runId: string | undefined, stepId: string | undefined, task: BobWorkflowTask): boolean {
+    if (!workspaceRoot || !runId || !stepId) return false
     if (typeof task.setStepComplete !== "function" && typeof task.startSubagent !== "function") return false
-    const key = reviewTaskKey(runId, stepId)
+    const key = reviewTaskKey(workspaceRoot, runId, stepId)
     this.tasksByStep.set(key, task)
-    this.tasksByRun.set(runId, task)
+    this.tasksByRun.set(reviewRunKey(workspaceRoot, runId), task)
     this.completedSteps.delete(key)
     return true
   }
 
-  registerTask(runId: string | undefined, stepId: string | undefined, task: BobWorkflowTask): boolean {
-    return this.register(runId, stepId, task)
+  registerTask(workspaceRoot: string, runId: string | undefined, stepId: string | undefined, task: BobWorkflowTask): boolean {
+    return this.register(workspaceRoot, runId, stepId, task)
   }
 
-  taskForRun(runId: string | undefined): BobWorkflowTask | undefined {
-    return runId ? this.tasksByRun.get(runId) : undefined
+  taskForRun(workspaceRoot: string, runId: string | undefined): BobWorkflowTask | undefined {
+    return workspaceRoot && runId ? this.tasksByRun.get(reviewRunKey(workspaceRoot, runId)) : undefined
   }
 
-  taskForStep(runId: string | undefined, stepId: string | undefined): BobWorkflowTask | undefined {
-    return runId && stepId ? this.tasksByStep.get(reviewTaskKey(runId, stepId)) : undefined
+  taskForStep(workspaceRoot: string, runId: string | undefined, stepId: string | undefined): BobWorkflowTask | undefined {
+    return workspaceRoot && runId && stepId ? this.tasksByStep.get(reviewTaskKey(workspaceRoot, runId, stepId)) : undefined
   }
 
-  complete(runId: string | undefined, stepId: string | undefined): boolean {
-    if (!runId || !stepId) return false
-    const key = reviewTaskKey(runId, stepId)
+  complete(workspaceRoot: string, runId: string | undefined, stepId: string | undefined): boolean {
+    if (!workspaceRoot || !runId || !stepId) return false
+    const key = reviewTaskKey(workspaceRoot, runId, stepId)
     if (this.completedSteps.has(key)) return false
-    const task = this.tasksByStep.get(key) ?? this.tasksByRun.get(runId)
+    const task = this.tasksByStep.get(key) ?? this.tasksByRun.get(reviewRunKey(workspaceRoot, runId))
     this.tasksByStep.delete(key)
     if (typeof task?.setStepComplete !== "function") return false
     try {
@@ -90,34 +90,33 @@ export class ReviewTaskRegistry {
   }
 
   async reconcileRun(
+    workspaceRoot: string,
     run: WorkflowRunState,
     workflow: CoreWorkflowDefinition | undefined,
     options: BobTaskSyncReconcileOptions
   ): Promise<BobTaskSyncReconcileResult> {
-    const task = options.task ?? this.taskForRun(run.runId)
+    const task = options.task ?? this.taskForRun(workspaceRoot, run.runId)
     return reconcileBobTaskSync(run, workflow, { ...options, task })
   }
 
-  agentProviderForRun(runId: string | undefined, workflow: CoreWorkflowDefinition): AgentProvider | undefined {
-    const task = this.taskForRun(runId)
+  agentProviderForRun(workspaceRoot: string, runId: string | undefined, workflow: CoreWorkflowDefinition): AgentProvider | undefined {
+    const task = this.taskForRun(workspaceRoot, runId)
     if (typeof task?.startSubagent !== "function") return undefined
     const startSubagent = task.startSubagent.bind(task)
     return {
       run: async (input) => {
         const stepIndex = workflow.engineSteps.findIndex((candidate) => candidate.id === input.stepId)
         const step = stepIndex >= 0 ? workflow.engineSteps[stepIndex] : undefined
-        const value = await startSubagent(buildWorkflowAgentPrompt({
-          workflowId: workflow.id,
+        const value = await startSubagent(buildWorkflowAgentExecutionPrompt({
+          execution: input,
           workflowName: workflow.name,
-          workflowRoot: input.workflowRoot ?? workflow.workflowRoot,
-          workflowFile: input.workflowFile ?? workflow.workflowFile,
-          workflowFolderName: input.workflowFolderName ?? workflow.workflowFolderName,
+          workflowRoot: workflow.workflowRoot,
+          workflowFile: workflow.workflowFile,
+          workflowFolderName: workflow.workflowFolderName,
           stepIndex: Math.max(0, stepIndex),
-          stepId: input.stepId,
           stepTitle: step?.title ?? input.stepId,
-          stepPrompt: step?.prompt ?? input.prompt,
           workflowInstructions: workflow.promptWithoutTodo,
-          stateEntries: stateEntriesFromRecord(input.state, step?.includeState ?? [])
+          includeState: step?.includeState ?? []
         }))
         const result = extractSubagentResult(value)
         if (!result) throw new Error("Bob subagent returned no result.")
@@ -394,10 +393,14 @@ function syncResult(
   }
 }
 
-function reviewTaskKey(runId: string, stepId: string): string {
-  return `${runId}:${stepId}`
+function reviewRunKey(workspaceRoot: string, runId: string): string {
+  return JSON.stringify([normalizeWorkspaceRoot(workspaceRoot), runId])
 }
 
-function stateEntriesFromRecord(state: Record<string, string>, keys: string[]): WorkflowStateEntry[] {
-  return keys.flatMap((key) => state[key] === undefined ? [] : [{ key, value: state[key] }])
+function reviewTaskKey(workspaceRoot: string, runId: string, stepId: string): string {
+  return JSON.stringify([normalizeWorkspaceRoot(workspaceRoot), runId, stepId])
+}
+
+function normalizeWorkspaceRoot(workspaceRoot: string): string {
+  return normalizeWorkspaceRootIdentity(workspaceRoot)
 }

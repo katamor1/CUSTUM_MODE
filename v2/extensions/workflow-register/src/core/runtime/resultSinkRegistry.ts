@@ -2,11 +2,22 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import { ResultSinkDefinition, ResultSinkWriteInput, ResultSinkWriteResult } from "../model"
 import { requireWorkspaceTrust, type WorkspaceTrustCheck } from "../workspaceTrust"
+import { writeWorkspaceFilesAtomically } from "./workspaceFileTransaction"
 
 type SinkHandler = (sink: ResultSinkDefinition, input: ResultSinkWriteInput) => Promise<ResultSinkWriteResult>
+type FileTransactionCommit = () => Promise<void> | void
+export interface ResultSinkFileTransactionWrite {
+  sink: Extract<ResultSinkDefinition, { type: "file" }>
+  input: ResultSinkWriteInput
+}
+type FileTransactionHandler = (
+  writes: ResultSinkFileTransactionWrite[],
+  commitState: FileTransactionCommit
+) => Promise<ResultSinkWriteResult>
 
 export class ResultSinkRegistry {
   private readonly handlers = new Map<string, SinkHandler>()
+  private fileTransactionHandler?: FileTransactionHandler
 
   register(type: string, handler: SinkHandler): void {
     if (!type.trim()) throw new Error("Result sink type is required.")
@@ -15,6 +26,40 @@ export class ResultSinkRegistry {
 
   list(): string[] {
     return Array.from(this.handlers.keys()).sort()
+  }
+
+  registerFileTransaction(handler: FileTransactionHandler): void {
+    this.fileTransactionHandler = handler
+  }
+
+  async writeFileTransaction(
+    writes: ResultSinkFileTransactionWrite[],
+    commitState: FileTransactionCommit = () => undefined
+  ): Promise<ResultSinkWriteResult> {
+    if (writes.length === 0) return { ok: true }
+    try {
+      if (!this.fileTransactionHandler) {
+        // Compatibility for registries that predate the transaction capability.
+        // Earlier successful external writes cannot be rolled back by a legacy handler.
+        for (const write of writes) {
+          const result = await this.write(write.sink, write.input)
+          if (!result.ok) return result
+        }
+        await Promise.resolve(commitState())
+        return { ok: true }
+      }
+      let committed = false
+      const result = await this.fileTransactionHandler(writes, async () => {
+        await Promise.resolve(commitState())
+        committed = true
+      })
+      if (result.ok && !committed) {
+        return { ok: false, error: "Transactional file result sink did not commit run state." }
+      }
+      return result
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
   }
 
   async write(sink: ResultSinkDefinition, input: ResultSinkWriteInput): Promise<ResultSinkWriteResult> {
@@ -56,6 +101,19 @@ export function createDefaultResultSinkRegistry(options: DefaultResultSinkRegist
     await fs.mkdir(path.dirname(target), { recursive: true })
     await fs.writeFile(target, input.text, { encoding: sink.encoding ?? "utf8" })
     return { ok: true, path: target }
+  })
+
+  registry.registerFileTransaction(async (writes, commitState) => {
+    for (const write of writes) {
+      requireWorkspaceTrust(options.isWorkspaceTrusted, "writing file result sink")
+      if (write.sink.type !== "file") return { ok: false, error: `Invalid file transaction sink: ${write.sink.type}` }
+    }
+    await writeWorkspaceFilesAtomically(options.workspaceRoot, writes.map((write) => ({
+      relativePath: renderTemplate(write.sink.path, write.input),
+      text: write.input.text,
+      encoding: write.sink.encoding
+    })), commitState)
+    return { ok: true }
   })
 
   return registry

@@ -2,7 +2,7 @@ import * as path from "node:path"
 import Ajv2020, { ErrorObject, ValidateFunction } from "ajv/dist/2020"
 import { readTextFile } from "./fileSystem"
 
-export type SchemaName = "review-input" | "bob-output"
+export type SchemaName = "review-input" | "bob-output" | "evidence-scope-rule-pack" | "repository-symbol-index"
 
 export async function loadSchemaValidator(name: SchemaName): Promise<ValidateFunction> {
   const schemaPath = path.join(__dirname, "..", "..", "resources", "schemas", `${name}.schema.json`)

@@ -1,6 +1,13 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import { CoreWorkflowDefinition, EngineStep, RunStatus, WorkflowRunState } from "../model"
+import {
+  assertSafeWorkflowRunId,
+  listContainedTaskSnapshotFiles,
+  readContainedTaskSnapshotFile,
+  removeContainedTaskSnapshotFile,
+  writeContainedTaskSnapshotFile
+} from "../runtime/runStatePath"
 
 export type TaskSnapshotReason =
   | "workflow-start"
@@ -99,20 +106,22 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
   }
 
   async saveSnapshot(snapshot: TaskSnapshotPayload): Promise<{ path: string }> {
+    assertSafeWorkflowRunId(snapshot.runId)
     const pruned = this.prepareSnapshot(snapshot)
-    const dir = this.snapshotDir(snapshot.runId)
     await ensureWorkflowRunsIgnored(this.workspaceRoot)
-    await fs.mkdir(dir, { recursive: true })
-    const file = path.join(dir, `${safeTimestamp(pruned.createdAt)}-${pruned.reason}.json`)
-    await atomicWriteFile(file, `${JSON.stringify(pruned, null, 2)}\n`)
-    await atomicWriteFile(path.join(dir, "latest.json"), `${JSON.stringify(pruned, null, 2)}\n`)
-    if (this.pruneOnSave) await this.pruneSnapshots(dir)
+    const fileName = `${safeTimestamp(pruned.createdAt)}-${pruned.reason}.json`
+    const content = `${JSON.stringify(pruned, null, 2)}\n`
+    await writeContainedTaskSnapshotFile(this.workspaceRoot, snapshot.runId, fileName, content)
+    await writeContainedTaskSnapshotFile(this.workspaceRoot, snapshot.runId, "latest.json", content)
+    if (this.pruneOnSave) await this.pruneSnapshots(snapshot.runId)
+    const file = path.join(this.workspaceRoot, ".bob", "workflows", "runs", snapshot.runId, "task-snapshots", fileName)
     return { path: file }
   }
 
   async loadLatest(runId: string): Promise<TaskSnapshotPayload | undefined> {
     try {
-      return JSON.parse(await fs.readFile(path.join(this.snapshotDir(runId), "latest.json"), "utf8")) as TaskSnapshotPayload
+      const snapshot = await readContainedTaskSnapshotFile(this.workspaceRoot, runId, "latest.json")
+      return parseTaskSnapshot(snapshot.bytes, runId)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
       throw error
@@ -120,10 +129,9 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
   }
 
   async listSnapshots(runId: string): Promise<TaskSnapshotSummary[]> {
-    const dir = this.snapshotDir(runId)
     let entries: string[]
     try {
-      entries = await fs.readdir(dir)
+      entries = await listContainedTaskSnapshotFiles(this.workspaceRoot, runId)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
       throw error
@@ -131,7 +139,7 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
     const jsonEntries = entries.filter((entry) => entry.endsWith(".json") && entry !== "latest.json")
     const snapshots = await Promise.all(jsonEntries.map(async (entry) => {
       try {
-        const snapshot = JSON.parse(await fs.readFile(path.join(dir, entry), "utf8")) as TaskSnapshotPayload
+        const snapshot = parseTaskSnapshot((await readContainedTaskSnapshotFile(this.workspaceRoot, runId, entry)).bytes, runId)
         return summarizeSnapshot(entry, snapshot)
       } catch {
         return undefined
@@ -143,10 +151,9 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
   }
 
   async findLatestSnapshot(runId: string, predicate: (snapshot: TaskSnapshotPayload) => boolean): Promise<TaskSnapshotPayload | undefined> {
-    const dir = this.snapshotDir(runId)
     let entries: string[]
     try {
-      entries = await fs.readdir(dir)
+      entries = await listContainedTaskSnapshotFiles(this.workspaceRoot, runId)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
       throw error
@@ -154,7 +161,7 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
     const jsonEntries = entries.filter((entry) => entry.endsWith(".json") && entry !== "latest.json").sort().reverse()
     for (const entry of jsonEntries) {
       try {
-        const snapshot = JSON.parse(await fs.readFile(path.join(dir, entry), "utf8")) as TaskSnapshotPayload
+        const snapshot = parseTaskSnapshot((await readContainedTaskSnapshotFile(this.workspaceRoot, runId, entry)).bytes, runId)
         if (predicate(snapshot)) return snapshot
       } catch {
         // 読めない snapshot は古い/壊れた補助証跡として扱い、run 再開そのものは止めない。
@@ -186,18 +193,16 @@ export class FileTaskSnapshotStore implements TaskSnapshotStore {
     return prepared
   }
 
-  private async pruneSnapshots(dir: string): Promise<void> {
+  private async pruneSnapshots(runId: string): Promise<void> {
     if (this.maxPerRun <= 0) return
-    const entries = (await fs.readdir(dir))
+    const entries = (await listContainedTaskSnapshotFiles(this.workspaceRoot, runId))
       .filter((entry) => entry.endsWith(".json") && entry !== "latest.json")
       .sort()
     const excess = entries.length - this.maxPerRun
     if (excess <= 0) return
-    await Promise.all(entries.slice(0, excess).map((entry) => fs.rm(path.join(dir, entry), { force: true })))
-  }
-
-  private snapshotDir(runId: string): string {
-    return path.join(this.workspaceRoot, ".bob", "workflows", "runs", sanitize(runId), "task-snapshots")
+    await Promise.all(entries.slice(0, excess).map((entry) => (
+      removeContainedTaskSnapshotFile(this.workspaceRoot, runId, entry)
+    )))
   }
 }
 
@@ -260,6 +265,14 @@ function summarizeSnapshot(fileName: string, snapshot: TaskSnapshotPayload): Tas
   }
 }
 
+function parseTaskSnapshot(bytes: Uint8Array, runId: string): TaskSnapshotPayload {
+  const snapshot = JSON.parse(Buffer.from(bytes).toString("utf8")) as TaskSnapshotPayload
+  if (snapshot.runId !== runId) {
+    throw new Error(`Workflow task snapshot run id mismatch: expected '${runId}', got '${snapshot.runId}'.`)
+  }
+  return snapshot
+}
+
 function extractLastAssistantText(messages: unknown[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const candidate = messages[index]
@@ -288,10 +301,6 @@ async function atomicWriteFile(file: string, content: string): Promise<void> {
     await fs.rm(tempFile, { force: true }).catch(() => undefined)
     throw error
   }
-}
-
-function sanitize(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "run"
 }
 
 const workflowRunsIgnoreEntry = ".bob/workflows/runs/"

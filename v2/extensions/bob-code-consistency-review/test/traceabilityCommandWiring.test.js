@@ -23,3 +23,17 @@ test("traceability commands reuse review metadata and focus options from shared 
   assert.match(source, /reviewFocusOption\(record\) \?\? \["requirement-code-consistency", "design-code-consistency", "test-gap"\]/)
   assert.match(source, /writeReviewInputFromDraft\(\{[\s\S]*strictPaths: booleanOption\(record, "strictPaths"\) \?\? true[\s\S]*\}\)/)
 })
+
+test("traceability gate reports stay on the catalog revision that triggered them", () => {
+  const commandSource = readSourceSet(["traceabilityCommands.ts"])
+  const wizardSource = readSourceSet(["webview/consistencyReviewWizard.ts"])
+
+  assert.match(
+    commandSource,
+    /validateAndWriteTraceabilityGateReport\(\{[\s\S]*expectedRevision: result\.revision[\s\S]*\}\)/
+  )
+  assert.match(
+    wizardSource,
+    /validateAndWriteTraceabilityGateReport\(\{ \.\.\.input, expectedRevision: read\.revision \}\)/
+  )
+})

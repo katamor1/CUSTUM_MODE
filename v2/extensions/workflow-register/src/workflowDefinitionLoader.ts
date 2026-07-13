@@ -4,7 +4,10 @@ import type {
   WorkflowDefinition
 } from "./bobWorkflowTypes"
 import type { CoreWorkflowDefinition } from "./core/model"
-import { parseWorkflowMarkdown } from "./core/parser"
+import {
+  compileWorkflowDocument,
+  formatWorkflowDiagnostics
+} from "./core/workflowCompiler"
 import {
   adaptCoreWorkflowForBob,
   qualifyDuplicateWorkflowIds
@@ -42,18 +45,12 @@ async function loadWorkflowFile(
   const diagnostics: string[] = []
   const text = Buffer.from(await vscode.workspace.fs.readFile(candidate.file))
     .toString("utf8")
-    .replace(/^\uFEFF/, "")
-  const parsed = parseWorkflowMarkdown({ sourceId, filePath: candidate.relativePath, text })
-  diagnostics.push(...parsed.diagnostics)
-  if (!parsed.ok) return { diagnostics }
-  const parserWarnings = parsed.diagnostics.filter(isParserWarning)
-  if (parserWarnings.length > 0) {
-    diagnostics.push(`- fail: ${candidate.relativePath}: workflow registration is strict; resolve parser warnings before registration.`)
-    return { diagnostics }
-  }
+  const compiled = compileWorkflowDocument({ sourceId, filePath: candidate.relativePath, text, strict: true })
+  diagnostics.push(...formatWorkflowDiagnostics(compiled))
+  if (!compiled.ok || !compiled.workflow) return { diagnostics }
   const coreWorkflow = {
-    ...parsed.workflow,
-    logicalWorkflowId: parsed.workflow.id,
+    ...compiled.workflow,
+    logicalWorkflowId: compiled.workflow.id,
     workflowRoot: candidate.root.root,
     workflowFile: candidate.file.fsPath,
     workflowFolderName: candidate.root.name
@@ -62,14 +59,10 @@ async function loadWorkflowFile(
   const workflowDiagnostics = validateAndDescribeWorkflow({
     relativePath: candidate.relativePath,
     folderName: candidate.folderName,
-    parsedWorkflowName: parsed.workflow.name,
+    parsedWorkflowName: compiled.workflow.name,
     workflow
   })
   diagnostics.push(...workflowDiagnostics.diagnostics)
   if (!workflowDiagnostics.ok) return { diagnostics }
   return { workflow, coreWorkflow, diagnostics }
-}
-
-function isParserWarning(line: string): boolean {
-  return line.trimStart().startsWith("- warn:")
 }

@@ -1,5 +1,7 @@
-import * as fs from "fs/promises"
-import * as path from "path"
+import { assertWorkflowRunStateWritable } from "./runStateCodec"
+import { FileRunStateStore } from "./runStateStore"
+import { readContainedRunFile, writeContainedRunFile } from "./runStatePath"
+import { syncRunMaterializedFile } from "./runDurabilityPath"
 
 export type RunPauseMode = "afterCurrentStep" | "beforeNextAiCall"
 
@@ -44,6 +46,7 @@ export class FileRunControlStore implements RunControlStore {
   }
 
   async requestPause(input: PauseRequestInput): Promise<RunControlState> {
+    await this.requireWritableRun(input.runId)
     const existing = await this.loadControl(input.runId)
     const next: RunControlState = {
       ...(existing ?? { schemaVersion: "workflow-register/run-control/v1", runId: input.runId }),
@@ -60,6 +63,7 @@ export class FileRunControlStore implements RunControlStore {
   }
 
   async clearPause(runId: string): Promise<RunControlState> {
+    await this.requireWritableRun(runId)
     const existing = await this.loadControl(runId)
     const next: RunControlState = {
       ...(existing ?? { schemaVersion: "workflow-register/run-control/v1", runId }),
@@ -77,8 +81,13 @@ export class FileRunControlStore implements RunControlStore {
 
   async loadControl(runId: string): Promise<RunControlState | undefined> {
     try {
-      const parsed = JSON.parse(await fs.readFile(this.controlFile(runId), "utf8")) as RunControlState
-      return parsed?.schemaVersion === "workflow-register/run-control/v1" ? parsed : undefined
+      const snapshot = await readContainedRunFile(this.workspaceRoot, runId, "control.json")
+      const parsed = JSON.parse(snapshot.bytes.toString("utf8")) as RunControlState
+      if (parsed?.schemaVersion !== "workflow-register/run-control/v1") return undefined
+      if (parsed.runId !== runId) {
+        throw new Error(`Workflow run control id mismatch: expected '${runId}', got '${parsed.runId}'.`)
+      }
+      return parsed
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
       throw error
@@ -91,6 +100,7 @@ export class FileRunControlStore implements RunControlStore {
   }
 
   async recordResumeNote(runId: string, note: string): Promise<RunControlState> {
+    await this.requireWritableRun(runId)
     const existing = await this.loadControl(runId)
     const next: RunControlState = {
       ...(existing ?? { schemaVersion: "workflow-register/run-control/v1", runId }),
@@ -102,28 +112,19 @@ export class FileRunControlStore implements RunControlStore {
     return next
   }
 
+  private async requireWritableRun(runId: string): Promise<void> {
+    const run = await new FileRunStateStore({ workspaceRoot: this.workspaceRoot }).loadRun(runId)
+    if (!run) throw new Error(`Workflow run not found: ${runId}`)
+    assertWorkflowRunStateWritable(run)
+  }
+
   private async saveControl(control: RunControlState): Promise<void> {
-    const file = this.controlFile(control.runId)
-    await fs.mkdir(path.dirname(file), { recursive: true })
-    await atomicWriteFile(file, `${JSON.stringify(control, null, 2)}\n`)
+    await writeContainedRunFile(
+      this.workspaceRoot,
+      control.runId,
+      `${JSON.stringify(control, null, 2)}\n`,
+      "control.json"
+    )
+    await syncRunMaterializedFile(this.workspaceRoot, control.runId, "control.json")
   }
-
-  private controlFile(runId: string): string {
-    return path.join(this.workspaceRoot, ".bob", "workflows", "runs", safeSegment(runId), "control.json")
-  }
-}
-
-async function atomicWriteFile(file: string, content: string): Promise<void> {
-  const tempFile = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
-  try {
-    await fs.writeFile(tempFile, content, "utf8")
-    await fs.rename(tempFile, file)
-  } catch (error) {
-    await fs.rm(tempFile, { force: true }).catch(() => undefined)
-    throw error
-  }
-}
-
-function safeSegment(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "run"
 }

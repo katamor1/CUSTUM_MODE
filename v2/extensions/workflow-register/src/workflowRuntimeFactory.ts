@@ -5,6 +5,7 @@ import {
   recoverResultTextFromSnapshots
 } from "./bobWorkflowRunner"
 import { StepRuntime } from "./bobStepRuntime"
+import type { BobWorkflowGateRegistry } from "./bobWorkflowGateRegistry"
 import type {
   ActiveStep,
   BobWorkflowRunnerInputCollector,
@@ -36,6 +37,7 @@ export interface WorkflowRuntimeFactoryOptions {
   stepRuntime: StepRuntime
   agentProvider: () => AgentProvider | undefined
   inputsProvider: (workflow: WorkflowDefinition, provided: Record<string, unknown>) => ReturnType<BobWorkflowRunnerInputCollector>
+  gateRegistry: BobWorkflowGateRegistry
   onManualStepHeld?: (input: { workflow: import("./core/model").CoreWorkflowDefinition; run: import("./core/model").WorkflowRunState; step: import("./core/model").EngineStep; active: ActiveStep }) => Promise<void> | void
 }
 
@@ -68,6 +70,7 @@ export class WorkflowRuntimeFactory {
       preflightChecks: (workspaceRoot) => this.createPreflightChecks(workspaceRoot),
       agentProvider: this.options.agentProvider() ?? this.createCommandAgentProvider(),
       stepRuntime: this.options.stepRuntime,
+      gateRegistry: this.options.gateRegistry,
       onManualStepHeld: this.options.onManualStepHeld,
       inputsProvider: (task, provided) => this.options.inputsProvider(workflow, {
         ...extractTaskWorkflowInputs(workflow, task),

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "artifact": "bob-evidence-scope-phase4",
+  "hash_algorithm": "sha256",
+  "source_commit": "4b3289914d3a5a45b77d9e48e6cad2bceda85bdd",
+  "files": [
+    {
+      "path": "docs/superpowers/specs/2026-07-12-bob-evidence-scope-phase4-design.md",
+      "bytes": 7917,
+      "sha256": "efee0ec74307062c6300fd1bdfbe478f40ca8e04bd2e87325916140b534911ab"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-07-12-bob-evidence-scope-phase4.md",
+      "bytes": 12245,
+      "sha256": "5c298836ecd92c68758454828af30ab33227def573ee44e1cc0427e77f1f031f"
+    },
+    {
+      "path": "docs/implementation/bob-evidence-scope-phase4-2026-07-12.md",
+      "bytes": 7436,
+      "sha256": "e3ce85031fbeda6e552ec11074e7423c63fe63fc474de154a0e56f6c15838e61"
+    },
+    {
+      "path": "docs/implementation/bob-evidence-scope-phase4-verification-2026-07-12.md",
+      "bytes": 4682,
+      "sha256": "e5fca556ab89be7639474e06fab8dc9640d88ea6fbdb15ce7a834c435560b1c2"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/docs/evidence-scope-domain-contract-ja.md",
+      "bytes": 15542,
+      "sha256": "a7a709927609d5085d68efc5eb6fc040040eff1a2fd66ceb054c96a9c0fe44a4"
+    },
+    {
+      "path": "docs/workflows/code-consistency-review/schemas/repository-symbol-index.schema.json",
+      "bytes": 3868,
+      "sha256": "7bc25db3389d040170eb78e5c561b39e85b7eef4d8324aa35830c5f81aaa991d"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/resources/schemas/repository-symbol-index.schema.json",
+      "bytes": 3868,
+      "sha256": "7bc25db3389d040170eb78e5c561b39e85b7eef4d8324aa35830c5f81aaa991d"
+    },
+    {
+      "path": "docs/workflows/code-consistency-review/schemas/review-input.schema.json",
+      "bytes": 6860,
+      "sha256": "079a08e014470f6a1b7eb1535c3207c945a90528a6df36ccf5601b3b77ca0793"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/resources/schemas/review-input.schema.json",
+      "bytes": 6860,
+      "sha256": "079a08e014470f6a1b7eb1535c3207c945a90528a6df36ccf5601b3b77ca0793"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/core/reviewPackageBuilder.ts",
+      "bytes": 14918,
+      "sha256": "71d0009658f8dbdcbac566cdc17126d62caa984665f891f196b80662e6248e8d"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/core/reviewTypes.ts",
+      "bytes": 734,
+      "sha256": "91e6058a73de95e2d56ce838e46c6b7c939684adcb2b807d67c51e896538309e"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/core/schemaLoader.ts",
+      "bytes": 1000,
+      "sha256": "b91aeea6a6aa1e452baf5ef595cb0c58e23267f3b9b5e1ac154f9ca014262c6b"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/contextBudgetArtifact.ts",
+      "bytes": 2786,
+      "sha256": "551e7cf89d610d1f098e87cc0ca2302673f719b37dd8e5c06bb1fa0339b28ced"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/index.ts",
+      "bytes": 1542,
+      "sha256": "138f12f5486df961c8c668bc4fc24d2ddf7db151dbbebb82fedd220f2976d9ab"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/repositorySymbolIndexAdapter.ts",
+      "bytes": 4063,
+      "sha256": "7b0dfd9d8edfc769a56390cc75082b36830e68df06a0faa7da25c8d93ed6b7f5"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/repositorySymbolIndexLoader.ts",
+      "bytes": 8528,
+      "sha256": "0e31a2e96ccfd32745452e26c1d18e068a738c899389d2847ec84121667a78b1"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/reviewContextBudget.ts",
+      "bytes": 3756,
+      "sha256": "19ae8371288683d0b253d3a38805186ed44323ff677a087f344b087020613d19"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/reviewEvidenceAdapter.ts",
+      "bytes": 6837,
+      "sha256": "0e59e7f271b0bba82e9d47a29f01eb0c0f694c2b2f83489956b39cd234db9280"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/test/repositorySymbolIndex.test.js",
+      "bytes": 15999,
+      "sha256": "b9ce18f3d43a606d31c535f97e8129675751da42ba187cb3c75659ec6498e645"
+    }
+  ]
+}

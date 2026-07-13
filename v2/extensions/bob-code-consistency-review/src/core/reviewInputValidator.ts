@@ -72,7 +72,7 @@ async function readReviewInputWithinLimit(filePath: string, textEncoding: string
 }
 
 function countArtifactReferences(reviewInput: ReviewInput): number {
-  return Object.values(reviewInput.artifacts).reduce(
+  return Object.values(reviewInput.artifacts).reduce<number>(
     (total, value) => total + (Array.isArray(value) ? value.length : 0),
     0
   )

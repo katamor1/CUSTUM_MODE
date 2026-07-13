@@ -128,6 +128,352 @@ test("workflow engine resumes a recoverable run with the same serialized inputs 
   assert.equal((await runStore.listRuns()).length, 1)
 })
 
+test("command presentation hook failure does not replay a successful provider", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { WorkflowEngine } = require("../out/core/engine")
+  const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+  const { FileRunStateStore } = require("../out/core/runStateStore")
+
+  const workspaceRoot = tempDir()
+  const workflow = {
+    id: "workflow-register.command-observer-recovery",
+    name: "command-observer-recovery",
+    label: "Command Observer Recovery",
+    description: "Do not replay a provider when a presentation-only command observer fails.",
+    schemaVersion: "workflow-register/v1",
+    definitionHash: "definition-v1",
+    filePath: ".bob/workflows/command-observer-recovery/WORKFLOW.md",
+    inputs: {},
+    engineSteps: [
+      { id: "mutate", title: "Mutate", type: "command", action: { provider: "sample.mutate" }, resultKey: "mutationResult" }
+    ]
+  }
+  const runStore = new FileRunStateStore({ workspaceRoot, now: () => "2026-06-30T00:00:00.000Z", engineVersion: "test-engine" })
+  const actions = new ActionRegistry()
+  let providerCalls = 0
+  actions.register({
+    id: "sample.mutate",
+    execute: async () => ({ call: ++providerCalls })
+  })
+  let failObserver = true
+  const engine = new WorkflowEngine({
+    actions,
+    resultSinks: createDefaultResultSinkRegistry({ workspaceRoot, executeCommand: async () => undefined }),
+    runStore,
+    hooks: {
+      onCommandResult: async () => {
+        if (!failObserver) return
+        failObserver = false
+        throw new Error("Bob sendMessage failed")
+      }
+    }
+  })
+
+  let firstError
+  let result
+  const warnings = []
+  const originalWarn = console.warn
+  console.warn = (...args) => warnings.push(args)
+  try {
+    try {
+      result = await engine.runWorkflow(workflow, {})
+    } catch (error) {
+      firstError = error
+      result = await engine.runWorkflow(workflow, {})
+    }
+  } finally {
+    console.warn = originalWarn
+  }
+
+  assert.equal(providerCalls, 1, "presentation hook failure must not make the provider recoverable and replay it")
+  assert.equal(firstError, undefined)
+  assert.equal(warnings.length, 1)
+  assert.match(String(warnings[0][0]), /command-result presentation hook failed/)
+  assert.equal(result.status, "completed")
+  assert.deepEqual(JSON.parse(result.state.mutationResult), { call: 1 })
+  assert.equal((await runStore.listRuns()).length, 1)
+})
+
+test("same-run recovery cannot continue past a durable provider phase from two executors", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { WorkflowEngine } = require("../out/core/engine")
+  const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+  const { FileRunStateStore } = require("../out/core/runStateStore")
+
+  const workspaceRoot = tempDir()
+  const workflow = {
+    id: "workflow-register.command-observer-concurrency",
+    name: "command-observer-concurrency",
+    label: "Command Observer Concurrency",
+    description: "Do not replay a provider while its presentation observer is blocked.",
+    schemaVersion: "workflow-register/v1",
+    definitionHash: "definition-v1",
+    filePath: ".bob/workflows/command-observer-concurrency/WORKFLOW.md",
+    inputs: {},
+    engineSteps: [
+      { id: "mutate", title: "Mutate", type: "command", action: { provider: "sample.mutate" }, resultKey: "mutationResult" },
+      { id: "followup", title: "Follow up", type: "command", action: { provider: "sample.followup" }, resultKey: "followupResult" }
+    ]
+  }
+  const runStore = new FileRunStateStore({ workspaceRoot, now: () => "2026-06-30T00:00:00.000Z", engineVersion: "test-engine" })
+  const actions = new ActionRegistry()
+  let providerCalls = 0
+  actions.register({
+    id: "sample.mutate",
+    execute: async () => ({ call: ++providerCalls })
+  })
+  let followupCalls = 0
+  actions.register({
+    id: "sample.followup",
+    execute: async () => ({ call: ++followupCalls })
+  })
+  let observerEntered
+  const entered = new Promise((resolve) => { observerEntered = resolve })
+  let releaseObserver
+  const released = new Promise((resolve) => { releaseObserver = resolve })
+  let completionCalls = 0
+  const resultSinks = () => createDefaultResultSinkRegistry({ workspaceRoot, executeCommand: async () => undefined })
+  const firstEngine = new WorkflowEngine({
+    actions,
+    resultSinks: resultSinks(),
+    runStore,
+    hooks: {
+      onCommandResult: async () => {
+        observerEntered()
+        await released
+      },
+      onStepCompleted: async () => { completionCalls += 1 }
+    }
+  })
+  const firstExecution = firstEngine.runWorkflow(workflow, {})
+  let releaseSecondStepStart = () => undefined
+  let secondExecution
+
+  try {
+    await entered
+    const persistedWhileBlocked = (await runStore.listRuns())[0]
+    assert.equal(
+      Object.keys(persistedWhileBlocked.state).some((key) => key.startsWith("workflow.commandProviderCompleted.")),
+      true,
+      "the first provider phase must be durable before its presentation observer returns"
+    )
+    let secondStepStartEntered
+    const secondStepStarted = new Promise((resolve) => { secondStepStartEntered = resolve })
+    const secondStepStartReleased = new Promise((resolve) => { releaseSecondStepStart = resolve })
+    let secondStepStarts = 0
+    const secondEngine = new WorkflowEngine({
+      actions,
+      resultSinks: resultSinks(),
+      runStore,
+      hooks: {
+        onStepStart: async () => {
+          secondStepStarts += 1
+          secondStepStartEntered()
+          await secondStepStartReleased
+        },
+        onStepCompleted: async () => { completionCalls += 1 }
+      }
+    })
+    secondExecution = secondEngine.runWorkflow(workflow, {})
+
+    await Promise.race([
+      secondStepStarted,
+      new Promise((resolve) => setTimeout(resolve, 1_500))
+    ])
+    releaseObserver()
+    const firstResult = await firstExecution
+    releaseSecondStepStart()
+    const secondResult = await secondExecution
+
+    assert.equal(providerCalls, 1, "a recoverable execution must reuse the durable provider completion")
+    assert.equal(followupCalls, 1, "only one executor may own continuation into the next provider")
+    assert.equal(secondResult.runId, persistedWhileBlocked.runId)
+    assert.deepEqual(JSON.parse(secondResult.state.mutationResult), { call: 1 })
+    assert.equal(firstResult.runId, secondResult.runId)
+    assert.equal(firstResult.status, "completed")
+    assert.equal(secondResult.status, "completed")
+    assert.equal(secondStepStarts, 0, "a duplicate executor must join the active same-run execution before step hooks")
+    assert.equal(completionCalls, 2, "each workflow step must complete exactly once")
+    assert.equal((await runStore.listRuns()).length, 1)
+  } finally {
+    releaseObserver()
+    releaseSecondStepStart()
+    await firstExecution.catch(() => undefined)
+    await secondExecution?.catch(() => undefined)
+  }
+})
+
+test("queued runWorkflow captures terminal drift even when the run store aliases state objects", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { WorkflowEngine } = require("../out/core/engine")
+  const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+  const { FileRunStateStore } = require("../out/core/runStateStore")
+
+  const workspaceRoot = tempDir()
+  const workflow = {
+    id: "workflow-register.queued-run-failure",
+    name: "queued-run-failure",
+    label: "Queued Run Failure",
+    schemaVersion: "workflow-register/v1",
+    inputs: {},
+    engineSteps: [
+      { id: "mutate", title: "Mutate", type: "command", action: { provider: "sample.mutate" }, resultKey: "mutationResult" }
+    ]
+  }
+  const seedStore = new FileRunStateStore({ workspaceRoot, engineVersion: "test-engine" })
+  let sharedRun = await seedStore.createRun(workflow, {})
+  let recoverableLookups = 0
+  const runStore = {
+    workspaceRoot,
+    createRun: async () => sharedRun,
+    findRecoverableRun: async () => (++recoverableLookups === 1 ? undefined : sharedRun),
+    loadRun: async (runId) => runId === sharedRun.runId ? sharedRun : undefined,
+    saveRun: async (run) => { sharedRun = run }
+  }
+  const actions = new ActionRegistry()
+  let providerCalls = 0
+  let firstProviderEntered
+  const providerEntered = new Promise((resolve) => { firstProviderEntered = resolve })
+  let releaseFirstProvider = () => undefined
+  const firstProviderReleased = new Promise((resolve) => { releaseFirstProvider = resolve })
+  actions.register({
+    id: "sample.mutate",
+    execute: async () => {
+      providerCalls += 1
+      if (providerCalls === 1) {
+        firstProviderEntered()
+        await firstProviderReleased
+        throw new Error("first execution failed")
+      }
+      return "unexpected implicit retry"
+    }
+  })
+  const resultSinks = () => createDefaultResultSinkRegistry({ workspaceRoot, executeCommand: async () => undefined })
+  const firstEngine = new WorkflowEngine({ actions, resultSinks: resultSinks(), runStore })
+  const secondEngine = new WorkflowEngine({ actions, resultSinks: resultSinks(), runStore })
+  const firstExecution = firstEngine.runWorkflow(workflow, {})
+  let secondExecution
+
+  try {
+    await providerEntered
+    secondExecution = secondEngine.runWorkflow(workflow, {}, { executionMode: "singleStep", stepId: "mutate" })
+    await new Promise((resolve) => setImmediate(resolve))
+    releaseFirstProvider()
+
+    const [firstResult, secondResult] = await Promise.all([firstExecution, secondExecution])
+    assert.equal(firstResult.status, "failed")
+    assert.equal(secondResult.status, "failed")
+    assert.equal(secondResult.runId, firstResult.runId)
+    assert.equal(providerCalls, 1, "a queued runWorkflow call must not turn failure into an implicit retry")
+  } finally {
+    releaseFirstProvider()
+    await firstExecution.catch(() => undefined)
+    await secondExecution?.catch(() => undefined)
+  }
+})
+
+for (const terminalStatus of ["failed", "completed"]) {
+  test(`queued resumeRun treats a newly ${terminalStatus} run as terminal`, async () => {
+    const { ActionRegistry } = require("../out/core/actionRegistry")
+    const { WorkflowEngine } = require("../out/core/engine")
+    const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+    const { FileRunStateStore } = require("../out/core/runStateStore")
+
+    const workspaceRoot = tempDir()
+    const workflow = {
+      id: `workflow-register.queued-resume-${terminalStatus}`,
+      name: `queued-resume-${terminalStatus}`,
+      label: `Queued Resume ${terminalStatus}`,
+      schemaVersion: "workflow-register/v1",
+      inputs: {},
+      engineSteps: [
+        { id: "mutate", title: "Mutate", type: "command", action: { provider: "sample.mutate" }, resultKey: "mutationResult" }
+      ]
+    }
+    const runStore = new FileRunStateStore({ workspaceRoot, engineVersion: "test-engine" })
+    const paused = await runStore.createRun(workflow, {})
+    paused.status = "paused"
+    paused.currentStep = "mutate"
+    await runStore.saveRun(paused)
+
+    const actions = new ActionRegistry()
+    let providerCalls = 0
+    let firstProviderEntered
+    const providerEntered = new Promise((resolve) => { firstProviderEntered = resolve })
+    let releaseFirstProvider = () => undefined
+    const firstProviderReleased = new Promise((resolve) => { releaseFirstProvider = resolve })
+    actions.register({
+      id: "sample.mutate",
+      execute: async () => {
+        providerCalls += 1
+        if (providerCalls === 1) {
+          firstProviderEntered()
+          await firstProviderReleased
+          if (terminalStatus === "failed") throw new Error("first resume failed")
+          return "completed once"
+        }
+        return "unexpected implicit resume"
+      }
+    })
+    const resultSinks = () => createDefaultResultSinkRegistry({ workspaceRoot, executeCommand: async () => undefined })
+    const firstEngine = new WorkflowEngine({ actions, resultSinks: resultSinks(), runStore })
+    const secondEngine = new WorkflowEngine({ actions, resultSinks: resultSinks(), runStore })
+    const firstExecution = firstEngine.resumeRun(paused.runId, { workflow, executionMode: "full" })
+    let secondExecution
+
+    try {
+      await providerEntered
+      secondExecution = secondEngine.resumeRun(paused.runId, { workflow, executionMode: "singleStep" })
+      releaseFirstProvider()
+
+      const [firstResult, secondResult] = await Promise.all([firstExecution, secondExecution])
+      assert.equal(firstResult.status, terminalStatus)
+      assert.equal(secondResult.status, terminalStatus)
+      assert.equal(providerCalls, 1, `a queued resumeRun call must not re-enter a ${terminalStatus} run`)
+    } finally {
+      releaseFirstProvider()
+      await firstExecution.catch(() => undefined)
+      await secondExecution?.catch(() => undefined)
+    }
+  })
+}
+
+test("completing a held command clears its durable provider phase", async () => {
+  const { ActionRegistry } = require("../out/core/actionRegistry")
+  const { WorkflowEngine } = require("../out/core/engine")
+  const { createDefaultResultSinkRegistry } = require("../out/core/resultSinkRegistry")
+  const { FileRunStateStore } = require("../out/core/runStateStore")
+  const workspaceRoot = tempDir()
+  const workflow = {
+    id: "workflow-register.command-held-completion",
+    name: "command-held-completion",
+    label: "Command Held Completion",
+    schemaVersion: "workflow-register/v1",
+    inputs: {},
+    stepCompletion: "manual",
+    engineSteps: [
+      { id: "mutate", title: "Mutate", type: "command", action: { provider: "sample.mutate" }, resultKey: "mutationResult" }
+    ]
+  }
+  const actions = new ActionRegistry()
+  actions.register({ id: "sample.mutate", execute: async () => "mutated" })
+  const runStore = new FileRunStateStore({ workspaceRoot, engineVersion: "test-engine" })
+  const engine = new WorkflowEngine({
+    actions,
+    resultSinks: createDefaultResultSinkRegistry({ workspaceRoot, executeCommand: async () => undefined }),
+    runStore,
+    manualCompletion: async () => ({ completed: false })
+  })
+
+  const held = await engine.runWorkflow(workflow, {})
+  assert.equal(held.status, "held")
+  assert.equal(Object.keys(held.state).some((key) => key.startsWith("workflow.commandProviderCompleted.")), true)
+
+  const completed = await engine.resumeRun(held.runId, { workflow, completeHeldStep: true })
+  assert.equal(completed.status, "completed")
+  assert.equal(Object.keys(completed.state).some((key) => key.startsWith("workflow.commandProviderCompleted.")), false)
+})
+
 test("workflow run recovery does not reuse a cache for different inputs", async () => {
   const { ActionRegistry } = require("../out/core/actionRegistry")
   const { WorkflowEngine } = require("../out/core/engine")

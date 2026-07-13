@@ -7,10 +7,12 @@ import type {
 import type { TaskSnapshotPayload, TaskSnapshotStore } from "../taskSnapshots"
 import { snapshotMatchesRun } from "../taskSnapshots"
 import { renderArtifactPath } from "../engine/templateRenderer"
+import type { WorkspaceFileTransactionWrite } from "../runtime/workspaceFileTransaction"
 import {
   ARTIFACT_MANIFEST_PATH,
+  buildWorkflowArtifactManifest,
+  commitWorkflowArtifactManifest,
   createWorkflowArtifactManifestEntry,
-  updateWorkflowArtifactManifest,
   type WorkflowArtifactManifest,
   type WorkflowArtifactManifestEntry
 } from "./artifactManifest"
@@ -53,7 +55,11 @@ export interface ImportArtifactsFromTaskSnapshotsInput {
   workflow: CoreWorkflowDefinition
   run: WorkflowRunState
   snapshotStore: TaskSnapshotStore
-  writeFile: (relativePath: string, text: string) => Promise<void> | void
+  writeFiles: (
+    writes: WorkspaceFileTransactionWrite[],
+    commitState: () => Promise<void> | void
+  ) => Promise<void> | void
+  persistStateRollback?: () => Promise<void> | void
   now?: () => string
   overwrite?: boolean
 }
@@ -64,6 +70,8 @@ export async function importArtifactsFromTaskSnapshots(
   const issues: TaskSnapshotArtifactImportIssue[] = []
   const entries: WorkflowArtifactManifestEntry[] = []
   const imported: TaskSnapshotArtifactImportEntry[] = []
+  const stateUpdates: Record<string, string> = {}
+  const fileWrites: WorkspaceFileTransactionWrite[] = []
   const artifactCandidates = (input.workflow.artifacts ?? []).filter((artifact) => artifact.producedBy)
   if (artifactCandidates.length === 0) {
     return { ok: false, importedCount: 0, issues: [warning("Workflow has no produced artifacts to import from task snapshots.")] }
@@ -98,7 +106,7 @@ export async function importArtifactsFromTaskSnapshots(
     }
     const renderedPath = renderArtifactPath(artifact, {
       inputs: input.run.inputs,
-      state: input.run.state,
+      state: { ...input.run.state, ...stateUpdates },
       run: input.run,
       workflow: input.workflow,
       step
@@ -111,8 +119,8 @@ export async function importArtifactsFromTaskSnapshots(
       issues.push(error(`Artifact '${artifact.id}' path is not a workspace-relative safe path.`, artifact.id, step.id))
       continue
     }
-    await Promise.resolve(input.writeFile(renderedPath, text))
-    input.run.state[stateKey] = text
+    fileWrites.push({ relativePath: renderedPath, text, encoding: "utf8" })
+    stateUpdates[stateKey] = text
     const entry = createWorkflowArtifactManifestEntry({
       artifact,
       step,
@@ -135,14 +143,41 @@ export async function importArtifactsFromTaskSnapshots(
   }
 
   if (entries.length === 0) return { ok: false, importedCount: 0, issues }
-  const manifest = updateWorkflowArtifactManifest({ workflow: input.workflow, run: input.run, entries, now: input.now })
-  await Promise.resolve(input.writeFile(ARTIFACT_MANIFEST_PATH.replace(/\{\{\s*run\.id\s*\}\}/g, input.run.runId), `${JSON.stringify(manifest, null, 2)}\n`))
-  input.run.state[TASK_SNAPSHOT_IMPORT_STATE_KEY] = JSON.stringify({
+  const manifest = buildWorkflowArtifactManifest({ workflow: input.workflow, run: input.run, entries, now: input.now })
+  const importState = JSON.stringify({
     schemaVersion: "workflow-register/task-snapshot-import/v1",
     sourceRunId: input.run.runId,
     importedAt: input.now?.() ?? new Date().toISOString(),
     imported
   } satisfies TaskSnapshotArtifactImportRecord)
+  fileWrites.push({
+    relativePath: ARTIFACT_MANIFEST_PATH.replace(/\{\{\s*run\.id\s*\}\}/g, input.run.runId),
+    text: `${JSON.stringify(manifest, null, 2)}\n`,
+    encoding: "utf8"
+  })
+  const stateBeforeCommit = { ...input.run.state }
+  let stateCommitted = false
+  try {
+    await Promise.resolve(input.writeFiles(fileWrites, () => {
+      Object.assign(input.run.state, stateUpdates)
+      commitWorkflowArtifactManifest(input.run, manifest)
+      input.run.state[TASK_SNAPSHOT_IMPORT_STATE_KEY] = importState
+      stateCommitted = true
+    }))
+    if (!stateCommitted) throw new Error("Task snapshot file transaction did not commit run state.")
+  } catch (error) {
+    replaceRunState(input.run, stateBeforeCommit)
+    if (stateCommitted && input.persistStateRollback) {
+      try {
+        await Promise.resolve(input.persistStateRollback())
+      } catch (rollbackError) {
+        const message = error instanceof Error ? error.message : String(error)
+        const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+        throw new Error(`${message}; durable state rollback failed: ${rollbackMessage}`, { cause: error })
+      }
+    }
+    throw error
+  }
   return { ok: true, importedCount: entries.length, manifest, issues }
 }
 
@@ -199,4 +234,9 @@ function warning(message: string, artifactId?: string, stepId?: string): TaskSna
 
 function info(message: string, artifactId?: string, stepId?: string): TaskSnapshotArtifactImportIssue {
   return { severity: "info", message, artifactId, stepId }
+}
+
+function replaceRunState(run: WorkflowRunState, state: Record<string, string>): void {
+  for (const key of Object.keys(run.state)) delete run.state[key]
+  Object.assign(run.state, state)
 }

@@ -53,8 +53,8 @@ export type ApplyAiTraceabilityDraftInput = {
 }
 
 export type ApplyAiTraceabilityDraftResult =
-  | { status: "ok"; catalogPath: string; backupPath?: string; catalog: TraceabilityCatalog; warnings: string[] }
-  | { status: "error"; errors: string[]; warnings: string[] }
+  | { status: "ok"; catalogPath: string; backupPath?: string; catalog: TraceabilityCatalog; warnings: string[]; revision: string }
+  | { status: "error"; errors: string[]; warnings: string[]; catalogPath?: string; code?: "stale_revision" }
 
 export type MergeAiTraceabilityDraftResult = { status: "ok"; catalog: TraceabilityCatalog; warnings: string[] }
 
@@ -144,9 +144,10 @@ export async function applyAiTraceabilityDraft(input: ApplyAiTraceabilityDraftIn
     workspaceRoot: input.workspaceRoot,
     catalogPath: input.catalogPath,
     catalog: merged.catalog,
-    backupExisting: !read.created
+    backupExisting: !read.created,
+    expectedRevision: read.revision
   })
-  if (write.status === "error") return { status: "error", errors: write.errors, warnings: [...warnings, ...merged.warnings] }
+  if (write.status === "error") return { ...write, warnings: [...warnings, ...merged.warnings] }
   return okApplyResult(write, merged.catalog, [...warnings, ...merged.warnings])
 }
 
@@ -220,7 +221,8 @@ function okApplyResult(
     catalogPath: write.catalogPath,
     backupPath: write.backupPath,
     catalog,
-    warnings
+    warnings,
+    revision: write.revision
   }
 }
 

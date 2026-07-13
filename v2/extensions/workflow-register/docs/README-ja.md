@@ -10,6 +10,9 @@
 - `detailed-design-ja.md`  
   実装モジュール、activation、command、設定、公開 API、parser / validator、Bob 登録、WorkflowEngine、run state、run control、Run Control View、task snapshot、result handoff、GUI Builder、Template Customization Studio、diagnostics、テスト観点を整理した詳細設計書です。
 
+- `run-state-schema-v1-ja.md`  
+  `run.json` の schema version、historical v0 migration、exact-byte backup、future-version read-only protection、invalid document isolationを定義します。
+
 ## テスト仕様書
 
 - `unit-test-spec-ja.md`  

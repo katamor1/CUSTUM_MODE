@@ -1,5 +1,7 @@
 import * as vscode from "vscode"
-import { formatWorkflowDiagnostics, validateWorkflowText } from "../core/workflowValidator"
+import { compileWorkflowDocument, formatWorkflowDiagnostics } from "../core/workflowCompiler"
+import { relativePathFromRoot, workspaceRootFromFile } from "../core/workspaceRoots"
+import { discoverWorkspaceWorkflowFiles } from "../workflowDiscovery"
 import { WorkflowDiagnosticsReporter } from "./workflowDiagnostics"
 
 export interface ValidateWorkflowCommandOptions {
@@ -22,31 +24,37 @@ export async function validateCurrentWorkflow(options: ValidateWorkflowCommandOp
 }
 
 export async function validateWorkspaceWorkflows(options: ValidateWorkflowCommandOptions): Promise<void> {
-  const files = await vscode.workspace.findFiles(".bob/workflows/*/WORKFLOW.md")
+  const discovered = await discoverWorkspaceWorkflowFiles()
   const lines: string[] = []
   let errors = 0
   let warnings = 0
   options.diagnostics?.clear()
-  for (const file of files) {
-    const filePath = vscode.workspace.asRelativePath(file, false)
-    const text = new TextDecoder("utf-8").decode(await vscode.workspace.fs.readFile(file)).replace(/^\uFEFF/, "")
-    const result = validateWorkflowText({ sourceId: options.sourceId, filePath, text, strict: true })
-    options.diagnostics?.set(file, result)
+  for (const candidate of discovered.files) {
+    const text = new TextDecoder("utf-8").decode(await vscode.workspace.fs.readFile(candidate.file))
+    const result = compileWorkflowDocument({ sourceId: options.sourceId, filePath: candidate.relativePath, text, strict: true })
+    options.diagnostics?.set(candidate.file, result)
     errors += result.diagnostics.filter((item) => item.severity === "error").length
     warnings += result.diagnostics.filter((item) => item.severity === "warning").length
     lines.push(...formatWorkflowDiagnostics(result))
   }
-  await options.showMarkdownReport("Workspace Workflow Validation", `${files.length} workflow file(s); ${errors} error(s); ${warnings} warning(s).`, lines.length > 0 ? lines : ["- ok: No workflow diagnostics."])
+  await options.showMarkdownReport("Workspace Workflow Validation", `${discovered.files.length} workflow file(s); ${errors} error(s); ${warnings} warning(s).`, lines.length > 0 ? lines : ["- ok: No workflow diagnostics."])
 }
 
 export function validateTextDocument(document: vscode.TextDocument, options: Pick<ValidateWorkflowCommandOptions, "sourceId" | "diagnostics">) {
-  const filePath = vscode.workspace.asRelativePath(document.uri, false)
-  const result = validateWorkflowText({ sourceId: options.sourceId, filePath, text: document.getText() })
+  const filePath = workflowDocumentFilePath(document.uri)
+  const result = compileWorkflowDocument({ sourceId: options.sourceId, filePath, text: document.getText(), strict: true })
   options.diagnostics?.set(document.uri, result)
   return result
 }
 
 export function isWorkflowDocument(document: vscode.TextDocument): boolean {
-  const filePath = vscode.workspace.asRelativePath(document.uri, false).replace(/\\/g, "/")
+  const filePath = workflowDocumentFilePath(document.uri)
   return filePath.match(/^\.bob\/workflows\/[^/]+\/WORKFLOW\.md$/) !== null
+}
+
+function workflowDocumentFilePath(uri: vscode.Uri): string {
+  const workflowRoot = workspaceRootFromFile(uri.fsPath, ".bob")
+  return workflowRoot
+    ? relativePathFromRoot(workflowRoot, uri.fsPath)
+    : vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/")
 }

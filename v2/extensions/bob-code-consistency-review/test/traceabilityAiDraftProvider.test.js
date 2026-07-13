@@ -10,6 +10,7 @@ const {
   parseAiTraceabilityDraft,
   prepareAiTraceabilityDraftPrompt
 } = require("../out/core/traceabilityAiDraftProvider")
+const { writeTraceabilityCatalog } = require("../out/core/traceabilityCatalogStore")
 
 async function makeWorkspace() {
   return fs.mkdtemp(path.join(os.tmpdir(), "bob-trace-ai-"))
@@ -173,9 +174,42 @@ test("applyAiTraceabilityDraft writes a proposed-only draft into the sidecar cat
   })
 
   assert.equal(result.status, "ok")
+  assert.match(result.revision, /^sha256:[a-f0-9]{64}$/)
   const written = JSON.parse(await fs.readFile(result.catalogPath, "utf8"))
   assert.equal(written.items[0].proposed_id, "REQ-RS001-PAY-0001")
   assert.equal(written.items[0].status, "proposed")
+})
+
+test("concurrent AI draft applications preserve one winner and surface one stale conflict", async () => {
+  const workspaceRoot = await makeWorkspace()
+  await writeTraceabilityCatalog({
+    workspaceRoot,
+    catalog: { schema_version: 1, documents: [], domains: [], items: [], links: [], decisions: [] }
+  })
+  const draftA = validProposedDraft()
+  const draftB = validProposedDraft()
+  draftB.domains = [{ code: "AUTH", status: "proposed" }]
+  draftB.items = [{
+    proposed_id: "REQ-RS001-AUTH-0001",
+    type: "requirement",
+    source_document_id: "RS001",
+    domain: "AUTH",
+    sequence: 1,
+    status: "proposed"
+  }]
+
+  const results = await Promise.all([
+    applyAiTraceabilityDraft({ workspaceRoot, text: JSON.stringify(draftA) }),
+    applyAiTraceabilityDraft({ workspaceRoot, text: JSON.stringify(draftB) })
+  ])
+
+  assert.deepEqual(results.map((result) => result.status).sort(), ["error", "ok"])
+  const conflict = results.find((result) => result.status === "error")
+  const winner = results.find((result) => result.status === "ok")
+  assert.equal(conflict.code, "stale_revision")
+  assert.ok(conflict.errors.some((error) => /stale|refresh|再読込|更新/i.test(error)))
+  const written = JSON.parse(await fs.readFile(path.join(workspaceRoot, ".bob-trace", "traceability-catalog.json"), "utf8"))
+  assert.deepEqual(written.domains, winner.catalog.domains)
 })
 
 test("applyAiTraceabilityDraft rejects draft source paths outside the workspace before writing", async () => {

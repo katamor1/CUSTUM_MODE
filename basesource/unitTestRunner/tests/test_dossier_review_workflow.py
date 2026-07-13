@@ -6,6 +6,8 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +39,51 @@ def run_module(*args):
 
 
 class DossierReviewWorkflowTests(unittest.TestCase):
+    def test_execution_outcome_is_normalized_before_dossier_persistence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir) / "normalized-execution"
+            execution = SimpleNamespace(
+                status="passed",
+                executed=False,
+                parsed_result=SimpleNamespace(
+                    total=0,
+                    passed=0,
+                    failed=0,
+                    inconclusive=0,
+                    crashed=0,
+                    not_run=0,
+                ),
+                run_paths=None,
+            )
+            manifest = SimpleNamespace(
+                summary=SimpleNamespace(test_execution_status="passed"),
+                evidence_paths=None,
+            )
+
+            with mock.patch(
+                "unit_test_runner.dossier.workflow.prepare_test_execution_evidence",
+                return_value=(execution, manifest),
+            ):
+                returned = analyze_function_workflow(
+                    VC6_FIXTURE_ROOT,
+                    VC6_FIXTURE_ROOT / "Product.dsw",
+                    "src/control.c",
+                    "Control_Update",
+                    "Win32 Debug",
+                    out_dir,
+                    "Control",
+                    run_tests=True,
+                    phase="execution",
+                )
+
+            persisted = json.loads(
+                (out_dir / "reports" / "function_dossier.json").read_text(encoding="utf-8")
+            )
+            for dossier in (returned, persisted):
+                self.assertEqual("inconclusive", dossier["test_execution"]["status"])
+                self.assertFalse(dossier["test_execution"]["green"])
+                self.assertEqual("inconclusive", dossier["evidence"]["status"])
+
     def prepare_workspace(self, temp_dir):
         out_dir = Path(temp_dir) / "Control_Update"
         analyze_function_workflow(
@@ -58,15 +105,26 @@ class DossierReviewWorkflowTests(unittest.TestCase):
             payload = dossier.to_dict()
 
             self.assertEqual("Control_Update", payload["function"]["name"])
-            self.assertIn(payload["function"]["status"], {"ready_for_review", "evidence_ready", "partial"})
-            self.assertEqual("mvp4_execution_evidence", payload["readiness"]["mvp_level"])
-            self.assertTrue(payload["readiness"]["ready_for_review"])
+            self.assertEqual("blocked", payload["function"]["status"])
+            self.assertEqual("unknown", payload["readiness"]["mvp_level"])
+            self.assertFalse(payload["readiness"]["ready_for_review"])
+            self.assertTrue(payload["readiness"]["blocked"])
+            self.assertTrue(
+                any(
+                    "Artifact contract" in reason
+                    for reason in payload["readiness"]["blocked_reasons"]
+                )
+            )
             self.assertTrue(payload["artifact_index"])
             self.assertTrue(payload["traceability"])
             self.assertTrue(payload["review_items"])
             self.assertTrue(payload["unresolved_items"])
             self.assertTrue(payload["next_actions"])
             self.assertIn("function_signature", {item["artifact_kind"] for item in payload["artifact_index"]})
+            self.assertIn(
+                "schema_error",
+                {item["contract_status"] for item in payload["artifact_index"]},
+            )
 
             reports = workspace / "reports"
             for name in [
@@ -103,7 +161,7 @@ class DossierReviewWorkflowTests(unittest.TestCase):
                     "expected_result_unknown",
                     "Expected result requires review for TC_Control_Update_001.",
                     "The generated test cannot be treated as approved until expected values are reviewed.",
-                    ["test_case_design"],
+                    ["test_spec"],
                     ["TC_Control_Update_001"],
                     "Review function specification and replace TBD expected values.",
                 ),
@@ -113,7 +171,7 @@ class DossierReviewWorkflowTests(unittest.TestCase):
                     "expected_result_unknown",
                     "Expected return value must be reviewed from specification.",
                     "Expected return value must be reviewed from specification.",
-                    ["test_case_design"],
+                    ["test_spec"],
                     ["TC_Control_Update_002"],
                     "Review generated test case and replace TBD expected values.",
                 ),
@@ -157,7 +215,7 @@ class DossierReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn("Expected return value must", unresolved_markdown)
         self.assertNotIn("Review generated test case", unresolved_markdown)
 
-    def test_finalize_handles_mvp1_partial_and_blocked_missing_required(self):
+    def test_finalize_blocks_contract_invalid_and_missing_mvp1_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir) / "mvp1"
             reports = workspace / "reports"
@@ -168,9 +226,25 @@ class DossierReviewWorkflowTests(unittest.TestCase):
 
             dossier = finalize_function_dossier(workspace, function_name="Control_Update")
 
-            self.assertEqual("mvp1_analysis_only", dossier.readiness.mvp_level)
-            self.assertTrue(dossier.readiness.ready_for_review)
-            self.assertFalse(dossier.readiness.blocked)
+            self.assertEqual("unknown", dossier.readiness.mvp_level)
+            self.assertFalse(dossier.readiness.ready_for_review)
+            self.assertTrue(dossier.readiness.blocked)
+            self.assertEqual("blocked", dossier.status)
+            self.assertEqual(
+                {"schema_error"},
+                {
+                    item.contract_status
+                    for item in dossier.artifact_index
+                    if item.artifact_kind
+                    in {"source_digest", "function_location", "function_signature"}
+                },
+            )
+            self.assertTrue(
+                any(
+                    "Artifact contract source_digest is schema_error" in reason
+                    for reason in dossier.readiness.blocked_reasons
+                )
+            )
             self.assertTrue(any(warning.code == "missing_artifact" for warning in dossier.warnings))
 
             blocked_workspace = Path(temp_dir) / "blocked"
@@ -180,7 +254,7 @@ class DossierReviewWorkflowTests(unittest.TestCase):
             self.assertEqual("blocked", blocked.status)
             self.assertTrue(blocked.readiness.blocked_reasons)
 
-    def test_finalize_warns_on_function_name_mismatch_and_prepare_review_regenerates_files(self):
+    def test_finalize_rejects_invalid_payloads_and_prepare_review_regenerates_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir) / "mismatch"
             reports = workspace / "reports"
@@ -188,10 +262,20 @@ class DossierReviewWorkflowTests(unittest.TestCase):
             (reports / "source_digest.json").write_text(json.dumps({"schema_version": "0.1", "function": {"name": "Control_Update"}}), encoding="utf-8")
             (reports / "function_location.json").write_text(json.dumps({"schema_version": "0.1", "function": {"name": "Control_Update"}}), encoding="utf-8")
             (reports / "function_signature.json").write_text(json.dumps({"schema_version": "0.1", "function": {"name": "Control_Update"}}), encoding="utf-8")
-            (reports / "test_case_design.json").write_text(json.dumps({"schema_version": "0.1", "function": {"name": "Other_Function"}, "test_cases": []}), encoding="utf-8")
+            (reports / "test_spec.json").write_text(json.dumps({"schema_version": "0.1", "function": {"name": "Other_Function"}, "test_cases": []}), encoding="utf-8")
 
             dossier = finalize_function_dossier(workspace, function_name="Control_Update")
-            self.assertTrue(any(warning.code == "function_name_mismatch" for warning in dossier.warnings))
+            test_design = next(
+                item
+                for item in dossier.artifact_index
+                if item.artifact_kind == "test_spec"
+            )
+            self.assertEqual("schema_error", test_design.contract_status)
+            self.assertTrue(dossier.readiness.blocked)
+            self.assertNotIn(
+                "function_name_mismatch",
+                {warning.code for warning in dossier.warnings},
+            )
 
             paths = prepare_review_from_dossier(reports / "function_dossier.json", reports)
             self.assertTrue(paths["review_checklist"].exists())
@@ -199,7 +283,7 @@ class DossierReviewWorkflowTests(unittest.TestCase):
             self.assertTrue(paths["next_actions"].exists())
             self.assertTrue(paths["traceability_matrix"].exists())
 
-    def test_finalize_marks_source_mismatch_and_old_artifacts_as_stale_candidates(self):
+    def test_finalize_keeps_timestamp_staleness_orthogonal_to_schema_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir) / "stale"
             reports = workspace / "reports"
@@ -217,11 +301,12 @@ class DossierReviewWorkflowTests(unittest.TestCase):
             payload = dossier.to_dict()
 
             stale = {item["artifact_kind"]: item for item in payload["artifact_index"] if item["stale_candidate"]}
-            self.assertIn("function_signature", stale)
             self.assertIn("source_digest", stale)
+            self.assertEqual("schema_error", stale["source_digest"]["contract_status"])
+            self.assertNotIn("function_signature", stale)
             warning_codes = {warning["code"] for warning in payload["warnings"]}
-            self.assertIn("source_path_mismatch", warning_codes)
             self.assertIn("artifact_older_than_request", warning_codes)
+            self.assertNotIn("source_path_mismatch", warning_codes)
             self.assertIn("modified_at", stale["source_digest"])
 
     def test_cli_finalize_prepare_review_and_analyze_function_dossier_review(self):
@@ -231,13 +316,13 @@ class DossierReviewWorkflowTests(unittest.TestCase):
             finalize = run_module("--json", "finalize-dossier", "--workspace", str(workspace))
             self.assertEqual(0, finalize.returncode, finalize.stderr)
             finalize_payload = json.loads(finalize.stdout)
-            self.assertEqual("dossier_finalized", finalize_payload["status"])
-            self.assertTrue(Path(finalize_payload["data"]["reports"]["function_dossier_md"]).exists())
+            self.assertEqual("passed", finalize_payload["data"]["outcome"])
+            self.assertTrue(Path(finalize_payload["data"]["details"]["reports"]["function_dossier_md"]).exists())
 
             prepare = run_module("--json", "prepare-review", "--dossier", str(workspace / "reports" / "function_dossier.json"))
             self.assertEqual(0, prepare.returncode, prepare.stderr)
             prepare_payload = json.loads(prepare.stdout)
-            self.assertEqual("review_prepared", prepare_payload["status"])
+            self.assertEqual("passed", prepare_payload["data"]["outcome"])
 
             out_dir = Path(temp_dir) / "AnalyzeFunctionDossierReview"
             full = run_module(
@@ -263,8 +348,8 @@ class DossierReviewWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(0, full.returncode, full.stderr)
             full_payload = json.loads(full.stdout)
-            self.assertEqual("dossier_finalized", full_payload["status"])
-            self.assertIn("review", full_payload["data"])
+            self.assertEqual("passed", full_payload["data"]["outcome"])
+            self.assertIn("review", full_payload["data"]["details"])
             self.assertTrue((out_dir / "reports" / "review_checklist.md").exists())
 
             final_dossier_path = out_dir / "reports" / "function_dossier.json"
@@ -275,7 +360,21 @@ class DossierReviewWorkflowTests(unittest.TestCase):
                 mode=ContractMode.COMPATIBLE,
             )
             self.assertTrue(loaded_dossier.migrated)
-            self.assertEqual((), loaded_dossier.violations)
+            self.assertIn(
+                ("missing_provenance", "$.subject.source_sha256", "blocking"),
+                {
+                    (item.code, item.json_path, item.severity)
+                    for item in loaded_dossier.violations
+                },
+            )
+            self.assertNotIn(
+                "0" * 64,
+                json.dumps(loaded_dossier.payload, sort_keys=True),
+            )
+            self.assertNotIn(
+                "invalid_relative_path",
+                {item.code for item in loaded_dossier.violations},
+            )
             self.assertEqual("src/control.c", final_dossier["target"]["source"])
             self.assertEqual("Control_Update", final_dossier["target"]["function"])
             self.assertIn("defines", final_dossier["build_context"])
@@ -283,11 +382,11 @@ class DossierReviewWorkflowTests(unittest.TestCase):
 
             probe = run_module("--json", "build-probe", "--dossier", str(final_dossier_path), "--dry-run")
             self.assertEqual(0, probe.returncode, probe.stderr)
-            self.assertIn("extracted", json.loads(probe.stdout)["data"]["command"])
+            self.assertIn("extracted", json.loads(probe.stdout)["data"]["details"]["command"])
 
             design = run_module("--json", "generate-test-design", "--dossier", str(final_dossier_path))
             self.assertEqual(0, design.returncode, design.stderr)
-            self.assertEqual("test_case_design_generated", json.loads(design.stdout)["status"])
+            self.assertEqual("passed", json.loads(design.stdout)["data"]["outcome"])
 
 
 if __name__ == "__main__":

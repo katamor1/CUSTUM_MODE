@@ -1,4 +1,9 @@
 import * as vscode from "vscode"
+import {
+  BobWorkflowGateRegistry,
+  type BobWorkflowGateAcceptance,
+  type BobWorkflowGateAcceptResult
+} from "./bobWorkflowGateRegistry"
 import { StepRuntime, type StepCompletionExpectation } from "./bobStepRuntime"
 import type { BobSourceLike } from "./bobApi"
 import { createDefaultActionRegistry } from "./core/actionRegistry"
@@ -21,8 +26,9 @@ import {
 import { WorkflowRuntimeFactory } from "./workflowRuntimeFactory"
 import { collectBobWorkflowInputs } from "./workflowInputPrompt"
 import { WorkflowRunCommandService } from "./workflowRunCommands"
-import type { RunCommandArg } from "./workflowRunCommands"
+import type { ArtifactSourceRunArg, RunCommandArg, WorkflowCommandArg } from "./workflowRunCommands"
 import { requireTrustedWorkspace } from "./workspaceTrust"
+import { ReviewAcceptanceCoordinator } from "./reviewAcceptanceCoordinator"
 
 const WORKFLOW_GLOB = "**/.bob/workflows/*/WORKFLOW.md"
 
@@ -33,6 +39,8 @@ export interface StepCompletionOptions extends StepCompletionExpectation {
 export class WorkflowRegisterService implements vscode.Disposable {
   private readonly registeredIds = new Set<string>()
   private readonly watcher = vscode.workspace.createFileSystemWatcher(WORKFLOW_GLOB)
+  private readonly bobWorkflowGates = new BobWorkflowGateRegistry()
+  private readonly reviewAcceptances = new ReviewAcceptanceCoordinator()
   private readonly stepRuntime = new StepRuntime()
   private readonly coreWorkflows = new Map<string, CoreWorkflowDefinition>()
   private readonly actionRegistry = createDefaultActionRegistry({
@@ -71,6 +79,7 @@ export class WorkflowRegisterService implements vscode.Disposable {
       actionRegistry: this.actionRegistry,
       customResultSinks: this.customResultSinks,
       stepRuntime: this.stepRuntime,
+      gateRegistry: this.bobWorkflowGates,
       agentProvider: () => this.agentProvider,
       inputsProvider: (workflow, provided) => collectBobWorkflowInputs(workflow, provided),
       onManualStepHeld: (input) => this.manualStepPanel.show(input)
@@ -81,7 +90,11 @@ export class WorkflowRegisterService implements vscode.Disposable {
       ensureWorkflowsLoaded: () => this.reload({ showReport: false }),
       workflowRootCandidates: () => this.workflowRootCandidates(),
       activeSteps: () => this.stepRuntime.list(),
-      showManualStepPanel: (input) => this.manualStepPanel.show(input)
+      showManualStepPanel: (input) => this.manualStepPanel.show(input),
+      gateRegistry: this.bobWorkflowGates,
+      coordinateGateDecision: (workspaceRoot, runId, kind, operation) => (
+        this.reviewAcceptances.coordinate(workspaceRoot, runId, kind, operation)
+      )
     })
     this.watcher.onDidCreate(() => this.reload({ showReport: false }))
     this.watcher.onDidChange(() => this.reload({ showReport: false }))
@@ -91,6 +104,7 @@ export class WorkflowRegisterService implements vscode.Disposable {
   dispose(): void {
     this.watcher.dispose()
     this.manualStepPanel.dispose()
+    this.bobWorkflowGates.dispose()
     try {
       this.actionProviderRegistrations.dispose()
     } catch (error) {
@@ -135,6 +149,18 @@ export class WorkflowRegisterService implements vscode.Disposable {
     return this.runCommands.openManualStepPanel(runArg)
   }
 
+  acceptBobWorkflowGate(workspaceRoot: string, runId: string, stepId: string): BobWorkflowGateAcceptResult {
+    return this.bobWorkflowGates.accept(workspaceRoot, runId, stepId)
+  }
+
+  acceptBobWorkflowGateWithMetadata(workspaceRoot: string, runId: string, stepId: string): BobWorkflowGateAcceptance {
+    return this.bobWorkflowGates.acceptWithMetadata(workspaceRoot, runId, stepId)
+  }
+
+  coordinateReviewAcceptance<T>(workspaceRoot: string, runId: string, operation: () => Promise<T>): Promise<T> {
+    return this.reviewAcceptances.coordinate(workspaceRoot, runId, "review-accept", operation)
+  }
+
   registerActionProvider(provider: ActionProvider): ActionProviderRegistration {
     return this.actionProviderRegistrations.track(this.actionRegistry.register(provider))
   }
@@ -151,8 +177,8 @@ export class WorkflowRegisterService implements vscode.Disposable {
     return this.runCommands.listCoreWorkflows()
   }
 
-  async runWorkflow(workflowId?: string, inputs: Record<string, unknown> = {}): Promise<unknown> {
-    return this.runCommands.runWorkflow(workflowId, inputs)
+  async runWorkflow(workflowArg?: WorkflowCommandArg, inputs: Record<string, unknown> = {}): Promise<unknown> {
+    return this.runCommands.runWorkflow(workflowArg, inputs)
   }
 
   async runWorkflowStep(
@@ -166,30 +192,30 @@ export class WorkflowRegisterService implements vscode.Disposable {
   async startFromStepWithArtifacts(
     workflowId?: string,
     stepId?: string,
-    sourceRunId?: string,
+    sourceRunArg?: ArtifactSourceRunArg,
     inputs: Record<string, unknown> = {}
   ): Promise<unknown> {
-    return this.runCommands.startFromStepWithArtifacts(workflowId, stepId, sourceRunId, inputs)
+    return this.runCommands.startFromStepWithArtifacts(workflowId, stepId, sourceRunArg, inputs)
   }
 
   async importArtifactsFromTaskSnapshots(runId?: string): Promise<unknown> {
     return this.runCommands.importArtifactsFromTaskSnapshots(runId)
   }
 
-  async runNextStep(runId?: string): Promise<unknown> {
-    return this.runCommands.runNextStep(runId)
+  async runNextStep(runArg?: RunCommandArg): Promise<unknown> {
+    return this.runCommands.runNextStep(runArg)
   }
 
   async inspectRuns(): Promise<void> {
     return this.runCommands.inspectRuns()
   }
 
-  async resumeRun(runId?: string): Promise<unknown> {
-    return this.runCommands.resumeRun(runId)
+  async resumeRun(runArg?: RunCommandArg): Promise<unknown> {
+    return this.runCommands.resumeRun(runArg)
   }
 
-  async retryCurrentStep(runId?: string): Promise<unknown> {
-    return this.runCommands.retryCurrentStep(runId)
+  async retryCurrentStep(runArg?: RunCommandArg): Promise<unknown> {
+    return this.runCommands.retryCurrentStep(runArg)
   }
 
   async approveBranchCheckpoint(runId?: string): Promise<unknown> {

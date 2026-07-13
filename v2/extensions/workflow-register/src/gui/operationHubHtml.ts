@@ -91,6 +91,8 @@ export function renderOperationHubHtml(input: RenderOperationHubHtmlInput): stri
         action: button.dataset.action,
         workflowId: button.dataset.workflowId,
         runId: button.dataset.runId,
+        workspaceRoot: button.dataset.workspaceRoot,
+        expectedRevision: button.dataset.expectedRevision,
         artifactPath: button.dataset.artifactPath
       };
       markActionPending(button);
@@ -241,8 +243,10 @@ function renderActionButton(action: OperationHubAction): string {
   const classes = action.variant ? ` class="${escapeHtml(action.variant)}"` : ""
   const workflowId = action.workflowId ? ` data-workflow-id="${escapeHtml(action.workflowId)}"` : ""
   const runId = action.runId ? ` data-run-id="${escapeHtml(action.runId)}"` : ""
+  const workspaceRoot = action.workspaceRoot ? ` data-workspace-root="${escapeHtml(action.workspaceRoot)}"` : ""
+  const expectedRevision = action.expectedRevision ? ` data-expected-revision="${escapeHtml(action.expectedRevision)}"` : ""
   const artifactPath = action.artifactPath ? ` data-artifact-path="${escapeHtml(action.artifactPath)}"` : ""
-  return `<button type="button"${classes} data-action="${escapeHtml(action.id)}"${workflowId}${runId}${artifactPath}>${escapeHtml(action.label)}</button>`
+  return `<button type="button"${classes} data-action="${escapeHtml(action.id)}"${workflowId}${runId}${workspaceRoot}${expectedRevision}${artifactPath}>${escapeHtml(action.label)}</button>`
 }
 
 function statusText(status: OperationHubSetupItem["status"]): string {

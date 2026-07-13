@@ -53,3 +53,10 @@ artifact_metadata:
 - metadata の追加は additive であり、既存 JSON / YAML field の削除、rename、意味変更はしません。
 - `bob-bazaar-review` の review-result JSON は project schema 検証対象なので、metadata は必ず sidecar に分離します。
 - `bob-code-consistency-review` の manifest は review-package の管理 metadata なので、`artifact_metadata` section を同一ファイルに追加します。
+
+
+## bob-evidence-scope artifact ledger sidecar
+
+`bob-code-consistency-review` は additive sidecar として `.bob-review/artifact-ledger.json` を生成します。ledger は `manifest.yaml` の `artifact_metadata.input_hash` と同じ deterministic package input hash、および managed review-package exact-byte content hash を記録します。repository index と project rule pack は upstream dependency として記録され、hash、revision、または存在状態が変化すると dependent package を `stale` にします。再構築済み package の current observation だけが stale state を `fresh` に戻します。
+
+ledger は provenance metadata のみを保持し、source、diff、文書、prompt、rule-pack、repository-index、review-package の body は保持しません。既存 manifest schema は変更しません。

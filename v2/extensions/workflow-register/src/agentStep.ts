@@ -3,6 +3,7 @@ import {
   appendWorkflowStateDataBlock,
   type WorkflowStateEntry
 } from "./workflowPromptContext"
+import type { AgentExecutionInput } from "./core/model"
 
 export interface WorkflowAgentPromptInput {
   workflowId: string
@@ -16,6 +17,35 @@ export interface WorkflowAgentPromptInput {
   stepPrompt: string
   workflowInstructions: string
   stateEntries: WorkflowStateEntry[]
+}
+
+export interface WorkflowAgentExecutionPromptInput {
+  execution: AgentExecutionInput
+  workflowName: string
+  workflowRoot?: string
+  workflowFile?: string
+  workflowFolderName?: string
+  stepIndex: number
+  stepTitle: string
+  workflowInstructions: string
+  includeState: string[]
+}
+
+export function buildWorkflowAgentExecutionPrompt(input: WorkflowAgentExecutionPromptInput): string {
+  const execution = input.execution
+  return buildWorkflowAgentPrompt({
+    workflowId: execution.workflowId,
+    workflowName: input.workflowName,
+    workflowRoot: execution.workflowRoot ?? input.workflowRoot,
+    workflowFile: execution.workflowFile ?? input.workflowFile,
+    workflowFolderName: execution.workflowFolderName ?? input.workflowFolderName,
+    stepIndex: input.stepIndex,
+    stepId: execution.stepId,
+    stepTitle: input.stepTitle,
+    stepPrompt: execution.prompt,
+    workflowInstructions: input.workflowInstructions,
+    stateEntries: stateEntriesFromRecord(execution.state, input.includeState)
+  })
 }
 
 export function buildWorkflowAgentPrompt(input: WorkflowAgentPromptInput): string {
@@ -65,4 +95,8 @@ function trimToResult(value: unknown): string | undefined {
 
 function escapeXmlAttribute(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+function stateEntriesFromRecord(state: Record<string, string>, keys: string[]): WorkflowStateEntry[] {
+  return keys.flatMap((key) => state[key] === undefined ? [] : [{ key, value: state[key] }])
 }

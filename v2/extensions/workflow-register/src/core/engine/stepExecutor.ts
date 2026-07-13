@@ -8,6 +8,8 @@ import type {
   AgentProvider,
   CoreWorkflowDefinition,
   EngineStep,
+  WorkflowCommandResultMetadata,
+  WorkflowProviderArtifactMetadata,
   WorkflowRunState
 } from "../model"
 import { reportedActionError } from "../reportedActionError"
@@ -24,6 +26,18 @@ import { writeResultSinks } from "./resultWriters"
 
 type RecoverResultText = NonNullable<WorkflowEngineOptions["recoverResultText"]>
 type EngineEmitter = (input: WorkflowEngineEventInput) => Promise<void>
+export interface StagedCommandResult {
+  commandValue: unknown
+  stateUpdates: Record<string, string>
+}
+
+export type AutomatedStepResult =
+  | {
+    ok: true
+    providerArtifacts?: WorkflowProviderArtifactMetadata[]
+    stagedCommandResult?: StagedCommandResult
+  }
+  | { ok: false; held?: boolean; error: string }
 
 export async function executeAutomatedStep(input: {
   workflow: CoreWorkflowDefinition
@@ -34,9 +48,8 @@ export async function executeAutomatedStep(input: {
   agentProvider?: AgentProvider
   recoverResultText?: RecoverResultText
   emitAgentOutput: EngineEmitter
-  emitCommandResult: EngineEmitter
   emitHandoffFailed: EngineEmitter
-}): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
+}): Promise<AutomatedStepResult> {
   const { workflow, run, step } = input
   if (step.type === "agent") return executeAgentStep({ ...input, step })
   if (step.type === "command") return executeCommandStep({ ...input, step })
@@ -61,7 +74,7 @@ async function executeAgentStep(input: {
   recoverResultText?: RecoverResultText
   emitAgentOutput: EngineEmitter
   emitHandoffFailed: EngineEmitter
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<AutomatedStepResult> {
   const { workflow, run, step } = input
   const stateKeyError = step.resultKey ? reservedWorkflowStateKeyError(step.resultKey, "workflow resultKey") : undefined
   if (stateKeyError) return { ok: false, error: stateKeyError }
@@ -114,8 +127,7 @@ async function executeCommandStep(input: {
   run: WorkflowRunState
   step: Extract<EngineStep, { type: "command" }>
   actions: ActionRegistry
-  emitCommandResult: EngineEmitter
-}): Promise<{ ok: true } | { ok: false; held?: boolean; error: string }> {
+}): Promise<AutomatedStepResult> {
   const { workflow, run, step } = input
   const stateKeyError = step.resultKey ? reservedWorkflowStateKeyError(step.resultKey, "workflow resultKey") : undefined
   if (stateKeyError) return { ok: false, error: stateKeyError }
@@ -150,7 +162,61 @@ async function executeCommandStep(input: {
   if (!result.ok) return { ok: false, error: result.error ?? `Action provider failed: ${step.action.provider}` }
   const actionError = reportedActionError(result.value)
   if (actionError) return { ok: false, error: actionError }
-  if (step.resultKey) run.state[step.resultKey] = formatStateValue(result.value)
-  await input.emitCommandResult({ workflow, run, step, commandValue: result.value })
-  return { ok: true }
+  const commandResult = splitWorkflowCommandResult(result.value)
+  if (!commandResult.ok) return commandResult
+  return {
+    ok: true,
+    providerArtifacts: commandResult.providerArtifacts,
+    stagedCommandResult: {
+      commandValue: commandResult.payload,
+      stateUpdates: step.resultKey ? { [step.resultKey]: formatStateValue(commandResult.payload) } : {}
+    }
+  }
+}
+
+function splitWorkflowCommandResult(value: unknown): {
+  ok: true
+  payload: unknown
+  providerArtifacts?: WorkflowProviderArtifactMetadata[]
+} | { ok: false; error: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !("$workflow" in value)) {
+    return { ok: true, payload: value }
+  }
+  const record = value as Record<string, unknown>
+  if (!isRecord(record.$workflow)) {
+    return { ok: false, error: "Command result $workflow metadata must be an object." }
+  }
+  const workflowMetadata = record.$workflow as Partial<WorkflowCommandResultMetadata>
+  if (!Array.isArray(workflowMetadata.artifacts)) {
+    return { ok: false, error: "Command result $workflow.artifacts must be an array." }
+  }
+  const providerArtifacts: WorkflowProviderArtifactMetadata[] = []
+  const ids = new Set<string>()
+  for (let index = 0; index < workflowMetadata.artifacts.length; index += 1) {
+    const candidate = workflowMetadata.artifacts[index] as unknown
+    if (!isRecord(candidate)) {
+      return { ok: false, error: `Command result $workflow.artifacts[${index}] must be an object.` }
+    }
+    if (typeof candidate.id !== "string" || !candidate.id.trim()) {
+      return { ok: false, error: `Command result $workflow.artifacts[${index}].id must be a non-empty string.` }
+    }
+    const id = candidate.id.trim()
+    if (candidate.ownership !== "provider") {
+      return { ok: false, error: `Command result $workflow.artifacts[${index}].ownership must be 'provider'.` }
+    }
+    if (typeof candidate.path !== "string" || !candidate.path.trim()) {
+      return { ok: false, error: `Command result $workflow.artifacts[${index}].path must be a non-empty string.` }
+    }
+    if (ids.has(id)) {
+      return { ok: false, error: `Command result has duplicate provider artifact metadata id '${id}'.` }
+    }
+    ids.add(id)
+    providerArtifacts.push({ id, ownership: "provider", path: candidate.path })
+  }
+  const { $workflow: _metadata, ...payload } = record
+  return { ok: true, payload, providerArtifacts }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

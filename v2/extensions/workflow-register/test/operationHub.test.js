@@ -237,6 +237,47 @@ test("Operation Hub focused run is pinned first and marked for operator action",
   assert.equal(model.runMonitor[1].focused, false)
 })
 
+test("Operation Hub run focus keeps workspace identity when run ids collide", () => {
+  const { buildOperationHubModel } = require("../out/gui/operationHubModel")
+  const run = (root, updatedAt) => ({
+    root,
+    run: {
+      runId: "shared-run",
+      workflowId: "qa.review",
+      workflowName: root,
+      status: "running",
+      currentStep: "generate",
+      inputs: {},
+      state: {},
+      steps: [{ id: "generate", title: "生成", type: "agent", status: "pending" }],
+      createdAt: updatedAt,
+      updatedAt
+    }
+  })
+  const model = buildOperationHubModel({
+    workspaceName: "multi-root",
+    workspaceRoots: ["C:\\work\\a", "C:\\work\\b"],
+    extensionStatus: [],
+    setup: {
+      bobRootPresent: true,
+      workflowsPresent: true,
+      runStatePresent: true,
+      mcpConfigPresent: true,
+      traceabilityPresent: false
+    },
+    workflows: [],
+    focusedRunId: "shared-run",
+    focusedWorkspaceRoot: "C:\\work\\a",
+    runs: [
+      run("C:\\work\\b", "2026-07-05T01:04:00.000Z"),
+      run("C:\\work\\a", "2026-07-05T01:03:00.000Z")
+    ]
+  })
+
+  assert.equal(model.runMonitor.filter((item) => item.focused).length, 1)
+  assert.equal(model.runMonitor[0].root, "C:\\work\\a")
+})
+
 test("Operation Hub html uses nonce protected scripts and data-action buttons", () => {
   const { renderOperationHubHtml } = require("../out/gui/operationHubHtml")
   const { buildOperationHubModel, OPERATION_HUB_ALLOWED_ACTIONS } = require("../out/gui/operationHubModel")
@@ -411,10 +452,13 @@ test("Operation Hub provider accepts run focus arguments from the open command",
 
   assert.match(core, /registerCommand\("workflowRegister\.openOperationHub", \(input\?: unknown\) => operationHub\.open\(input\)\)/)
   assert.match(core, /registerCommand\("workflowRegister\.openOperationHubPanel", \(input\?: unknown\) => operationHub\.openPanel\(input\)\)/)
-  assert.match(provider, /type OperationHubOpenInput = string \| \{ runId\?: string; stepId\?: string; reason\?: "stepGate" \| "paused" \}/)
+  assert.match(provider, /type OperationHubOpenInput = string \| \{ workspaceRoot\?: string; runId\?: string; stepId\?: string; reason\?: "stepGate" \| "paused" \}/)
   assert.match(provider, /private focusedRunId\?: string/)
+  assert.match(provider, /private focusedWorkspaceRoot\?: string/)
   assert.match(provider, /private panel\?: vscode\.WebviewPanel/)
   assert.match(provider, /focusedRunId: this\.focusedRunId/)
+  assert.match(provider, /const focusedWorkspaceRoot = await matchingCandidateRoot/)
+  assert.match(provider, /focusedWorkspaceRoot\s*\n\s*\}/)
   assert.match(provider, /async openPanel\(input\?: unknown\): Promise<void>/)
   assert.match(provider, /if \(parsed && typeof parsed !== "string" && \(parsed\.reason === "stepGate" \|\| parsed\.reason === "paused"\)\)/)
   assert.match(provider, /this\.panel\.reveal\(vscode\.ViewColumn\.One\)/)

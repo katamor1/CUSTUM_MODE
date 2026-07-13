@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/bob-review/repository-symbol-index.schema.json",
+  "title": "bob evidence scope repository symbol index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "index",
+    "symbols",
+    "edges"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_revision"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{40}$"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "generated_at": {
+          "type": "string"
+        }
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "maxItems": 50000,
+      "items": {
+        "$ref": "#/$defs/symbol"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 200000,
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    }
+  },
+  "$defs": {
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "path",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1
+        },
+        "estimated_tokens": {
+          "type": "number",
+          "minimum": 0
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "public",
+            "protected",
+            "private",
+            "internal",
+            "unknown"
+          ]
+        },
+        "interface_change": {
+          "type": "boolean"
+        },
+        "risk_tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "is_test": {
+          "type": "boolean"
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "kind",
+        "resolution",
+        "reason"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolution": {
+          "type": "string",
+          "enum": [
+            "resolved",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_hint": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "resolution": {
+                "const": "resolved"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "to"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "resolution": {
+                "const": "unknown"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "target_hint"
+            ],
+            "not": {
+              "required": [
+                "to"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

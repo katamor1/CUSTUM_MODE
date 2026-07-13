@@ -2,6 +2,9 @@ import { randomUUID } from "crypto"
 import type {
   CoreWorkflowDefinition,
   EngineStep,
+  WorkflowBranchCheckpointDecisionOutcome,
+  WorkflowBranchCheckpointDecisionRecord,
+  WorkflowBranchCheckpointState,
   WorkflowBranchLoopState,
   WorkflowRunBranchingState,
   WorkflowRunState
@@ -41,6 +44,36 @@ export function createBranchCheckpoint(input: {
     createdAt: new Date().toISOString()
   }
   recordBranchTransition(workflow, run, step, decisionId, "checkpoint", targetStepId, loopId, loopState.count, conditionSnapshot)
+}
+
+export function latestBranchCheckpointDecision(run: WorkflowRunState): WorkflowBranchCheckpointDecisionRecord | undefined {
+  const decisions = run.branching?.checkpointDecisions
+  return decisions?.[decisions.length - 1]
+}
+
+export function recordBranchCheckpointDecision(input: {
+  run: WorkflowRunState
+  checkpoint: WorkflowBranchCheckpointState
+  outcome: WorkflowBranchCheckpointDecisionOutcome
+  reason?: string
+  decidedAt?: string
+}): WorkflowBranchCheckpointDecisionRecord {
+  const { run, checkpoint, outcome, reason } = input
+  if (!run.branching) throw new Error(`Workflow run has no branching state: ${run.runId}`)
+  const record: WorkflowBranchCheckpointDecisionRecord = {
+    checkpointId: checkpoint.id,
+    outcome,
+    loopId: checkpoint.loopId,
+    ownerStepId: checkpoint.fromStepId,
+    targetStepId: checkpoint.toStepId,
+    transitionDecisionId: checkpoint.decisionId,
+    decidedAt: input.decidedAt ?? new Date().toISOString(),
+    ...(reason === undefined ? {} : { reason })
+  }
+  const decisions = run.branching.checkpointDecisions ?? []
+  decisions.push(record)
+  run.branching.checkpointDecisions = decisions
+  return record
 }
 
 export function approveBranchCheckpointTransition(workflow: CoreWorkflowDefinition, run: WorkflowRunState): { ok: true } | { ok: false; error: string } {

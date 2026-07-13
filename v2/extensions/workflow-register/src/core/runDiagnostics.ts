@@ -1,5 +1,7 @@
-import { RunStepState, WorkflowRunState } from "./model"
-import { TaskSnapshotSummary } from "./taskSnapshots"
+import type { RunStepState, WorkflowRunState } from "./model"
+import { CURRENT_WORKFLOW_RUN_STATE_SCHEMA_VERSION } from "./runtime/runStateCodec"
+import type { RunStateLoadDiagnostic } from "./runtime/runStateCodec"
+import type { TaskSnapshotSummary } from "./taskSnapshots"
 
 export interface WorkflowRunDiagnosticReport {
   title: string
@@ -7,36 +9,80 @@ export interface WorkflowRunDiagnosticReport {
   lines: string[]
 }
 
+export interface WorkflowRunDurabilitySummary {
+  eventCount: number
+  eventHeadHash?: string
+  journalPending: boolean
+  lockPresent: boolean
+}
+
 export interface WorkflowRunDiagnosticOptions {
   snapshotsByRunId?: Record<string, TaskSnapshotSummary[]>
+  runDocumentDiagnostics?: RunStateLoadDiagnostic[]
+  durabilityByRunId?: Record<string, WorkflowRunDurabilitySummary>
 }
 
 export function buildWorkflowRunDiagnosticReport(runs: WorkflowRunState[], options: WorkflowRunDiagnosticOptions = {}): WorkflowRunDiagnosticReport {
-  const lines = runs.length === 0 ? ["- No workflow runs were found."] : runs.flatMap((run) => [...formatWorkflowRunDiagnostics(run, { snapshots: options.snapshotsByRunId?.[run.runId] ?? [] }), ""])
+  const lines = runs.length === 0 ? ["- No workflow runs were found."] : runs.flatMap((run) => [
+    ...formatWorkflowRunDiagnostics(run, {
+      snapshots: options.snapshotsByRunId?.[run.runId] ?? [],
+      durability: options.durabilityByRunId?.[run.runId]
+    }),
+    ""
+  ])
   if (lines[lines.length - 1] === "") lines.pop()
+  const documentDiagnostics = options.runDocumentDiagnostics ?? []
+  if (documentDiagnostics.length > 0) {
+    if (lines.length > 0) lines.push("")
+    lines.push("Run document diagnostics:")
+    for (const diagnostic of documentDiagnostics) {
+      lines.push(`- ${diagnostic.runId} [${diagnostic.severity}/${diagnostic.code}]: ${diagnostic.message}`)
+    }
+  }
   const failed = runs.filter((run) => run.status === "failed").length
   const paused = runs.filter((run) => run.status === "paused").length
   const reviewing = runs.filter((run) => run.status === "reviewing").length
   const held = runs.filter((run) => run.status === "held").length
   const attempts = runs.reduce((sum, run) => sum + run.steps.reduce((stepSum, step) => stepSum + (step.attempts?.length ?? 0), 0), 0)
   const pausedPart = paused > 0 ? ` ${paused} paused;` : ""
+  const documentPart = documentDiagnostics.length > 0 ? `; ${documentDiagnostics.length} run document diagnostic(s)` : ""
+  const durabilityCount = Object.keys(options.durabilityByRunId ?? {}).length
+  const durabilityPart = durabilityCount > 0 ? `; ${durabilityCount} run durability record(s)` : ""
   return {
     title: "Workflow Run Diagnostics",
-    summary: `${runs.length} run(s); ${failed} failed;${pausedPart} ${reviewing} reviewing; ${held} held; ${attempts} archived attempt(s).`,
+    summary: `${runs.length} run(s); ${failed} failed;${pausedPart} ${reviewing} reviewing; ${held} held; ${attempts} archived attempt(s)${documentPart}${durabilityPart}.`,
     lines
   }
 }
 
-export function formatWorkflowRunDiagnostics(run: WorkflowRunState, options: { snapshots?: TaskSnapshotSummary[] } = {}): string[] {
+export function formatWorkflowRunDiagnostics(
+  run: WorkflowRunState,
+  options: { snapshots?: TaskSnapshotSummary[]; durability?: WorkflowRunDurabilitySummary } = {}
+): string[] {
+  const schemaVersion = run.schemaVersion ?? "unversioned"
   const lines = [
     `## ${run.runId}`,
     "",
     `- status: ${run.status}`,
     `- workflow: ${run.workflowId}`,
     `- workflow name: ${run.workflowName}`,
+    `- run state schema: ${schemaVersion}`,
     `- current step: ${run.currentStep ?? "none"}`,
     `- updated: ${run.updatedAt}`
   ]
+  if (run.schemaVersion && run.schemaVersion !== CURRENT_WORKFLOW_RUN_STATE_SCHEMA_VERSION) {
+    lines.push("- run state access: read-only")
+  }
+  if (options.durability) {
+    lines.push(
+      "",
+      "Run durability:",
+      `- immutable events: ${options.durability.eventCount}`,
+      `- event head: ${options.durability.eventHeadHash ?? "none"}`,
+      `- journal: ${options.durability.journalPending ? "pending" : "none"}`,
+      `- execution lease: ${options.durability.lockPresent ? "present" : "none"}`
+    )
+  }
   if (run.error) {
     lines.push(`- error: ${run.error}`)
     const hint = workflowRunFailureHint(run.error)
@@ -122,6 +168,9 @@ export function workflowRunFailureHint(error: string): string | undefined {
   if (error.includes("waiting for step review")) return "Accept the current step, or retry it after adjusting the workflow step definition."
   if (error.includes("Workflow definition changed")) return "Enable stepReview.allowEditBeforeRetry or retry with the original workflow definition."
   if (error.includes("Workflow step order/id changed")) return "Keep completed step ids and order stable while retrying a run."
+  if (error.includes("stale revision") || error.includes("changed since it was loaded")) return "Refresh the run and retry the operation against the latest persisted revision."
+  if (error.includes("busy or locked")) return "Wait for the active workflow operation to finish, then refresh and retry."
+  if (error.includes("journal")) return "Inspect the journal and event-log evidence before retrying; do not delete conflicting durability files."
   return undefined
 }
 

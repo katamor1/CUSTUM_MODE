@@ -7,6 +7,7 @@ const { test } = require("node:test")
 
 const { collectGitDiff, validateBazaarRevision } = require("../out/core/gitDiffCollector")
 const { ExternalProcessError } = require("../out/core/externalProcessRunner")
+const { normalizeChangedFilePathStrict } = require("../out/core/fileSystem")
 const { readSourceSet } = require("./helpers/sourceReader")
 
 test("collectGitDiff resolves valid git refs to commit SHAs before diffing", async () => {
@@ -90,6 +91,14 @@ test("collectGitDiff preserves real a and b directory prefixes", async () => {
 })
 
 test("collectGitDiff rejects control-character Git paths instead of accepting quoted aliases", async () => {
+  if (process.platform === "win32") {
+    // Windows rejects control characters at file creation, so exercise the same host validator directly.
+    assert.throws(
+      () => normalizeChangedFilePathStrict("tab\tname.txt"),
+      /changed file path contains control characters/
+    )
+    return
+  }
   const workspace = createGitWorkspaceWithControlPath()
 
   await assert.rejects(

@@ -115,7 +115,13 @@ export async function runApplyAiTraceabilityDraft(textOrOptions?: unknown): Prom
     return result
   }
 
-  const gate = await validateAndWriteTraceabilityGateReport({ workspaceRoot, catalogPath, reportPath, textEncoding })
+  const gate = await validateAndWriteTraceabilityGateReport({
+    workspaceRoot,
+    catalogPath,
+    reportPath,
+    textEncoding,
+    expectedRevision: result.revision
+  })
   const backup = result.backupPath ? `\n既存catalogのバックアップ: ${result.backupPath}` : ""
   notifyInfo(`traceability AI draft を catalog に反映しました: ${result.catalogPath}${backup}${gate.status === "ok" ? `\ngate report: ${gate.reportPath}` : ""}`)
   return { ...result, gateReport: gate }
@@ -157,14 +163,34 @@ export async function runCreateReviewInputFromTraceability(options?: unknown): P
 
   const review = await collectReviewMetadata(record)
   if (!review) return { status: "cancelled" }
-  const build = buildReviewInputDraftFromTraceability(read.catalog, {
+  const current = await readTraceabilityCatalog({ workspaceRoot, catalogPath, textEncoding })
+  if (current.status === "error") {
+    notifyError(`traceability catalog を再読込できません: ${current.errors.join("; ")}`)
+    return current
+  }
+  if (current.revision !== read.revision) {
+    const stale = {
+      status: "error" as const,
+      code: "stale_revision" as const,
+      errors: ["traceability catalog changed while review metadata was collected; refresh and retry"]
+    }
+    notifyError(`traceability catalog が更新されたため review-input.yaml を生成できません: ${stale.errors[0]}`)
+    return stale
+  }
+  const build = buildReviewInputDraftFromTraceability(current.catalog, {
     review,
     review_focus: reviewFocusOption(record) ?? ["requirement-code-consistency", "design-code-consistency", "test-gap"]
   })
   if (build.status === "error") {
     const reportPath = stringOption(record, "traceabilityGateReportPath") ??
       config.get<string>("traceabilityGateReportPath", DEFAULT_TRACEABILITY_GATE_REPORT_PATH)
-    await validateAndWriteTraceabilityGateReport({ workspaceRoot, catalogPath, reportPath, textEncoding })
+    await validateAndWriteTraceabilityGateReport({
+      workspaceRoot,
+      catalogPath,
+      reportPath,
+      textEncoding,
+      expectedRevision: current.revision
+    })
     notifyError(`traceability gate error のため review-input.yaml を生成できません: ${build.errors.map((item) => item.code).join(", ")}`)
     return build
   }

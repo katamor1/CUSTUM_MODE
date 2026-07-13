@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "artifact": "bob-evidence-scope-phase2",
+  "hash_algorithm": "sha256",
+  "source_commit": "8eda191871dbc8bc5eae97c0f581ef84f8849e70",
+  "files": [
+    {
+      "path": "docs/superpowers/plans/2026-07-12-bob-evidence-scope-phase2.md",
+      "bytes": 9084,
+      "sha256": "bf3f3f8658e92a2ff3fab9c64d5f38bf92493dd1d52a8334c35db56eb295a4b7"
+    },
+    {
+      "path": "docs/implementation/bob-evidence-scope-phase2-2026-07-12.md",
+      "bytes": 6154,
+      "sha256": "05b96133ed3d49db37759050b0a43e5561b4b0fce2de4df7c3bf1cb5ffa5ec14"
+    },
+    {
+      "path": "docs/implementation/bob-evidence-scope-phase2-verification-2026-07-12.md",
+      "bytes": 5271,
+      "sha256": "5372c06749fdfb6b83181d71c93e3269836501212bb039e99b2f38f02ad116a6"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/docs/evidence-scope-domain-contract-ja.md",
+      "bytes": 9323,
+      "sha256": "958ae9e2f070c845d1517a3cb6afbb73b049f54b0279e2256bb4d7788680db62"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/reviewContextBudget.ts",
+      "bytes": 2570,
+      "sha256": "9f2be724f5f4c95a0787a76cbfb1ff572ad5103438d477e746775ed793e346c5"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/index.ts",
+      "bytes": 957,
+      "sha256": "cefc38275a0902c68c019ab8d3391f196b8aefab7fbf2136fb5b591ac14d07ac"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/core/pipeline.ts",
+      "bytes": 3515,
+      "sha256": "35ff8133964d9a175fe8385e4920d569706125551185fa4b3c1f2f2ea49597b0"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/core/reviewPackageBuilder.ts",
+      "bytes": 13749,
+      "sha256": "bae1241808534429fe2aa54d646e1b260928809ca93665e59544f7d2e59b3149"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/resources/schemas/review-input.schema.json",
+      "bytes": 6571,
+      "sha256": "48a5235d0b811a468c95b1cda0f717cfc8ff313d375d41a198823580b2421871"
+    },
+    {
+      "path": "docs/workflows/code-consistency-review/schemas/review-input.schema.json",
+      "bytes": 6571,
+      "sha256": "48a5235d0b811a468c95b1cda0f717cfc8ff313d375d41a198823580b2421871"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/test/evidenceScopePipeline.test.js",
+      "bytes": 3987,
+      "sha256": "9fffc4570be8620a3e9f32b7aba3bb814573a295ffb197ff708b039a8c873b52"
+    }
+  ]
+}

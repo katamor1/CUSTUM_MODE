@@ -106,6 +106,9 @@ test("process command handlers validate catalog/input, collect evidence, write r
   assert.equal(evidence.status, "ok", evidence.diagnostics.join("\n"))
   assert.equal(evidence.index.entries.length, 2)
   assert.equal(evidence.relativePath, ".bob-process-runs/run-001/evidence-index.json")
+  assert.deepEqual(evidence.$workflow, {
+    artifacts: [{ id: "evidenceIndex", ownership: "provider", path: evidence.relativePath }]
+  })
 
   const reviewResult = {
     schemaVersion: PROCESS_REVIEW_RESULT_SCHEMA_VERSION,
@@ -145,11 +148,17 @@ test("process command handlers validate catalog/input, collect evidence, write r
   }, { workspaceRoot: root })
   assert.equal(record.status, "ok", record.diagnostics.join("\n"))
   assert.equal(record.relativePath, ".bob-process-records/campaigns/campaign-alpha/records/run-001/record.yaml")
+  assert.deepEqual(record.$workflow, {
+    artifacts: [{ id: "processRecord", ownership: "provider", path: record.relativePath }]
+  })
 
   const summary = await generateCampaignSummaryCommand({ campaignId: "campaign-alpha" }, { workspaceRoot: root })
   assert.equal(summary.status, "ok", summary.diagnostics.join("\n"))
   assert.equal(summary.summary.recordCount, 1)
   assert.deepEqual(summary.summary.statusCounts, { completed: 1 })
+  assert.deepEqual(summary.$workflow, {
+    artifacts: [{ id: "campaignSummary", ownership: "provider", path: summary.relativePath }]
+  })
 })
 
 test("writeProcessRecordCommand normalizes manual approval decisions before validation", async () => {
@@ -172,4 +181,80 @@ test("writeProcessRecordCommand normalizes manual approval decisions before vali
   assert.equal(record.status, "ok", record.diagnostics.join("\n"))
   const written = yaml.load(await fs.readFile(path.join(root, record.relativePath), "utf8"))
   assert.equal(written.humanGate.status, "accepted")
+})
+
+test("writeProcessRecordCommand rejects a completed record with a required rejected gate before writing", async () => {
+  const root = await commandWorkspace()
+  const reviewResultPath = ".bob-process-runs/run-rejected/review-result.yaml"
+  const record = await writeProcessRecordCommand({
+    record: {
+      schemaVersion: PROCESS_RECORD_SCHEMA_VERSION,
+      campaignId: "campaign-alpha",
+      runId: "run-rejected",
+      workflowName: "process-common-review",
+      phase: "common",
+      status: "completed",
+      inputPath: "process-input.yaml",
+      artifactRoot: ".bob-process-runs/run-rejected",
+      reviewResultPath,
+      humanGate: { required: true, status: "rejected" }
+    }
+  }, { workspaceRoot: root })
+
+  assert.equal(record.status, "error")
+  assert.deepEqual(record.diagnostics, ["completed process record requires humanGate.status 'accepted' when humanGate.required is true"])
+  await assert.rejects(
+    fs.access(path.join(root, ".bob-process-records", "campaigns", "campaign-alpha", "records", "run-rejected", "record.yaml")),
+    (error) => error?.code === "ENOENT"
+  )
+})
+
+test("writeProcessRecordCommand permits non-completed audit records with a required rejected gate", async () => {
+  const root = await commandWorkspace()
+  const record = await writeProcessRecordCommand({
+    record: {
+      schemaVersion: PROCESS_RECORD_SCHEMA_VERSION,
+      campaignId: "campaign-alpha",
+      runId: "run-needs-rework",
+      workflowName: "process-common-review",
+      phase: "common",
+      status: "needs_rework",
+      inputPath: "process-input.yaml",
+      artifactRoot: ".bob-process-runs/run-needs-rework",
+      humanGate: { required: true, status: "rejected" }
+    }
+  }, { workspaceRoot: root })
+
+  assert.equal(record.status, "ok", record.diagnostics.join("\n"))
+  const written = yaml.load(await fs.readFile(path.join(root, record.relativePath), "utf8"))
+  assert.equal(written.status, "needs_rework")
+  assert.equal(written.humanGate.status, "rejected")
+})
+
+test("writeProcessRecordCommand rechecks a completed record review artifact immediately before writing", async () => {
+  const root = await commandWorkspace()
+  const reviewResultPath = ".bob-process-runs/run-missing-review/common-review/review-result.yaml"
+  const record = await writeProcessRecordCommand({
+    record: {
+      schemaVersion: PROCESS_RECORD_SCHEMA_VERSION,
+      campaignId: "campaign-alpha",
+      runId: "run-missing-review",
+      workflowName: "process-common-review",
+      phase: "common",
+      status: "completed",
+      inputPath: "process-input.yaml",
+      artifactRoot: ".bob-process-runs/run-missing-review",
+      reviewResultPath,
+      humanGate: { required: true, status: "accepted" }
+    }
+  }, { workspaceRoot: root })
+
+  assert.equal(record.status, "error")
+  assert.deepEqual(record.diagnostics, [
+    `reviewResultPath: path does not exist or cannot be read (${reviewResultPath})`
+  ])
+  await assert.rejects(
+    fs.access(path.join(root, ".bob-process-records", "campaigns", "campaign-alpha", "records", "run-missing-review", "record.yaml")),
+    (error) => error?.code === "ENOENT"
+  )
 })

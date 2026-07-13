@@ -2,16 +2,19 @@ const assert = require("node:assert/strict")
 const { test } = require("node:test")
 const { readSrc, readSourceSet } = require("./helpers/sourceReader")
 
-test("Bob registration uses CoreWorkflowDefinition as the only parsed workflow source", () => {
+test("Bob registration uses the workflow compiler as the only parsed workflow source", () => {
   const source = readSourceSet([
     "workflowDefinitionLoader.ts",
     "workflowDiscovery.ts",
     "workflowAdapter.ts"
   ])
 
-  assert.match(source, /parseWorkflowMarkdown\(\{ sourceId, filePath: candidate\.relativePath, text \}\)/)
+  assert.match(source, /compileWorkflowDocument\(\{ sourceId, filePath: candidate\.relativePath, text, strict: true \}\)/)
+  assert.match(source, /if \(!compiled\.ok \|\| !compiled\.workflow\) return \{ diagnostics \}/)
   assert.match(source, /adaptCoreWorkflowForBob\(/)
+  assert.ok(source.indexOf("!compiled.ok") < source.indexOf("adaptCoreWorkflowForBob(coreWorkflow"))
   assert.doesNotMatch(source, /loadCoreWorkspaceWorkflows/)
+  assert.doesNotMatch(source, /parseWorkflowMarkdown\(/)
   assert.doesNotMatch(source, /parseYamlFrontMatter\(split\.frontMatter\)/)
 })
 
@@ -31,10 +34,10 @@ test("workflow definition loading separates discovery, adapter, and diagnostics 
   assert.match(source, /validateAndDescribeWorkflow\(\{[\s\S]*relativePath: candidate\.relativePath[\s\S]*folderName: candidate\.folderName[\s\S]*workflow[\s\S]*\}\)/)
 })
 
-test("workflow definition loading blocks parser warnings before registration", () => {
+test("workflow definition loading blocks strict compiler diagnostics before registration", () => {
   const source = readSrc("workflowDefinitionLoader.ts")
 
-  assert.match(source, /const parserWarnings = parsed\.diagnostics\.filter\(isParserWarning\)/)
-  assert.match(source, /workflow registration is strict; resolve parser warnings before registration/)
-  assert.ok(source.indexOf("parserWarnings.length > 0") < source.indexOf("adaptCoreWorkflowForBob(coreWorkflow"))
+  assert.match(source, /compileWorkflowDocument\(\{ sourceId, filePath: candidate\.relativePath, text, strict: true \}\)/)
+  assert.match(source, /diagnostics\.push\(\.\.\.formatWorkflowDiagnostics\(compiled\)\)/)
+  assert.ok(source.indexOf("!compiled.ok") < source.indexOf("adaptCoreWorkflowForBob(coreWorkflow"))
 })

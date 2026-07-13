@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "workflow-register/run-state/v1",
+  "runId": "20260712T000000Z-history-000000000001",
+  "workflowId": "workflow-register.history",
+  "workflowName": "history",
+  "workflowSchemaVersion": "workflow-register/v1",
+  "workflowDefinitionHash": "sha256:history",
+  "workflowFile": ".bob/workflows/history/WORKFLOW.md",
+  "engineVersion": "0.1.0",
+  "status": "paused",
+  "currentStep": "review",
+  "inputs": {
+    "revision": "abc123"
+  },
+  "state": {
+    "context": "preserved"
+  },
+  "steps": [
+    {
+      "id": "review",
+      "title": "Review",
+      "type": "manual",
+      "status": "held"
+    }
+  ],
+  "createdAt": "2026-07-12T00:00:00.000Z",
+  "updatedAt": "2026-07-12T00:01:00.000Z"
+}

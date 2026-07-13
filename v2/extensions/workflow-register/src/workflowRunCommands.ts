@@ -2,6 +2,7 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import * as vscode from "vscode"
 import type { ActiveStep } from "./bobWorkflowTypes"
+import { BobWorkflowGateRegistry, type BobWorkflowGateDecision } from "./bobWorkflowGateRegistry"
 import { bobTaskSyncRegistry, type BobTaskSyncReason } from "./bobTaskSync"
 import {
   hydrateWorkflowStateFromArtifacts,
@@ -15,22 +16,43 @@ import {
 } from "./core/artifacts"
 import type { CoreWorkflowDefinition, WorkflowRunState } from "./core/model"
 import { formatBranchingDiagnostics } from "./core/runDiagnostics"
+import { assertWorkflowRunStateWritable, isWorkflowRunStateWritable } from "./core/runStateStore"
 import { pendingReviewTransitionStepId } from "./core/engine/runState"
+import {
+  coordinateWorkflowRunExecution,
+  workflowRunExecutionActiveForWorkspace
+} from "./core/engine/runExecutionCoordinator"
+import { FileRunControlStore } from "./core/runControlStore"
 import { FileTaskSnapshotStore } from "./core/taskSnapshots"
+import { readContainedRunArtifactManifest } from "./core/runtime/runStatePath"
 import type { MarkerRootCandidate } from "./core/workspaceRoots"
+import {
+  assertOperationHubRunRevision,
+  canonicalOperationHubWorkspaceRoot,
+  isOperationHubRunMutationTarget,
+  isOperationHubWorkflowMutationTarget,
+  OperationHubRunMutationTarget,
+  OperationHubWorkflowMutationTarget,
+  validateOperationHubRunMutationTarget
+} from "./operationHubMutationTarget"
 import { showMarkdownReport } from "./reports"
 import type { ManualStepPanelInput } from "./webview/manualStepViewModel"
+import { writeWorkspaceFilesAtomically } from "./core/runtime/workspaceFileTransaction"
 import { requireTrustedWorkspace } from "./workspaceTrust"
 import { collectCoreWorkflowInputs } from "./workflowInputPrompt"
 import {
   findRunSelection,
   listRunSelections,
-  pickRunSelection
+  pickRunSelection,
+  RunSelection
 } from "./workflowRunSelection"
 import { WorkflowRuntimeFactory } from "./workflowRuntimeFactory"
 import { reviewTaskRegistry } from "./reviewTaskRegistry"
+import type { ReviewAcceptanceOperationKind } from "./reviewAcceptanceCoordinator"
 
-export type RunCommandArg = string | { runId?: string; run?: { runId?: string } } | undefined
+export type RunCommandArg = string | OperationHubRunMutationTarget | { runId?: string; run?: { runId?: string } } | undefined
+export type WorkflowCommandArg = string | OperationHubWorkflowMutationTarget | undefined
+export type ArtifactSourceRunArg = string | OperationHubRunMutationTarget | undefined
 
 interface ArtifactSourceRunSelection {
   root: string
@@ -45,7 +67,16 @@ export interface WorkflowRunCommandServiceOptions {
   workflowRootCandidates: () => Promise<MarkerRootCandidate[]>
   activeSteps: () => ActiveStep[]
   showManualStepPanel: (input: ManualStepPanelInput) => Promise<void>
+  gateRegistry: BobWorkflowGateRegistry
+  coordinateGateDecision: <T>(
+    workspaceRoot: string,
+    runId: string,
+    kind: ReviewAcceptanceOperationKind,
+    operation: () => Promise<T>
+  ) => Promise<T>
 }
+
+const CHECKPOINT_ABORT_REASON = "Bob workflow run aborted at branch checkpoint."
 
 export class WorkflowRunCommandService {
   constructor(private readonly options: WorkflowRunCommandServiceOptions) {}
@@ -54,15 +85,19 @@ export class WorkflowRunCommandService {
     return Array.from(this.options.coreWorkflows.values()).sort((a, b) => a.label.localeCompare(b.label))
   }
 
-  async runWorkflow(workflowId?: string, inputs: Record<string, unknown> = {}): Promise<unknown> {
+  async runWorkflow(workflowArg?: WorkflowCommandArg, inputs: Record<string, unknown> = {}): Promise<unknown> {
     const trustError = await requireTrustedWorkspace("run workflow")
     if (trustError) return trustError
     await this.ensureWorkflowsLoaded()
+    const operationHubTarget = isOperationHubWorkflowMutationTarget(workflowArg) ? workflowArg : undefined
+    const workflowId = operationHubTarget?.workflowId ?? (typeof workflowArg === "string" ? workflowArg : undefined)
     const workflow = workflowId
       ? this.options.coreWorkflows.get(workflowId)
       : await this.pickCoreWorkflow()
     if (!workflow) return "No workflow selected."
-    const root = workflow.workflowRoot ?? await this.pickWorkflowRoot("Select workflow workspace")
+    const root = operationHubTarget
+      ? await this.validateOperationHubWorkflowRoot(operationHubTarget, workflow)
+      : workflow.workflowRoot ?? await this.pickWorkflowRoot("Select workflow workspace")
     if (!root) {
       const message = "No workspace folder is open."
       await vscode.window.showErrorMessage(message)
@@ -113,7 +148,7 @@ export class WorkflowRunCommandService {
   async startFromStepWithArtifacts(
     workflowId?: string,
     stepId?: string,
-    sourceRunId?: string,
+    sourceRunArg?: ArtifactSourceRunArg,
     inputs: Record<string, unknown> = {}
   ): Promise<unknown> {
     const trustError = await requireTrustedWorkspace("start workflow from artifacts")
@@ -127,7 +162,9 @@ export class WorkflowRunCommandService {
       ? workflow.engineSteps.find((candidate) => candidate.id === stepId)
       : await this.pickWorkflowStep(workflow)
     if (!step) return stepId ? `Workflow step not found: ${stepId}` : "No workflow step selected."
-    const root = workflow.workflowRoot ?? await this.pickWorkflowRoot("Select workflow workspace")
+    const sourceTarget = isOperationHubRunMutationTarget(sourceRunArg) ? sourceRunArg : undefined
+    const sourceRunId = sourceTarget?.runId ?? (typeof sourceRunArg === "string" ? sourceRunArg : undefined)
+    let root = workflow.workflowRoot ?? await this.pickWorkflowRoot("Select workflow workspace")
     if (!root) {
       const message = "No workspace folder is open."
       await vscode.window.showErrorMessage(message)
@@ -135,6 +172,22 @@ export class WorkflowRunCommandService {
     }
     const resolvedInputs = await collectCoreWorkflowInputs(workflow, inputs)
     if (!resolvedInputs) return "Workflow input was cancelled."
+
+    if (sourceTarget) {
+      const roots = await this.options.workflowRootCandidates()
+      const validated = await validateOperationHubRunMutationTarget(
+        sourceTarget,
+        roots.map((candidate) => candidate.root)
+      )
+      if (workflow.workflowRoot) {
+        await canonicalOperationHubWorkspaceRoot(workflow.workflowRoot, [validated.workspaceRoot])
+      }
+      root = validated.workspaceRoot
+    }
+
+    if (sourceTarget) {
+      await assertOperationHubRunRevision(root, sourceTarget.runId, sourceTarget.expectedRevision)
+    }
 
     const source = await this.pickArtifactSourceRun(root, workflow, resolvedInputs, sourceRunId)
     if (!source) {
@@ -154,7 +207,7 @@ export class WorkflowRunCommandService {
       run: seeded,
       manifest: source.manifest,
       stateKeys,
-      readFile: (relativePath) => fs.readFile(path.join(root, relativePath), "utf8")
+      readFile: (relativePath) => readPhysicallyContainedWorkspaceFile(root, relativePath)
     })
     if (!hydration.ok) {
       const message = `Workflow artifact hydration failed: ${hydration.issues.map((issue) => issue.message).join("; ")}`
@@ -188,18 +241,32 @@ export class WorkflowRunCommandService {
     const selection = await this.selectRun(runId)
     if (!selection) return runId ? `Workflow run not found: ${runId}` : "No workflow run selected."
     const runStore = this.options.runtimeFactory.createRunStore(selection.root)
-    const run = selection.run ?? await runStore.loadRun(selection.runId)
-    if (!run) throw new Error(`Workflow run not found: ${selection.runId}`)
-    const workflow = this.options.coreWorkflows.get(run.workflowId)
-    if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
-
-    const result = await importTaskSnapshotArtifacts({
-      workflow,
-      run,
-      snapshotStore: new FileTaskSnapshotStore({ workspaceRoot: selection.root }),
-      writeFile: (relativePath, text) => writeWorkspaceFile(selection.root, relativePath, text)
-    })
-    if (result.importedCount > 0) await runStore.saveRun(run)
+    if (workflowRunExecutionActiveForWorkspace(selection.root, selection.runId)) {
+      throw new Error(`Cannot import task snapshot artifacts while workflow run is executing: ${selection.runId}`)
+    }
+    const imported = await this.options.coordinateGateDecision(
+      selection.root,
+      selection.runId,
+      "artifact-import",
+      () => coordinateWorkflowRunExecution(runStore, selection.runId, "importTaskSnapshotArtifacts", async () => {
+        const run = await runStore.loadRun(selection.runId)
+        if (!run) throw new Error(`Workflow run not found: ${selection.runId}`)
+        const workflow = this.options.coreWorkflows.get(run.workflowId)
+        if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
+        const result = await importTaskSnapshotArtifacts({
+          workflow,
+          run,
+          snapshotStore: new FileTaskSnapshotStore({ workspaceRoot: selection.root }),
+          persistStateRollback: () => runStore.saveRun(run),
+          writeFiles: (writes, commitState) => writeWorkspaceFilesAtomically(selection.root, writes, async () => {
+            await Promise.resolve(commitState())
+            await runStore.saveRun(run)
+          })
+        })
+        return { result, run, workflow }
+      })
+    )
+    const { result, run, workflow } = imported
     const lines = [
       `- runId: ${run.runId}`,
       `- workflow: ${workflow.id}`,
@@ -213,7 +280,7 @@ export class WorkflowRunCommandService {
     return result
   }
 
-  async runNextStep(runId?: string): Promise<unknown> {
+  async runNextStep(runArg?: RunCommandArg): Promise<unknown> {
     const trustError = await requireTrustedWorkspace("run next workflow step")
     if (trustError) return trustError
     await this.ensureWorkflowsLoaded()
@@ -223,17 +290,33 @@ export class WorkflowRunCommandService {
       await vscode.window.showErrorMessage(message)
       return message
     }
-    const selection = runId
-      ? await findRunSelection(runId, roots, (root) => this.options.runtimeFactory.createRunStore(root))
-      : await pickRunSelection(roots, (root) => this.options.runtimeFactory.createRunStore(root))
+    const runId = resolveRunId(runArg)
+    const selection = await this.selectRunArgument(runArg, roots)
     if (!selection) {
       const message = runId ? `Workflow run not found: ${runId}` : "No workflow run selected."
       if (runId) await vscode.window.showWarningMessage(message)
       return message
     }
-    const runStore = this.options.runtimeFactory.createRunStore(selection.root)
-    const run = selection.run ?? await runStore.loadRun(selection.runId)
-    if (!run) throw new Error(`Workflow run not found: ${selection.runId}`)
+    if (workflowRunExecutionActiveForWorkspace(selection.root, selection.runId)) {
+      throw new Error(`Cannot run the next step while workflow run is executing: ${selection.runId}`)
+    }
+    return this.options.coordinateGateDecision(
+      selection.root,
+      selection.runId,
+      "run-next",
+      () => this.runNextStepOnce(
+        selection.root,
+        selection.runId,
+        isOperationHubRunMutationTarget(runArg) ? runArg.expectedRevision : undefined
+      )
+    )
+  }
+
+  private async runNextStepOnce(root: string, runId: string, expectedRevision?: string): Promise<unknown> {
+    if (expectedRevision) await assertOperationHubRunRevision(root, runId, expectedRevision)
+    const runStore = this.options.runtimeFactory.createRunStore(root)
+    const run = await runStore.loadRun(runId)
+    if (!run) throw new Error(`Workflow run not found: ${runId}`)
     if (run.status === "reviewing") {
       return this.warnStepGate("Current step is waiting for review. Accept or retry it before running the next step.")
     }
@@ -248,16 +331,16 @@ export class WorkflowRunCommandService {
     }
     const workflow = this.options.coreWorkflows.get(run.workflowId)
     if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
-    const agentProvider = reviewTaskRegistry.agentProviderForRun(run.runId, workflow)
+    const agentProvider = reviewTaskRegistry.agentProviderForRun(root, run.runId, workflow)
     const pendingTransitionStepId = pendingReviewTransitionStepId(run)
     if (pendingTransitionStepId) {
-      const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)
+      const engine = this.options.runtimeFactory.createEngine(root, agentProvider)
       const result = await engine.runWorkflow(workflow, run.inputs, {
         executionMode: "singleStep",
         stepId: pendingTransitionStepId,
         allowOutOfOrder: workflow.stepExecution.allowOutOfOrder
       })
-      await this.reconcileBobTask(selection.root, result, workflow, "operation-hub-next")
+      await this.reconcileBobTask(root, result, workflow, "operation-hub-next")
       await vscode.window.showInformationMessage(`Workflow run ${result.status}: ${result.runId}`)
       return result
     }
@@ -267,7 +350,7 @@ export class WorkflowRunCommandService {
         run.status = "completed"
         run.currentStep = undefined
         run.error = undefined
-        await this.reconcileBobTask(selection.root, run, workflow, "operation-hub-next")
+        await this.reconcileBobTask(root, run, workflow, "operation-hub-next")
       } else {
         await runStore.saveRun(run)
       }
@@ -277,13 +360,13 @@ export class WorkflowRunCommandService {
       await vscode.window.showInformationMessage(message)
       return run
     }
-    const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)
+    const engine = this.options.runtimeFactory.createEngine(root, agentProvider)
     const result = await engine.runWorkflow(workflow, run.inputs, {
       executionMode: "singleStep",
       stepId: next.id,
       allowOutOfOrder: workflow.stepExecution.allowOutOfOrder
     })
-    await this.reconcileBobTask(selection.root, result, workflow, "operation-hub-next")
+    await this.reconcileBobTask(root, result, workflow, "operation-hub-next")
     await vscode.window.showInformationMessage(`Workflow run ${result.status}: ${result.runId}`)
     return result
   }
@@ -356,12 +439,12 @@ export class WorkflowRunCommandService {
     await showMarkdownReport("Workflow Runs", `${runsByRoot.length} run(s).`, lines)
   }
 
-  async resumeRun(runId?: string): Promise<unknown> {
-    return this.resumeOrRetryRun("resume", runId)
+  async resumeRun(runArg?: RunCommandArg): Promise<unknown> {
+    return this.resumeOrRetryRun("resume", runArg)
   }
 
-  async retryCurrentStep(runId?: string): Promise<unknown> {
-    return this.resumeOrRetryRun("retry", runId)
+  async retryCurrentStep(runArg?: RunCommandArg): Promise<unknown> {
+    return this.resumeOrRetryRun("retry", runArg)
   }
 
   async approveBranchCheckpoint(runId?: string): Promise<unknown> {
@@ -370,15 +453,20 @@ export class WorkflowRunCommandService {
     await this.ensureWorkflowsLoaded()
     const selection = await this.selectRun(runId)
     if (!selection) return runId ? `Workflow run not found: ${runId}` : "No workflow run selected."
-    const runStore = this.options.runtimeFactory.createRunStore(selection.root)
-    const run = selection.run ?? await runStore.loadRun(selection.runId)
-    if (!run) throw new Error(`Workflow run not found: ${selection.runId}`)
-    const workflow = this.options.coreWorkflows.get(run.workflowId)
-    if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
-    const engine = this.options.runtimeFactory.createEngine(selection.root)
-    const result = await engine.approveBranchCheckpoint(selection.runId, workflow)
-    await vscode.window.showInformationMessage(`Branch checkpoint approved: ${result.runId}`)
-    return result
+    return this.options.coordinateGateDecision(selection.root, selection.runId, "checkpoint-approve", async () => {
+      const runStore = this.options.runtimeFactory.createRunStore(selection.root)
+      const run = await runStore.loadRun(selection.runId)
+      if (!run) throw new Error(`Workflow run not found: ${selection.runId}`)
+      const workflow = this.options.coreWorkflows.get(run.workflowId)
+      if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
+      const engine = this.options.runtimeFactory.createEngine(selection.root)
+      const result = await engine.approveBranchCheckpoint(selection.runId, workflow)
+      if (this.options.gateRegistry.pendingForRun(selection.root, selection.runId)) {
+        this.options.gateRegistry.acceptPending(selection.root, selection.runId)
+      }
+      await vscode.window.showInformationMessage(`Branch checkpoint approved: ${result.runId}`)
+      return result
+    })
   }
 
   async abortBranchCheckpoint(runId?: string): Promise<unknown> {
@@ -386,10 +474,13 @@ export class WorkflowRunCommandService {
     if (trustError) return trustError
     const selection = await this.selectRun(runId)
     if (!selection) return runId ? `Workflow run not found: ${runId}` : "No workflow run selected."
-    const engine = this.options.runtimeFactory.createEngine(selection.root)
-    const result = await engine.abortBranchCheckpoint(selection.runId)
-    await vscode.window.showInformationMessage(`Branch checkpoint aborted: ${result.runId}`)
-    return result
+    return this.options.coordinateGateDecision(selection.root, selection.runId, "checkpoint-abort", async () => {
+      const engine = this.options.runtimeFactory.createEngine(selection.root)
+      const result = await engine.abortBranchCheckpoint(selection.runId, CHECKPOINT_ABORT_REASON)
+      this.options.gateRegistry.abortPending(selection.root, selection.runId, CHECKPOINT_ABORT_REASON)
+      await vscode.window.showInformationMessage(`Branch checkpoint aborted: ${result.runId}`)
+      return result
+    })
   }
 
   async inspectBranching(runId?: string): Promise<unknown> {
@@ -413,37 +504,95 @@ export class WorkflowRunCommandService {
     return run
   }
 
-  private async resumeOrRetryRun(mode: "resume" | "retry", runId?: string): Promise<unknown> {
+  private async resumeOrRetryRun(mode: "resume" | "retry", runArg?: RunCommandArg): Promise<unknown> {
     const trustError = await requireTrustedWorkspace(`${mode} workflow run`)
     if (trustError) return trustError
     await this.ensureWorkflowsLoaded()
     const roots = await this.options.workflowRootCandidates()
-    const selection = runId
-      ? await findRunSelection(runId, roots, (root) => this.options.runtimeFactory.createRunStore(root))
-      : await pickRunSelection(roots, (root) => this.options.runtimeFactory.createRunStore(root))
+    const runId = resolveRunId(runArg)
+    const selection = await this.selectRunArgument(runArg, roots)
     if (!selection) {
       const message = "No workspace folder is open."
       if (!runId) return "No workflow run selected."
       await vscode.window.showErrorMessage(`Workflow run not found: ${runId}`)
       return message
     }
-    const runStore = this.options.runtimeFactory.createRunStore(selection.root)
-    const targetRunId = selection.runId
-    const run = selection.run ?? await runStore.loadRun(targetRunId)
-    if (!run) throw new Error(`Workflow run not found: ${targetRunId}`)
+    return this.options.coordinateGateDecision(
+      selection.root,
+      selection.runId,
+      mode === "resume" ? "run-resume" : "run-retry",
+      () => (
+        this.resumeOrRetryRunOnce(
+          mode,
+          selection.root,
+          selection.runId,
+          isOperationHubRunMutationTarget(runArg) ? runArg.expectedRevision : undefined
+        )
+      )
+    )
+  }
+
+  private async resumeOrRetryRunOnce(
+    mode: "resume" | "retry",
+    root: string,
+    runId: string,
+    expectedRevision?: string
+  ): Promise<unknown> {
+    if (expectedRevision) await assertOperationHubRunRevision(root, runId, expectedRevision)
+    const runStore = this.options.runtimeFactory.createRunStore(root)
+    const run = await runStore.loadRun(runId)
+    if (!run) throw new Error(`Workflow run not found: ${runId}`)
     if (mode === "resume" && run.status === "checkpoint") {
       return this.warnStepGate("Current run is waiting at a branch checkpoint. Approve or abort the checkpoint before resuming.")
     }
     const workflow = this.options.coreWorkflows.get(run.workflowId)
     if (!workflow) throw new Error(`Workflow definition is not loaded: ${run.workflowId}`)
-    const agentProvider = reviewTaskRegistry.agentProviderForRun(run.runId, workflow)
-    const engine = this.options.runtimeFactory.createEngine(selection.root, agentProvider)
+    const liveGate = this.options.gateRegistry.pendingForRun(root, runId)
+    if (mode === "resume" && run.status === "paused" && liveGate?.status === "paused" && ownerStepCompleted(run, liveGate)) {
+      await new FileRunControlStore({ workspaceRoot: root }).clearPause(runId)
+      run.status = "running"
+      run.error = undefined
+      await runStore.saveRun(run)
+      this.options.gateRegistry.acceptPending(root, runId)
+      await vscode.window.showInformationMessage(`Workflow run ${run.status}: ${run.runId}`)
+      return run
+    }
+
+    const agentProvider = reviewTaskRegistry.agentProviderForRun(root, run.runId, workflow)
+    const engine = this.options.runtimeFactory.createEngine(root, agentProvider)
     const result = mode === "resume"
-      ? await engine.resumeRun(targetRunId, { workflow, completeHeldStep: true })
-      : await engine.retryCurrentStep(targetRunId, workflow)
-    await this.reconcileBobTask(selection.root, result, workflow, mode === "resume" ? "operation-hub-resume" : "operation-hub-retry")
+      ? await engine.resumeRun(runId, {
+        workflow,
+        completeHeldStep: true,
+        executionMode: liveGate ? "singleStep" : undefined
+      })
+      : await engine.retryCurrentStep(runId, workflow, {
+        executionMode: liveGate ? "singleStep" : undefined
+      })
+    if (liveGate) {
+      this.updateLiveGateAfterCommand(root, result, liveGate)
+    } else {
+      await this.reconcileBobTask(root, result, workflow, mode === "resume" ? "operation-hub-resume" : "operation-hub-retry")
+    }
     await vscode.window.showInformationMessage(`Workflow run ${result.status}: ${result.runId}`)
     return result
+  }
+
+  private updateLiveGateAfterCommand(
+    root: string,
+    run: WorkflowRunState,
+    gate: BobWorkflowGateDecision & { ownerStepId: string }
+  ): void {
+    const stepId = run.currentStep ?? gate.stepId
+    if (isHumanGateStatus(run.status)) {
+      this.options.gateRegistry.rebind(root, run.runId, { stepId, status: run.status })
+      return
+    }
+    if (ownerStepCompleted(run, gate) || run.status === "completed") {
+      this.options.gateRegistry.acceptPending(root, run.runId)
+      return
+    }
+    this.options.gateRegistry.rebind(root, run.runId, { stepId, status: run.status })
   }
 
   private async pickArtifactSourceRun(
@@ -457,6 +606,10 @@ export class WorkflowRunCommandService {
     const candidates: ArtifactSourceRunSelection[] = []
     for (const run of runs) {
       if (sourceRunId && run.runId !== sourceRunId) continue
+      if (!isWorkflowRunStateWritable(run)) {
+        if (sourceRunId) assertWorkflowRunStateWritable(run)
+        continue
+      }
       const manifest = await loadArtifactManifest(root, run)
       if (!manifest) continue
       const issues = validateWorkflowArtifactManifest({ manifest, workflow, inputs })
@@ -476,9 +629,9 @@ export class WorkflowRunCommandService {
   }
 
   private async reconcileBobTask(root: string, run: WorkflowRunState, workflow: CoreWorkflowDefinition, reason: BobTaskSyncReason): Promise<void> {
-    const sync = await bobTaskSyncRegistry.reconcileRun(run, workflow, {
+    const sync = await bobTaskSyncRegistry.reconcileRun(root, run, workflow, {
       reason,
-      task: reviewTaskRegistry.taskForRun(run.runId)
+      task: reviewTaskRegistry.taskForRun(root, run.runId)
     })
     if (sync.status !== "synced") console.warn(sync.message)
     await this.options.runtimeFactory.createRunStore(root).saveRun(run)
@@ -486,6 +639,42 @@ export class WorkflowRunCommandService {
 
   private async ensureWorkflowsLoaded(): Promise<void> {
     if (this.options.coreWorkflows.size === 0) await this.options.ensureWorkflowsLoaded()
+  }
+
+  private async selectRunArgument(
+    runArg: RunCommandArg,
+    roots: MarkerRootCandidate[]
+  ): Promise<RunSelection | undefined> {
+    if (isOperationHubRunMutationTarget(runArg)) {
+      const validated = await validateOperationHubRunMutationTarget(
+        runArg,
+        roots.map((candidate) => candidate.root)
+      )
+      return {
+        root: validated.workspaceRoot,
+        runId: runArg.runId,
+        run: validated.snapshot.run
+      }
+    }
+    const runId = resolveRunId(runArg)
+    return runId
+      ? findRunSelection(runId, roots, (root) => this.options.runtimeFactory.createRunStore(root))
+      : pickRunSelection(roots, (root) => this.options.runtimeFactory.createRunStore(root))
+  }
+
+  private async validateOperationHubWorkflowRoot(
+    target: OperationHubWorkflowMutationTarget,
+    workflow: CoreWorkflowDefinition
+  ): Promise<string> {
+    const roots = await this.options.workflowRootCandidates()
+    const workspaceRoot = await canonicalOperationHubWorkspaceRoot(
+      target.workspaceRoot,
+      roots.map((candidate) => candidate.root)
+    )
+    if (workflow.workflowRoot) {
+      await canonicalOperationHubWorkspaceRoot(workflow.workflowRoot, [workspaceRoot])
+    }
+    return workspaceRoot
   }
 
   private async selectRun(runId?: string) {
@@ -546,24 +735,38 @@ async function loadArtifactManifest(root: string, run: WorkflowRunState): Promis
   const fromState = parseWorkflowArtifactManifest(run.state["workflow.artifactManifest"])
   if (fromState) return fromState
   try {
-    const file = path.join(root, ".bob", "workflows", "runs", run.runId, "artifacts", "manifest.json")
-    return parseWorkflowArtifactManifest(await fs.readFile(file, "utf8"))
+    const snapshot = await readContainedRunArtifactManifest(root, run.runId)
+    return parseWorkflowArtifactManifest(snapshot.bytes.toString("utf8"))
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
     throw error
   }
 }
 
-async function writeWorkspaceFile(root: string, relativePath: string, text: string): Promise<void> {
-  const resolved = path.resolve(root, relativePath)
-  if (!isContainedPath(root, resolved)) throw new Error(`Artifact path escapes workspace root: ${relativePath}`)
-  await fs.mkdir(path.dirname(resolved), { recursive: true })
-  await fs.writeFile(resolved, text, "utf8")
+async function readPhysicallyContainedWorkspaceFile(root: string, relativePath: string): Promise<string> {
+  const lexicalRoot = path.resolve(root)
+  const lexicalTarget = path.resolve(lexicalRoot, relativePath)
+  assertContainedWorkspacePath(lexicalRoot, lexicalTarget, relativePath)
+  const [physicalRoot, physicalTarget] = await Promise.all([
+    fs.realpath(lexicalRoot),
+    fs.realpath(lexicalTarget)
+  ])
+  assertContainedWorkspacePath(physicalRoot, physicalTarget, relativePath)
+  const handle = await fs.open(physicalTarget, "r")
+  try {
+    const stat = await handle.stat()
+    if (!stat.isFile()) throw new Error(`Artifact path is not a regular file: ${relativePath}`)
+    return await handle.readFile({ encoding: "utf8" })
+  } finally {
+    await handle.close()
+  }
 }
 
-function isContainedPath(root: string, target: string): boolean {
+function assertContainedWorkspacePath(root: string, target: string, label: string): void {
   const relative = path.relative(path.resolve(root), path.resolve(target))
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Artifact path escapes the physical workspace root: ${label}`)
+  }
 }
 
 function formatSnapshotImportIssues(issues: TaskSnapshotArtifactImportIssue[]): string[] {
@@ -575,6 +778,17 @@ function resolveRunId(value: RunCommandArg): string | undefined {
   if (typeof value === "string") return value
   if (!value || typeof value !== "object") return undefined
   if (typeof value.runId === "string") return value.runId
-  if (value.run && typeof value.run.runId === "string") return value.run.runId
+  if ("run" in value && value.run && typeof value.run.runId === "string") return value.run.runId
   return undefined
+}
+
+function ownerStepCompleted(
+  run: WorkflowRunState,
+  gate: BobWorkflowGateDecision & { ownerStepId: string }
+): boolean {
+  return run.steps.find((step) => step.id === gate.ownerStepId)?.status === "completed"
+}
+
+function isHumanGateStatus(status: WorkflowRunState["status"]): boolean {
+  return status === "reviewing" || status === "held" || status === "checkpoint" || status === "paused"
 }

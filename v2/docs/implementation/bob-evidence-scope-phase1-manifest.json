@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "date": "2026-07-12",
+  "source_plan": "https://chatgpt.com/share/6a53743e-7444-83e8-b0f8-b21f9a9864d5",
+  "scope": "bob-evidence-scope phase 1",
+  "hash_algorithm": "sha256",
+  "manifest_excludes_itself": true,
+  "validation": {
+    "domain": {
+      "command": "tsc -p ./ && node --test test/evidenceScope.test.js",
+      "tests": 10,
+      "passed": 10,
+      "failed": 0
+    },
+    "extension": {
+      "command": "npm test",
+      "tests": 209,
+      "passed": 209,
+      "failed": 0
+    },
+    "policies": {
+      "dependency": "passed",
+      "import_cycles": "passed (83 TypeScript files)",
+      "export_star": "passed (83 TypeScript files)",
+      "unused_report": "completed with exit 0",
+      "production_audit": "0 vulnerabilities",
+      "vsix": "passed (3650672 bytes, 1895 entries)"
+    }
+  },
+  "files": [
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/evidenceScopeTypes.ts",
+      "sha256": "9bc533a36fb3f072010e48ad01b187acc0d2bb43b3661395e2eb106623df3e36",
+      "purpose": "Domain contracts"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/contextBudgetPlanner.ts",
+      "sha256": "5f440f3bceb4a53bb47f2ce0cbfad929fe6017978231513ee695a07dd690a677",
+      "purpose": "Deterministic budget selection"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/rulePackEngine.ts",
+      "sha256": "777271dad53df2ae05071f8f3f90ebb1bd2eedeb597c14dd8a8772365cc2bf8d",
+      "purpose": "Structured rule applicability"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/projectRuleConfig.ts",
+      "sha256": "640df15edf4eeb828494d0ef4cb37e0a6de0f6a46c96550aea0fabe0281fa5b5",
+      "purpose": "Rule configuration parser"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/documentEvidenceAdapter.ts",
+      "sha256": "24fddf584bb81de4ac5bfd0de18553cd7bed2174143aceddc1a9fb5332b27235",
+      "purpose": "Document evidence adapter contract and reference implementation"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/changeScopeEngine.ts",
+      "sha256": "01cc462269524f55173ebe86fce0c12fcca8651d050ea2c60fbc100bc39900dd",
+      "purpose": "Dependency expansion and scope fingerprint"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/reviewEvidenceAdapter.ts",
+      "sha256": "8b71e7fb12e9a11f06a2380e1a7d17cb7e675a8942ee6e6515adb80c97f0748a",
+      "purpose": "Existing analyzer adapter"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/contextBudgetArtifact.ts",
+      "sha256": "c3dd6480269888e40a5da33440021824c7d10520f877dee00820e0aa3d03d5e3",
+      "purpose": "Context budget artifact serializer"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/src/evidenceScope/index.ts",
+      "sha256": "5b15a2c605022c6388105ba1b28c20b87c2f95e728ef96b748fed438bedcca4e",
+      "purpose": "Explicit public API"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/test/evidenceScope.test.js",
+      "sha256": "2156576bc20686f9d8b0056a669671c49497f539a177f6e3cf808cb9a2ad681f",
+      "purpose": "Node test suite"
+    },
+    {
+      "path": "extensions/bob-code-consistency-review/docs/evidence-scope-domain-contract-ja.md",
+      "sha256": "c51258f6aaf844f12d4f235ff4311b2a11730711f881327b9806f53227feb68f",
+      "purpose": "Domain contract"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-07-12-bob-evidence-scope-phase1.md",
+      "sha256": "64be67fea3bba907b37281fad3f21b6748813e5bb51d94d4723eda50031ee442",
+      "purpose": "Executed implementation plan"
+    },
+    {
+      "path": "docs/implementation/bob-evidence-scope-phase1-2026-07-12.md",
+      "sha256": "1133bfa6df12082c7a29296d98b4aae533ead79d3e7350dbe0e6bb82e2e1e201",
+      "purpose": "Implementation report"
+    },
+    {
+      "path": "docs/implementation/bob-evidence-scope-phase1-verification-2026-07-12.md",
+      "sha256": "b4de41e218b9654ed4aedd1094c118d16b04770b7d9df8d6da07c24b5c606764",
+      "purpose": "Verification evidence"
+    }
+  ]
+}

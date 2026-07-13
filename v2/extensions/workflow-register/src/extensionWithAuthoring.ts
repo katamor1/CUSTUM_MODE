@@ -1,6 +1,7 @@
 import * as path from "path"
 import * as vscode from "vscode"
 import { activate as activateCore, deactivate, WorkflowRegisterApi } from "./extension"
+import type { OperationHubRunMutationTarget } from "./operationHubMutationTarget"
 import { createWorkflowFromTemplate } from "./commands/createWorkflow"
 import { designWorkflowWithAi } from "./commands/designWorkflowWithAi"
 import { editWorkflowInBuilder } from "./commands/editWorkflowInBuilder"
@@ -69,8 +70,20 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
     command: config().get<string>("aiProviderCommand", ""),
     executeCommand: (command, input) => vscode.commands.executeCommand(command, input)
   })
-  const stepReviewOptions = { showMarkdownReport }
-  const stepReviewBuilderOptions = { showMarkdownReport, sourceId: sourceId(), extensionUri: context.extensionUri }
+  const stepReviewOptions = {
+    showMarkdownReport,
+    acceptBobWorkflowGate: api.acceptBobWorkflowGate,
+    acceptBobWorkflowGateWithMetadata: api.acceptBobWorkflowGateWithMetadata,
+    coordinateReviewAcceptance: api.coordinateReviewAcceptance
+  }
+  const stepReviewBuilderOptions = {
+    showMarkdownReport,
+    acceptBobWorkflowGate: api.acceptBobWorkflowGate,
+    acceptBobWorkflowGateWithMetadata: api.acceptBobWorkflowGateWithMetadata,
+    coordinateReviewAcceptance: api.coordinateReviewAcceptance,
+    sourceId: sourceId(),
+    extensionUri: context.extensionUri
+  }
   const runControlOptions = { showMarkdownReport }
   const processCommandOptions = (input: unknown) => ({ workspaceRoot: workspaceRootFromCommandInput(input, "bobProcess") })
   const templateCommandOptions = (input: unknown) => ({ workspaceRoot: workspaceRootFromCommandInput(input, "bobTemplate") })
@@ -100,13 +113,13 @@ export function activate(context: vscode.ExtensionContext): WorkflowRegisterApi 
       (uri?: vscode.Uri) => editWorkflowInBuilder({ sourceId: sourceId(), extensionUri: context.extensionUri }, uri)
     ),
     vscode.commands.registerCommand("workflowRegister.inspectRunDiagnostics", () => inspectRunDiagnostics({ showMarkdownReport })),
-    vscode.commands.registerCommand("workflowRegister.acceptCurrentStep", (runId?: string) => acceptCurrentStep(stepReviewOptions, runId)),
-    vscode.commands.registerCommand("workflowRegister.acceptAndRunNextStep", (runId?: string) => acceptAndRunNextStep(stepReviewOptions, runId)),
+    vscode.commands.registerCommand("workflowRegister.acceptCurrentStep", (runArg?: string | OperationHubRunMutationTarget) => acceptCurrentStep(stepReviewOptions, runArg)),
+    vscode.commands.registerCommand("workflowRegister.acceptAndRunNextStep", (runArg?: string | OperationHubRunMutationTarget) => acceptAndRunNextStep(stepReviewOptions, runArg)),
     vscode.commands.registerCommand("workflowRegister.inspectCurrentStep", (runId?: string) => inspectCurrentStep(stepReviewOptions, runId)),
-    vscode.commands.registerCommand("workflowRegister.pauseCurrentRun", (runId?: string) => pauseCurrentRun(runControlOptions, runId)),
+    vscode.commands.registerCommand("workflowRegister.pauseCurrentRun", (runArg?: string | OperationHubRunMutationTarget) => pauseCurrentRun(runControlOptions, runArg)),
     vscode.commands.registerCommand("workflowRegister.pauseAfterCurrentStep", (runId?: string) => pauseAfterCurrentStep(runControlOptions, runId)),
     vscode.commands.registerCommand("workflowRegister.pauseBeforeNextAiCall", (runId?: string) => pauseBeforeNextAiCall(runControlOptions, runId)),
-    vscode.commands.registerCommand("workflowRegister.resumePausedRun", (runId?: string) => resumePausedRun(runControlOptions, runId)),
+    vscode.commands.registerCommand("workflowRegister.resumePausedRun", (runArg?: string | OperationHubRunMutationTarget) => resumePausedRun(runControlOptions, runArg)),
     vscode.commands.registerCommand("workflowRegister.inspectRunControl", (runId?: string) => inspectRunControl(runControlOptions, runId)),
     vscode.commands.registerCommand("bobProcess.validateCatalog", (input) => validateCatalogCommand(input, processCommandOptions(input))),
     vscode.commands.registerCommand("bobProcess.loadProcessInput", (input) => loadProcessInputCommand(input, processCommandOptions(input))),
